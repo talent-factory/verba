@@ -20,7 +20,7 @@
     "commands": [
       {
         "command": "dictation.start",
-        "title": "Start Dictation",
+        "title": "Toggle Dictation",
         "category": "Verba"
       }
     ],
@@ -28,19 +28,26 @@
       {
         "command": "dictation.start",
         "key": "ctrl+shift+d",
-        "mac": "cmd+shift+d",
-        "when": "editorTextFocus"
+        "mac": "cmd+shift+d"
       }
     ]
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
-    "watch": "tsc -watch -p ./"
+    "watch": "tsc -watch -p ./",
+    "test:unit": "mocha",
+    "test:integration": "node out/test/runIntegrationTests.js",
+    "test": "npm run compile && npm run test:unit && npm run test:integration"
   },
   "devDependencies": {
+    "@types/mocha": "^10.0.10",
     "@types/node": "^20.11.0",
+    "@types/sinon": "^21.0.0",
     "@types/vscode": "^1.85.0",
+    "@vscode/test-electron": "^2.5.2",
+    "mocha": "^11.7.5",
+    "sinon": "^21.0.1",
     "typescript": "^5.3.0"
   }
 }

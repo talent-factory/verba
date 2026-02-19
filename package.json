@@ -20,7 +20,7 @@
     "commands": [
       {
         "command": "dictation.start",
-        "title": "Start Dictation",
+        "title": "Toggle Dictation",
         "category": "Verba"
       }
     ],
@@ -28,8 +28,7 @@
       {
         "command": "dictation.start",
         "key": "ctrl+shift+d",
-        "mac": "cmd+shift+d",
-        "when": "editorTextFocus"
+        "mac": "cmd+shift+d"
       }
     ]
   },

@@ -3,16 +3,12 @@ import * as vscode from 'vscode';
 export function activate(context: vscode.ExtensionContext) {
 	const disposable = vscode.commands.registerTextEditorCommand(
 		'dictation.start',
-		(editor) => {
+		(editor, edit) => {
 			const position = editor.selection.active;
-
-			editor.edit((editBuilder) => {
-				editBuilder.insert(
-					position,
-					'[Verba] Dictation placeholder – speech recognition coming soon.'
-				);
-			});
-
+			edit.insert(
+				position,
+				'[Verba] Dictation placeholder – speech recognition coming soon.'
+			);
 			vscode.window.showInformationMessage('Verba: Dictation started.');
 		}
 	);

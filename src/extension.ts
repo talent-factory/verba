@@ -6,18 +6,25 @@ export function activate(context: vscode.ExtensionContext) {
 	const recorder = new FfmpegRecorder();
 	const statusBar = new StatusBarManager();
 
+	recorder.onUnexpectedStop = (error) => {
+		statusBar.setIdle();
+		console.error('[Verba] Unexpected recording stop:', error);
+		vscode.window.showErrorMessage(`Verba: ${error.message}`);
+	};
+
 	const disposable = vscode.commands.registerCommand(
 		'dictation.start',
 		async () => {
 			if (recorder.isRecording) {
 				try {
-					statusBar.setIdle();
 					const filePath = await recorder.stop();
+					statusBar.setIdle();
 					vscode.window.showInformationMessage(
 						`Verba: Recording saved to ${filePath}`
 					);
 				} catch (err: unknown) {
 					statusBar.setIdle();
+					console.error('[Verba] Stop recording failed:', err);
 					const message = err instanceof Error ? err.message : String(err);
 					vscode.window.showErrorMessage(`Verba: ${message}`);
 				}
@@ -30,6 +37,7 @@ export function activate(context: vscode.ExtensionContext) {
 					);
 				} catch (err: unknown) {
 					statusBar.setIdle();
+					console.error('[Verba] Start recording failed:', err);
 					const message = err instanceof Error ? err.message : String(err);
 
 					if (message.includes('ffmpeg not found')) {
@@ -42,10 +50,6 @@ export function activate(context: vscode.ExtensionContext) {
 								vscode.Uri.parse('https://formulae.brew.sh/formula/ffmpeg')
 							);
 						}
-					} else if (message.includes('Microphone access denied')) {
-						vscode.window.showErrorMessage(
-							`Verba: ${message}`
-						);
 					} else {
 						vscode.window.showErrorMessage(`Verba: ${message}`);
 					}

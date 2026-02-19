@@ -19,8 +19,8 @@ export function activate(context: vscode.ExtensionContext) {
 				try {
 					const filePath = await recorder.stop();
 					statusBar.setIdle();
-					vscode.window.showInformationMessage(
-						`Verba: Recording saved to ${filePath}`
+					vscode.window.setStatusBarMessage(
+						`$(check) Verba: saved to ${filePath}`, 10000
 					);
 				} catch (err: unknown) {
 					statusBar.setIdle();

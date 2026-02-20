@@ -32,8 +32,7 @@
     "Other",
     "Machine Learning"
   ],
-  "activationEvents": [],
-  "main": "./out/extension.js",
+  "main": "./dist/extension.js",
   "contributes": {
     "commands": [
       {
@@ -111,11 +110,12 @@
     }
   },
   "scripts": {
-    "vscode:prepublish": "npm run compile",
+    "vscode:prepublish": "npm run bundle",
     "compile": "tsc -p ./",
+    "bundle": "esbuild src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node --minify",
     "watch": "tsc -watch -p ./",
-    "test:unit": "mocha",
-    "test:integration": "node out/test/runIntegrationTests.js",
+    "test:unit": "npm run compile && mocha",
+    "test:integration": "npm run compile && node out/test/runIntegrationTests.js",
     "test": "npm run compile && npm run test:unit && npm run test:integration"
   },
   "devDependencies": {
@@ -127,6 +127,7 @@
     "@types/vscode": "^1.85.0",
     "@vscode/test-electron": "^2.5.2",
     "conventional-changelog-conventionalcommits": "^9.1.0",
+    "esbuild": "^0.27.3",
     "mocha": "^11.7.5",
     "semantic-release": "^25.0.3",
     "semantic-release-vsce": "^6.0.24",

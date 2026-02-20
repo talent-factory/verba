@@ -1,4 +1,4 @@
-.PHONY: help dev compile watch test test-unit
+.PHONY: help dev compile watch test test-unit package install
 
 help: ## Show available targets
 	@echo "Usage: make <target>"
@@ -9,6 +9,8 @@ help: ## Show available targets
 	@echo "  watch       Compile TypeScript in watch mode"
 	@echo "  test        Run all tests (unit + integration)"
 	@echo "  test-unit   Run unit tests only"
+	@echo "  package     Package extension as .vsix"
+	@echo "  install     Package and install extension locally"
 
 dev: compile
 	code --extensionDevelopmentPath=$(CURDIR)
@@ -25,3 +27,9 @@ test: compile
 
 test-unit: compile
 	npm run test:unit
+
+package:
+	npx @vscode/vsce package --allow-missing-repository
+
+install: package
+	code --install-extension verba-*.vsix

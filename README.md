@@ -1,7 +1,3 @@
-<p align="center">
-  <img src="images/icon.png" alt="Verba" width="128" height="128">
-</p>
-
 <h1 align="center">Verba</h1>
 
 <p align="center">

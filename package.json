@@ -28,6 +28,13 @@
       {
         "command": "dictation.start",
         "key": "ctrl+shift+d",
+        "mac": "cmd+shift+d",
+        "when": "terminalFocus",
+        "args": { "source": "terminal" }
+      },
+      {
+        "command": "dictation.start",
+        "key": "ctrl+shift+d",
         "mac": "cmd+shift+d"
       }
     ],

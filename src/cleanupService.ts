@@ -20,7 +20,7 @@ interface SecretStorage {
  * Cleans up a raw transcript using Claude API: removes filler words,
  * smooths sentences, corrects transcription errors.
  * Implements ProcessingStage: input is raw transcript, output is cleaned text.
- * API key is stored in VS Code SecretStorage; prompts user on first use.
+ * API key is managed via a SecretStorage abstraction; in production, backed by VS Code's secret store.
  */
 export class CleanupService implements ProcessingStage {
 	readonly name = 'Text Cleanup';
@@ -44,11 +44,21 @@ export class CleanupService implements ProcessingStage {
 				messages: [{ role: 'user', content: input }],
 			});
 		} catch (err: unknown) {
+			console.error('[Verba] Claude API call failed:', err);
 			if (err instanceof Error && (err as any).status === 401) {
 				this._client = null;
-				await this.secretStorage.delete(API_KEY_STORAGE_KEY);
+				try {
+					await this.secretStorage.delete(API_KEY_STORAGE_KEY);
+				} catch (deleteErr: unknown) {
+					console.error('[Verba] Failed to remove invalid Anthropic API key from storage:', deleteErr);
+				}
 				throw new Error(
 					'Invalid Anthropic API key. It has been removed — you will be prompted again on next use.'
+				);
+			}
+			if (err instanceof Error && (err as any).status === 429) {
+				throw new Error(
+					'Anthropic rate limit reached. Please wait a moment and try again.'
 				);
 			}
 			const detail = err instanceof Error ? err.message : String(err);
@@ -60,6 +70,7 @@ export class CleanupService implements ProcessingStage {
 			: '';
 
 		if (!text || text.trim() === '') {
+			console.warn('[Verba] Claude returned empty response; skipping cleanup and using raw transcript.');
 			return input;
 		}
 
@@ -83,6 +94,7 @@ export class CleanupService implements ProcessingStage {
 		return key;
 	}
 
+	/** Override point for tests. In production, shows vscode.window.showInputBox. */
 	protected async promptForApiKey(): Promise<string | undefined> {
 		throw new Error('promptForApiKey not implemented');
 	}

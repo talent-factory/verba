@@ -3,7 +3,7 @@ import * as sinon from 'sinon';
 
 import { CleanupService } from '../../cleanupService';
 
-// Fake SecretStorage matching vscode.SecretStorage interface
+// Fake SecretStorage matching the SecretStorage interface in cleanupService.ts
 function createFakeSecretStorage(): {
 	get: sinon.SinonStub;
 	store: sinon.SinonStub;
@@ -113,6 +113,17 @@ suite('CleanupService', () => {
 			assert.strictEqual(result, 'raw input text');
 		});
 
+		test('returns raw input when response content block is not text type', async () => {
+			secretStorage.get.resolves('sk-ant-test-key');
+			fakeClient.messages.create.resolves({
+				content: [{ type: 'tool_use', id: 'test', name: 'test', input: {} }],
+			});
+
+			const result = await service.process('raw input text');
+
+			assert.strictEqual(result, 'raw input text');
+		});
+
 		test('clears stored key, resets client, and throws on 401 error', async () => {
 			secretStorage.get.resolves('sk-ant-bad-key');
 			const authError = new Error('Invalid API key');
@@ -125,6 +136,47 @@ suite('CleanupService', () => {
 			);
 			assert.ok(secretStorage.delete.calledWith('anthropic-api-key'));
 			assert.strictEqual((service as any)._client, null, 'client should be cleared after 401');
+		});
+
+		test('recovers after 401 by prompting for new key on next call', async () => {
+			// First call: stored key → 401 → key deleted, client nulled
+			secretStorage.get.resolves('sk-ant-bad-key');
+			const authError = new Error('Invalid API key');
+			(authError as any).status = 401;
+			fakeClient.messages.create.rejects(authError);
+
+			await assert.rejects(
+				() => service.process('test'),
+				/Invalid Anthropic API key/
+			);
+			assert.strictEqual((service as any)._client, null);
+
+			// Second call: no stored key → prompt → new key → success
+			secretStorage.get.resolves(undefined);
+			promptApiKeyStub.resolves('sk-ant-new-key');
+			const newFakeClient = createFakeAnthropicClient();
+			newFakeClient.messages.create.resolves({
+				content: [{ type: 'text', text: 'recovered text' }],
+			});
+			(service as any)._client = newFakeClient;
+
+			const result = await service.process('recovery test');
+
+			assert.strictEqual(result, 'recovered text');
+			assert.ok(promptApiKeyStub.calledOnce);
+			assert.ok(secretStorage.store.calledWith('anthropic-api-key', 'sk-ant-new-key'));
+		});
+
+		test('throws rate limit error on 429', async () => {
+			secretStorage.get.resolves('sk-ant-test-key');
+			const rateLimitError = new Error('Rate limit exceeded');
+			(rateLimitError as any).status = 429;
+			fakeClient.messages.create.rejects(rateLimitError);
+
+			await assert.rejects(
+				() => service.process('test'),
+				/rate limit reached/
+			);
 		});
 
 		test('throws descriptive error on network failure', async () => {

@@ -64,7 +64,9 @@ suite('CleanupService', () => {
 			const callArgs = fakeClient.messages.create.firstCall.args[0];
 			assert.strictEqual(callArgs.model, 'claude-haiku-4-5-20251001');
 			assert.ok(callArgs.max_tokens > 0);
+			assert.ok(callArgs.messages[0].content.includes('<transcript>'));
 			assert.ok(callArgs.messages[0].content.includes('Ähm, das ist halt ein Test, eigentlich.'));
+			assert.ok(callArgs.messages[0].content.includes('</transcript>'));
 		});
 
 		test('includes system prompt for German filler word removal', async () => {
@@ -78,6 +80,7 @@ suite('CleanupService', () => {
 			const callArgs = fakeClient.messages.create.firstCall.args[0];
 			assert.ok(callArgs.system, 'should have a system prompt');
 			assert.ok(callArgs.system.includes('Füllwörter'), 'system prompt should mention filler words');
+			assert.ok(callArgs.system.includes('<transcript>'), 'system prompt should reference transcript tags');
 		});
 
 		test('prompts for API key when none is stored', async () => {
@@ -203,7 +206,7 @@ suite('CleanupService', () => {
 
 			const callArgs = fakeClient.messages.create.firstCall.args[0];
 			assert.ok(callArgs.system.includes('Convert to a commit message.'), 'should contain template prompt');
-			assert.ok(callArgs.system.includes('raw speech transcript'), 'should contain framing context');
+			assert.ok(callArgs.system.includes('<transcript>'), 'should reference transcript tags in framing');
 		});
 
 		test('uses default system prompt when no context is provided', async () => {

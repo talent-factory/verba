@@ -27,6 +27,12 @@ export class StatusBarManager {
 		this.item.tooltip = 'Click to stop dictation';
 	}
 
+	setTranscribing(): void {
+		this.item.text = '$(loading~spin) Transcribing...';
+		this.item.backgroundColor = undefined;
+		this.item.tooltip = 'Transcribing audio...';
+	}
+
 	dispose(): void {
 		this.item.dispose();
 	}

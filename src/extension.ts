@@ -4,12 +4,24 @@ import { FfmpegRecorder } from './recorder';
 import { StatusBarManager } from './statusBarManager';
 import { DictationPipeline } from './pipeline';
 import { TranscriptionService } from './transcriptionService';
+import { CleanupService } from './cleanupService';
 
 class VerbaTranscriptionService extends TranscriptionService {
 	protected async promptForApiKey(): Promise<string | undefined> {
 		return vscode.window.showInputBox({
 			prompt: 'Enter your OpenAI API key for Whisper transcription',
 			placeHolder: 'sk-...',
+			password: true,
+			ignoreFocusOut: true,
+		});
+	}
+}
+
+class VerbaCleanupService extends CleanupService {
+	protected async promptForApiKey(): Promise<string | undefined> {
+		return vscode.window.showInputBox({
+			prompt: 'Enter your Anthropic API key for text cleanup',
+			placeHolder: 'sk-ant-...',
 			password: true,
 			ignoreFocusOut: true,
 		});
@@ -47,6 +59,7 @@ export function activate(context: vscode.ExtensionContext) {
 	const pipeline = new DictationPipeline();
 
 	pipeline.addStage(new VerbaTranscriptionService(context.secrets));
+	pipeline.addStage(new VerbaCleanupService(context.secrets));
 
 	recorder.onUnexpectedStop = (error) => {
 		statusBar.setIdle();

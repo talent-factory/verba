@@ -45,6 +45,15 @@ export function activate(context: vscode.ExtensionContext) {
 	const statusBar = new StatusBarManager();
 	const pipeline = new DictationPipeline();
 	let selectedTemplate: Template | undefined;
+	let lastFocusTarget: 'editor' | 'terminal' = 'editor';
+	let recordingFocusTarget: 'editor' | 'terminal' = 'editor';
+
+	const editorFocusTracker = vscode.window.onDidChangeActiveTextEditor((e) => {
+		if (e) { lastFocusTarget = 'editor'; }
+	});
+	const terminalFocusTracker = vscode.window.onDidChangeActiveTerminal((t) => {
+		if (t) { lastFocusTarget = 'terminal'; }
+	});
 
 	pipeline.addStage(new VerbaTranscriptionService(context.secrets));
 	pipeline.addStage(new VerbaCleanupService(context.secrets));
@@ -75,6 +84,7 @@ export function activate(context: vscode.ExtensionContext) {
 						vscode.window.activeTextEditor,
 						vscode.window.activeTerminal,
 						executeCommand,
+						recordingFocusTarget === 'terminal',
 					);
 
 					statusBar.setIdle();
@@ -94,6 +104,7 @@ export function activate(context: vscode.ExtensionContext) {
 				}
 			} else {
 				try {
+					recordingFocusTarget = lastFocusTarget;
 					const rawTemplates = vscode.workspace
 						.getConfiguration('verba')
 						.get<Template[]>('templates', []);
@@ -143,7 +154,7 @@ export function activate(context: vscode.ExtensionContext) {
 		}
 	);
 
-	context.subscriptions.push(disposable, { dispose: () => recorder.dispose() }, statusBar);
+	context.subscriptions.push(disposable, { dispose: () => recorder.dispose() }, statusBar, editorFocusTracker, terminalFocusTracker);
 }
 
 export function deactivate() {}

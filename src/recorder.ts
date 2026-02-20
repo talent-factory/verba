@@ -240,7 +240,37 @@ export class FfmpegRecorder {
 	}
 
 	private detectWindowsAudioDevice(): string {
-		throw new Error('Windows audio device detection not yet implemented');
+		let stderr = '';
+		try {
+			execSync('ffmpeg -list_devices true -f dshow -i dummy', {
+				encoding: 'utf-8',
+				timeout: 10000,
+			});
+		} catch (err: unknown) {
+			if (err && typeof err === 'object' && 'stderr' in err) {
+				stderr = String((err as { stderr: unknown }).stderr);
+			}
+		}
+
+		const lines = stderr.split('\n');
+		let inAudioSection = false;
+
+		for (const line of lines) {
+			if (line.includes('DirectShow audio devices')) {
+				inAudioSection = true;
+				continue;
+			}
+			if (inAudioSection) {
+				const match = line.match(/"([^"]+)"/);
+				if (match) {
+					return `audio=${match[1]}`;
+				}
+			}
+		}
+
+		throw new Error(
+			'No audio input device found. Check that a microphone is connected and recognized by Windows.'
+		);
 	}
 
 	private cleanup(): void {

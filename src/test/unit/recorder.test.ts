@@ -424,4 +424,62 @@ suite('FfmpegRecorder', () => {
 			assert.strictEqual(recorder.isRecording, false);
 		});
 	});
+
+	suite('detectWindowsAudioDevice()', () => {
+		let originalDescriptor: PropertyDescriptor | undefined;
+
+		setup(() => {
+			originalDescriptor = Object.getOwnPropertyDescriptor(process, 'platform');
+			Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
+		});
+
+		teardown(() => {
+			if (originalDescriptor) {
+				Object.defineProperty(process, 'platform', originalDescriptor);
+			}
+		});
+
+		test('should parse first audio device from ffmpeg output', () => {
+			const ffmpegOutput = [
+				'[dshow @ 0000020] DirectShow video devices',
+				'[dshow @ 0000020]  "HD Webcam"',
+				'[dshow @ 0000020] DirectShow audio devices',
+				'[dshow @ 0000020]  "Microphone (Realtek High Definition Audio)"',
+				'[dshow @ 0000020]  "Stereo Mix (Realtek High Definition Audio)"',
+			].join('\n');
+
+			sinon.stub(child_process, 'execSync').throws(
+				Object.assign(new Error('Command failed'), { stderr: ffmpegOutput })
+			);
+
+			const result = (recorder as any).detectWindowsAudioDevice();
+			assert.strictEqual(result, 'audio=Microphone (Realtek High Definition Audio)');
+		});
+
+		test('should throw when no audio device found', () => {
+			const ffmpegOutput = [
+				'[dshow @ 0000020] DirectShow video devices',
+				'[dshow @ 0000020]  "HD Webcam"',
+				'[dshow @ 0000020] DirectShow audio devices',
+			].join('\n');
+
+			sinon.stub(child_process, 'execSync').throws(
+				Object.assign(new Error('Command failed'), { stderr: ffmpegOutput })
+			);
+
+			assert.throws(
+				() => (recorder as any).detectWindowsAudioDevice(),
+				/No audio input device found/
+			);
+		});
+
+		test('should throw when ffmpeg list_devices fails without stderr', () => {
+			sinon.stub(child_process, 'execSync').throws(new Error('Command failed'));
+
+			assert.throws(
+				() => (recorder as any).detectWindowsAudioDevice(),
+				/No audio input device found/
+			);
+		});
+	});
 });

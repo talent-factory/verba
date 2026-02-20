@@ -5,3 +5,13 @@ out/**/*.map
 node_modules/**
 tsconfig.json
 .gitignore
+.worktrees/**
+docs/**
+test-workspace/**
+.grepai/**
+CLAUDE.md
+.mocharc.yml
+*.vsix
+.github/**
+.releaserc.json
+CHANGELOG.md

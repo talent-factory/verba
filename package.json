@@ -30,7 +30,17 @@
         "key": "ctrl+shift+d",
         "mac": "cmd+shift+d"
       }
-    ]
+    ],
+    "configuration": {
+      "title": "Verba",
+      "properties": {
+        "verba.terminal.executeCommand": {
+          "type": "boolean",
+          "default": false,
+          "description": "If true, sends Enter after inserting dictated text into the terminal (executes the text as a command)."
+        }
+      }
+    }
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",

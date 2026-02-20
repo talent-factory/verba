@@ -42,6 +42,14 @@ suite('StatusBarManager', () => {
 		assert.strictEqual(item.tooltip, 'Click to stop dictation');
 	});
 
+	test('switches to transcribing state', () => {
+		manager.setTranscribing();
+		const item = spy.firstCall.returnValue;
+		assert.strictEqual(item.text, '$(loading~spin) Transcribing...');
+		assert.strictEqual(item.backgroundColor, undefined);
+		assert.strictEqual(item.tooltip, 'Transcribing audio...');
+	});
+
 	test('switches back to idle state', () => {
 		manager.setRecording();
 		manager.setIdle();

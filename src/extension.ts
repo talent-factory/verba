@@ -50,6 +50,7 @@ export function activate(context: vscode.ExtensionContext) {
 	pipeline.addStage(new VerbaCleanupService(context.secrets));
 
 	recorder.onUnexpectedStop = (error) => {
+		selectedTemplate = undefined;
 		statusBar.setIdle();
 		console.error('[Verba] Unexpected recording stop:', error);
 		vscode.window.showErrorMessage(`Verba: ${error.message}`);
@@ -81,6 +82,7 @@ export function activate(context: vscode.ExtensionContext) {
 						'$(check) Verba: transcription inserted', 5000
 					);
 				} catch (err: unknown) {
+					selectedTemplate = undefined;
 					statusBar.setIdle();
 					console.error('[Verba] Transcription failed:', err);
 					const message = err instanceof Error ? err.message : String(err);
@@ -92,9 +94,14 @@ export function activate(context: vscode.ExtensionContext) {
 				}
 			} else {
 				try {
-					const templates = vscode.workspace
+					const rawTemplates = vscode.workspace
 						.getConfiguration('verba')
 						.get<Template[]>('templates', []);
+					const templates = rawTemplates.filter(
+						(t): t is Template =>
+							typeof t?.name === 'string' && t.name.trim() !== ''
+							&& typeof t?.prompt === 'string' && t.prompt.trim() !== '',
+					);
 					const lastUsedName = context.workspaceState.get<string>('verba.lastTemplateName');
 
 					const template = await selectTemplate(

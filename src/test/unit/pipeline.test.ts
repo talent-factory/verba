@@ -72,6 +72,30 @@ suite('DictationPipeline', () => {
 		assert.deepStrictEqual(capturedContext, { templatePrompt: 'test prompt' });
 	});
 
+	test('passes context through multiple stages', async () => {
+		const capturedContexts: (PipelineContext | undefined)[] = [];
+		pipeline.addStage({
+			name: 'first',
+			process: async (input: string, context?: PipelineContext) => {
+				capturedContexts.push(context);
+				return input.toUpperCase();
+			},
+		});
+		pipeline.addStage({
+			name: 'second',
+			process: async (input: string, context?: PipelineContext) => {
+				capturedContexts.push(context);
+				return `[${input}]`;
+			},
+		});
+		const ctx = { templatePrompt: 'my prompt' };
+		const result = await pipeline.run('hello', ctx);
+		assert.strictEqual(result, '[HELLO]');
+		assert.strictEqual(capturedContexts.length, 2);
+		assert.deepStrictEqual(capturedContexts[0], ctx);
+		assert.deepStrictEqual(capturedContexts[1], ctx);
+	});
+
 	test('works without context for backward compatibility', async () => {
 		pipeline.addStage(createStage('upper', (s) => s.toUpperCase()));
 		const result = await pipeline.run('hello');

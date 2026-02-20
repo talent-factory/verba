@@ -2,6 +2,7 @@ import * as assert from 'assert';
 import * as sinon from 'sinon';
 
 import { CleanupService } from '../../cleanupService';
+import { PipelineContext } from '../../pipeline';
 
 // Fake SecretStorage matching the SecretStorage interface in cleanupService.ts
 function createFakeSecretStorage(): {
@@ -63,7 +64,9 @@ suite('CleanupService', () => {
 			const callArgs = fakeClient.messages.create.firstCall.args[0];
 			assert.strictEqual(callArgs.model, 'claude-haiku-4-5-20251001');
 			assert.ok(callArgs.max_tokens > 0);
+			assert.ok(callArgs.messages[0].content.includes('<transcript>'));
 			assert.ok(callArgs.messages[0].content.includes('Ähm, das ist halt ein Test, eigentlich.'));
+			assert.ok(callArgs.messages[0].content.includes('</transcript>'));
 		});
 
 		test('includes system prompt for German filler word removal', async () => {
@@ -77,6 +80,7 @@ suite('CleanupService', () => {
 			const callArgs = fakeClient.messages.create.firstCall.args[0];
 			assert.ok(callArgs.system, 'should have a system prompt');
 			assert.ok(callArgs.system.includes('Füllwörter'), 'system prompt should mention filler words');
+			assert.ok(callArgs.system.includes('<transcript>'), 'system prompt should reference transcript tags');
 		});
 
 		test('prompts for API key when none is stored', async () => {
@@ -188,5 +192,34 @@ suite('CleanupService', () => {
 				/Post-processing failed: ECONNREFUSED/
 			);
 		});
+
+		test('uses custom system prompt from context when provided', async () => {
+			secretStorage.get.resolves('sk-ant-test-key');
+			fakeClient.messages.create.resolves({
+				content: [{ type: 'text', text: 'commit: fix login bug' }],
+			});
+
+			const context: PipelineContext = {
+				templatePrompt: 'Convert to a commit message.',
+			};
+			await service.process('test input', context);
+
+			const callArgs = fakeClient.messages.create.firstCall.args[0];
+			assert.ok(callArgs.system.includes('Convert to a commit message.'), 'should contain template prompt');
+			assert.ok(callArgs.system.includes('<transcript>'), 'should reference transcript tags in framing');
+		});
+
+		test('uses default system prompt when no context is provided', async () => {
+			secretStorage.get.resolves('sk-ant-test-key');
+			fakeClient.messages.create.resolves({
+				content: [{ type: 'text', text: 'cleaned' }],
+			});
+
+			await service.process('test input');
+
+			const callArgs = fakeClient.messages.create.firstCall.args[0];
+			assert.ok(callArgs.system.includes('Füllwörter'), 'should use default filler word prompt');
+		});
+
 	});
 });

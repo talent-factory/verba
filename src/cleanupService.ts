@@ -1,9 +1,13 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { ProcessingStage } from './pipeline';
+import { ProcessingStage, PipelineContext } from './pipeline';
 
 const API_KEY_STORAGE_KEY = 'anthropic-api-key';
 
-const CLEANUP_SYSTEM_PROMPT = `Du erhältst ein rohes Sprach-Transkript. Bereinige es:
+const TEMPLATE_FRAMING = `The user message contains a raw speech transcript wrapped in <transcript> tags. Process it according to the following instructions and return ONLY the processed result — no commentary, no explanation, no preamble.
+
+`;
+
+const CLEANUP_SYSTEM_PROMPT = `Du erhältst ein rohes Sprach-Transkript in <transcript> Tags. Bereinige es:
 - Entferne Füllwörter (ähm, äh, halt, eigentlich, sozusagen, quasi, irgendwie, etc.)
 - Glätte abgebrochene oder wiederholte Satzanfänge
 - Korrigiere offensichtliche Transkriptionsfehler
@@ -31,7 +35,10 @@ export class CleanupService implements ProcessingStage {
 		this.secretStorage = secretStorage;
 	}
 
-	async process(input: string): Promise<string> {
+	async process(input: string, context?: PipelineContext): Promise<string> {
+		const systemPrompt = context?.templatePrompt
+			? TEMPLATE_FRAMING + context.templatePrompt
+			: CLEANUP_SYSTEM_PROMPT;
 		const apiKey = await this.getApiKey();
 		const client = this.getClient(apiKey);
 
@@ -40,8 +47,8 @@ export class CleanupService implements ProcessingStage {
 			response = await client.messages.create({
 				model: 'claude-haiku-4-5-20251001',
 				max_tokens: 4096,
-				system: CLEANUP_SYSTEM_PROMPT,
-				messages: [{ role: 'user', content: input }],
+				system: systemPrompt,
+				messages: [{ role: 'user', content: `<transcript>\n${input}\n</transcript>` }],
 			});
 		} catch (err: unknown) {
 			console.error('[Verba] Claude API call failed:', err);

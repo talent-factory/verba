@@ -1,6 +1,10 @@
+export interface PipelineContext {
+	templatePrompt?: string;
+}
+
 export interface ProcessingStage {
 	readonly name: string;
-	process(input: string): Promise<string>;
+	process(input: string, context?: PipelineContext): Promise<string>;
 }
 
 export class DictationPipeline {
@@ -10,10 +14,10 @@ export class DictationPipeline {
 		this.stages.push(stage);
 	}
 
-	async run(input: string): Promise<string> {
+	async run(input: string, context?: PipelineContext): Promise<string> {
 		let result = input;
 		for (const stage of this.stages) {
-			result = await stage.process(result);
+			result = await stage.process(result, context);
 		}
 		return result;
 	}

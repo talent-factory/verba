@@ -12,7 +12,14 @@ export async function insertText(
 	editor: TextEditor | undefined,
 	terminal: Terminal | undefined,
 	executeCommand: boolean,
+	preferTerminal: boolean = false,
 ): Promise<void> {
+	if (preferTerminal && terminal) {
+		console.log(`[Verba] Sending text to terminal (executeCommand=${executeCommand}, length=${text.length})`);
+		terminal.sendText(text, executeCommand);
+		return;
+	}
+
 	if (editor) {
 		let success: boolean;
 		try {

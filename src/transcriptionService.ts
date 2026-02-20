@@ -36,6 +36,7 @@ export class TranscriptionService implements ProcessingStage {
 			});
 		} catch (err: unknown) {
 			if (err instanceof Error && (err as any).status === 401) {
+				this._client = null;
 				await this.secretStorage.delete(API_KEY_STORAGE_KEY);
 				throw new Error(
 					'Invalid OpenAI API key. It has been removed — you will be prompted again on next use.'
@@ -61,7 +62,7 @@ export class TranscriptionService implements ProcessingStage {
 		const key = await this.promptForApiKey();
 		if (!key) {
 			throw new Error(
-				'OpenAI API key required for transcription. Use Cmd+Shift+D to try again.'
+				'OpenAI API key required for transcription.'
 			);
 		}
 

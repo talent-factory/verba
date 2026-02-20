@@ -114,7 +114,7 @@ suite('TranscriptionService', () => {
 			);
 		});
 
-		test('clears stored key and throws on 401 authentication error', async () => {
+		test('clears stored key, resets client, and throws on 401 authentication error', async () => {
 			secretStorage.get.resolves('sk-bad-key');
 			const authError = new Error('Incorrect API key provided');
 			(authError as any).status = 401;
@@ -126,6 +126,7 @@ suite('TranscriptionService', () => {
 				/Invalid OpenAI API key/
 			);
 			assert.ok(secretStorage.delete.calledWith('openai-api-key'));
+			assert.strictEqual((service as any)._client, null, 'client should be cleared after 401');
 		});
 
 		test('throws descriptive error on network failure', async () => {

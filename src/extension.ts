@@ -21,16 +21,23 @@ async function insertTextAtCursor(text: string): Promise<void> {
 	if (!editor) {
 		throw new Error('No active text editor. Open a file before dictating.');
 	}
-	await editor.edit((editBuilder) => {
+	const success = await editor.edit((editBuilder) => {
 		editBuilder.insert(editor.selection.active, text);
 	});
+	if (!success) {
+		throw new Error(
+			'Failed to insert transcription — the editor may have been closed or the document changed.'
+		);
+	}
 }
 
 function cleanupFile(filePath: string): void {
 	try {
 		fs.unlinkSync(filePath);
-	} catch {
-		// Best-effort cleanup — file may already be gone
+	} catch (err: unknown) {
+		if (err instanceof Error && (err as NodeJS.ErrnoException).code !== 'ENOENT') {
+			console.error('[Verba] Failed to clean up temp file:', err);
+		}
 	}
 }
 

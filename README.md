@@ -1,11 +1,25 @@
-# Verba
+<p align="center">
+  <img src="images/icon.png" alt="Verba" width="128" height="128">
+</p>
 
-**The Developer's Dictation Extension** -- Voice dictation with AI-powered post-processing for VS Code.
+<h1 align="center">Verba</h1>
 
-[![Visual Studio Marketplace](https://img.shields.io/visual-studio-marketplace/v/talent-factory.verba)](https://marketplace.visualstudio.com/items?itemName=talent-factory.verba)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+<p align="center">
+  <strong>The Developer's Dictation Extension</strong><br>
+  Voice dictation with AI-powered post-processing for VS Code.
+</p>
 
-Verba records speech via your microphone, transcribes it with OpenAI Whisper, and post-processes the transcript with Claude -- all directly inside VS Code. Filler words are removed, sentences are smoothed, and the result is inserted at your cursor position.
+<p align="center">
+  <a href="https://marketplace.visualstudio.com/items?itemName=talent-factory.verba"><img src="https://img.shields.io/visual-studio-marketplace/v/talent-factory.verba" alt="Visual Studio Marketplace"></a>
+  <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
+  <a href="https://github.com/talent-factory/verba"><img src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-blue" alt="Platform"></a>
+</p>
+
+<p align="center">
+  Verba records speech via your microphone, transcribes it with OpenAI Whisper, and post-processes the transcript with Claude — all directly inside VS Code. Filler words are removed, sentences are smoothed, and the result is inserted at your cursor position.
+</p>
+
+---
 
 ## Features
 

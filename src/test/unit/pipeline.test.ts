@@ -1,5 +1,5 @@
 import * as assert from 'assert';
-import { DictationPipeline, ProcessingStage } from '../../pipeline';
+import { DictationPipeline, PipelineContext, ProcessingStage } from '../../pipeline';
 
 function createStage(name: string, transform: (input: string) => string): ProcessingStage {
 	return {
@@ -57,5 +57,24 @@ suite('DictationPipeline', () => {
 
 		await assert.rejects(() => pipeline.run('input'), /boom/);
 		assert.strictEqual(secondCalled, false);
+	});
+
+	test('passes context to each stage', async () => {
+		let capturedContext: PipelineContext | undefined;
+		pipeline.addStage({
+			name: 'capture',
+			process: async (input: string, context?: PipelineContext) => {
+				capturedContext = context;
+				return input;
+			},
+		});
+		await pipeline.run('hello', { templatePrompt: 'test prompt' });
+		assert.deepStrictEqual(capturedContext, { templatePrompt: 'test prompt' });
+	});
+
+	test('works without context for backward compatibility', async () => {
+		pipeline.addStage(createStage('upper', (s) => s.toUpperCase()));
+		const result = await pipeline.run('hello');
+		assert.strictEqual(result, 'HELLO');
 	});
 });

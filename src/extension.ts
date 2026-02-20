@@ -2,10 +2,11 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import { FfmpegRecorder } from './recorder';
 import { StatusBarManager } from './statusBarManager';
-import { DictationPipeline } from './pipeline';
+import { DictationPipeline, PipelineContext } from './pipeline';
 import { TranscriptionService } from './transcriptionService';
 import { CleanupService } from './cleanupService';
 import { insertText } from './insertText';
+import { selectTemplate, Template } from './templatePicker';
 
 class VerbaTranscriptionService extends TranscriptionService {
 	protected async promptForApiKey(): Promise<string | undefined> {
@@ -43,6 +44,7 @@ export function activate(context: vscode.ExtensionContext) {
 	const recorder = new FfmpegRecorder();
 	const statusBar = new StatusBarManager();
 	const pipeline = new DictationPipeline();
+	let selectedTemplate: Template | undefined;
 
 	pipeline.addStage(new VerbaTranscriptionService(context.secrets));
 	pipeline.addStage(new VerbaCleanupService(context.secrets));
@@ -62,7 +64,10 @@ export function activate(context: vscode.ExtensionContext) {
 					filePath = await recorder.stop();
 					statusBar.setTranscribing();
 
-					const transcript = await pipeline.run(filePath);
+					const pipelineContext: PipelineContext | undefined = selectedTemplate
+						? { templatePrompt: selectedTemplate.prompt }
+						: undefined;
+					const transcript = await pipeline.run(filePath, pipelineContext);
 					const executeCommand = vscode.workspace.getConfiguration('verba.terminal').get<boolean>('executeCommand', false);
 					await insertText(
 						transcript,
@@ -87,10 +92,26 @@ export function activate(context: vscode.ExtensionContext) {
 				}
 			} else {
 				try {
+					const templates = vscode.workspace
+						.getConfiguration('verba')
+						.get<Template[]>('templates', []);
+					const lastUsedName = context.workspaceState.get<string>('verba.lastTemplateName');
+
+					const template = await selectTemplate(
+						templates,
+						lastUsedName,
+						(items, options) => vscode.window.showQuickPick(items, options) as any,
+					);
+					if (!template) {
+						return;
+					}
+					selectedTemplate = template;
+					await context.workspaceState.update('verba.lastTemplateName', template.name);
+
 					await recorder.start();
 					statusBar.setRecording();
 					vscode.window.showInformationMessage(
-						'Verba: Recording started...'
+						`Verba: Recording started (${template.name})...`
 					);
 				} catch (err: unknown) {
 					statusBar.setIdle();

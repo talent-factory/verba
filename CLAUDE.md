@@ -72,6 +72,13 @@ Alle Phasen sind Sub-Issues von TF-243 (Projektuebersicht, In Progress).
 
 - **TF-249: Marktanalyse** - Done. Konkurrenzanalyse (Wispr Flow, Superwhisper, Willow Voice, VoiceInk, etc.) mit Identifikation der Marktluecken.
 
+## Git-Workflow
+
+- **Branching:** `main` ist der stabile Release-Branch, `develop` ist der Integrations-Branch
+- **PRs immer `feature/*` -> `develop`** — niemals direkt auf `main`
+- **Releases:** `develop` wird in `main` gemerged wenn ein Release ansteht
+- **Feature-Branches:** `feature/<issue-id>-<beschreibung>` (z.B. `feature/tf-250-terminal-dictation`)
+
 ## Konventionen
 
 - Extension-Name: `verba`

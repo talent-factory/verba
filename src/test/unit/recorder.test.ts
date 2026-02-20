@@ -78,13 +78,138 @@ suite('FfmpegRecorder', () => {
 			);
 		});
 
-		test('should throw on non-macOS platform', async () => {
+		test('should throw on unsupported platform', async () => {
 			const originalDescriptor = Object.getOwnPropertyDescriptor(process, 'platform');
-			Object.defineProperty(process, 'platform', { value: 'linux', configurable: true });
+			Object.defineProperty(process, 'platform', { value: 'freebsd', configurable: true });
 			try {
 				await assert.rejects(
 					() => recorder.start(),
-					/only supported on macOS/
+					/Unsupported platform: freebsd/
+				);
+			} finally {
+				if (originalDescriptor) {
+					Object.defineProperty(process, 'platform', originalDescriptor);
+				}
+			}
+		});
+
+		test('should use avfoundation input on macOS', async () => {
+			await startRecording();
+
+			const spawnStub = child_process.spawn as sinon.SinonStub;
+			const args = spawnStub.firstCall.args[1] as string[];
+			assert.ok(args.includes('avfoundation'), 'Expected spawn args to include avfoundation');
+			assert.ok(args.includes(':default'), 'Expected spawn args to include :default');
+		});
+
+		test('should use pulse input on Linux', async () => {
+			const originalDescriptor = Object.getOwnPropertyDescriptor(process, 'platform');
+			Object.defineProperty(process, 'platform', { value: 'linux', configurable: true });
+
+			(fs.existsSync as sinon.SinonStub).callsFake(
+				(p: fs.PathLike) => p === '/usr/bin/ffmpeg'
+			);
+
+			try {
+				const startPromise = recorder.start();
+				await clock.tickAsync(500);
+				await startPromise;
+
+				const spawnStub = child_process.spawn as sinon.SinonStub;
+				const args = spawnStub.firstCall.args[1] as string[];
+				assert.ok(args.includes('pulse'), 'Expected spawn args to include pulse');
+				assert.ok(args.includes('default'), 'Expected spawn args to include default');
+			} finally {
+				if (originalDescriptor) {
+					Object.defineProperty(process, 'platform', originalDescriptor);
+				}
+			}
+		});
+
+		test('should find ffmpeg at /usr/bin/ffmpeg on Linux', async () => {
+			const originalDescriptor = Object.getOwnPropertyDescriptor(process, 'platform');
+			Object.defineProperty(process, 'platform', { value: 'linux', configurable: true });
+
+			(fs.existsSync as sinon.SinonStub).callsFake(
+				(p: fs.PathLike) => p === '/usr/bin/ffmpeg'
+			);
+
+			try {
+				const startPromise = recorder.start();
+				await clock.tickAsync(500);
+				await startPromise;
+
+				const spawnStub = child_process.spawn as sinon.SinonStub;
+				assert.strictEqual(
+					spawnStub.firstCall.args[0],
+					'/usr/bin/ffmpeg',
+					'Expected spawn to be called with /usr/bin/ffmpeg'
+				);
+			} finally {
+				if (originalDescriptor) {
+					Object.defineProperty(process, 'platform', originalDescriptor);
+				}
+			}
+		});
+
+		test('should use dshow input with detected device on Windows', async () => {
+			const originalDescriptor = Object.getOwnPropertyDescriptor(process, 'platform');
+			Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
+
+			(fs.existsSync as sinon.SinonStub).returns(false);
+			sinon.stub(child_process, 'execSync').callsFake((cmd: string) => {
+				if (cmd === 'where ffmpeg') {
+					return 'C:\\ffmpeg\\bin\\ffmpeg.exe\r\n';
+				}
+				throw new Error('not found');
+			});
+			sinon.stub(
+				FfmpegRecorder.prototype as unknown as { detectWindowsAudioDevice: (p: string) => string },
+				'detectWindowsAudioDevice'
+			).returns('audio=Microphone (Realtek)');
+
+			try {
+				const startPromise = recorder.start();
+				await clock.tickAsync(500);
+				await startPromise;
+
+				const spawnStub = child_process.spawn as sinon.SinonStub;
+				const args = spawnStub.firstCall.args[1] as string[];
+				assert.ok(args.includes('dshow'), 'Expected spawn args to include dshow');
+				assert.ok(args.includes('audio=Microphone (Realtek)'), 'Expected spawn args to include detected device');
+			} finally {
+				if (originalDescriptor) {
+					Object.defineProperty(process, 'platform', originalDescriptor);
+				}
+			}
+		});
+
+		test('should use where command on Windows to find ffmpeg', async () => {
+			const originalDescriptor = Object.getOwnPropertyDescriptor(process, 'platform');
+			Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
+
+			(fs.existsSync as sinon.SinonStub).returns(false);
+			sinon.stub(child_process, 'execSync').callsFake((cmd: string) => {
+				if (cmd === 'where ffmpeg') {
+					return 'C:\\ffmpeg\\bin\\ffmpeg.exe\r\n';
+				}
+				throw new Error('not found');
+			});
+			sinon.stub(
+				FfmpegRecorder.prototype as unknown as { detectWindowsAudioDevice: (p: string) => string },
+				'detectWindowsAudioDevice'
+			).returns('audio=Microphone');
+
+			try {
+				const startPromise = recorder.start();
+				await clock.tickAsync(500);
+				await startPromise;
+
+				const spawnStub = child_process.spawn as sinon.SinonStub;
+				assert.strictEqual(
+					spawnStub.firstCall.args[0],
+					'C:\\ffmpeg\\bin\\ffmpeg.exe',
+					'Expected spawn to be called with the path returned by where'
 				);
 			} finally {
 				if (originalDescriptor) {
@@ -329,6 +454,82 @@ suite('FfmpegRecorder', () => {
 
 			assert.doesNotThrow(() => recorder.dispose());
 			assert.strictEqual(recorder.isRecording, false);
+		});
+	});
+
+	suite('detectWindowsAudioDevice()', () => {
+		let originalDescriptor: PropertyDescriptor | undefined;
+
+		setup(() => {
+			originalDescriptor = Object.getOwnPropertyDescriptor(process, 'platform');
+			Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
+		});
+
+		teardown(() => {
+			if (originalDescriptor) {
+				Object.defineProperty(process, 'platform', originalDescriptor);
+			}
+		});
+
+		test('should parse first audio device from ffmpeg output', () => {
+			const ffmpegOutput = [
+				'[dshow @ 0000020] DirectShow video devices',
+				'[dshow @ 0000020]  "HD Webcam"',
+				'[dshow @ 0000020] DirectShow audio devices',
+				'[dshow @ 0000020]  "Microphone (Realtek High Definition Audio)"',
+				'[dshow @ 0000020]  "Stereo Mix (Realtek High Definition Audio)"',
+			].join('\n');
+
+			sinon.stub(child_process, 'execSync').throws(
+				Object.assign(new Error('Command failed'), { stderr: ffmpegOutput })
+			);
+
+			const result = (recorder as any).detectWindowsAudioDevice('C:\\ffmpeg\\bin\\ffmpeg.exe');
+			assert.strictEqual(result, 'audio=Microphone (Realtek High Definition Audio)');
+		});
+
+		test('should use resolved ffmpeg path for device listing', () => {
+			const ffmpegOutput = [
+				'[dshow @ 0000020] DirectShow audio devices',
+				'[dshow @ 0000020]  "Microphone"',
+			].join('\n');
+
+			const execStub = sinon.stub(child_process, 'execSync').throws(
+				Object.assign(new Error('Command failed'), { stderr: ffmpegOutput })
+			);
+
+			(recorder as any).detectWindowsAudioDevice('C:\\ffmpeg\\bin\\ffmpeg.exe');
+
+			assert.ok(
+				execStub.firstCall.args[0].includes('C:\\ffmpeg\\bin\\ffmpeg.exe'),
+				'Expected execSync to use resolved ffmpeg path'
+			);
+		});
+
+		test('should throw when no audio device found', () => {
+			const ffmpegOutput = [
+				'[dshow @ 0000020] DirectShow video devices',
+				'[dshow @ 0000020]  "HD Webcam"',
+				'[dshow @ 0000020] DirectShow audio devices',
+			].join('\n');
+
+			sinon.stub(child_process, 'execSync').throws(
+				Object.assign(new Error('Command failed'), { stderr: ffmpegOutput })
+			);
+
+			assert.throws(
+				() => (recorder as any).detectWindowsAudioDevice('C:\\ffmpeg\\bin\\ffmpeg.exe'),
+				/No audio input device found/
+			);
+		});
+
+		test('should throw with detail when ffmpeg list_devices fails without stderr', () => {
+			sinon.stub(child_process, 'execSync').throws(new Error('Command failed'));
+
+			assert.throws(
+				() => (recorder as any).detectWindowsAudioDevice('C:\\ffmpeg\\bin\\ffmpeg.exe'),
+				/Failed to list audio devices: Command failed/
+			);
 		});
 	});
 });

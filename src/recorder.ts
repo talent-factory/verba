@@ -6,7 +6,7 @@ import * as fs from 'fs';
 /**
  * Records microphone audio to a WAV file using ffmpeg as a child process.
  *
- * Platform: macOS only (uses avfoundation input device).
+ * Platform: macOS (avfoundation), Linux (PulseAudio), Windows (DirectShow).
  * External dependency: Requires ffmpeg to be installed.
  * Lifecycle: start() -> stop() returns file path, or dispose() for cleanup.
  * Graceful stop sends 'q' to stdin so ffmpeg finalizes WAV headers correctly.
@@ -37,21 +37,19 @@ export class FfmpegRecorder {
 			throw new Error('Recording already in progress');
 		}
 
-		if (process.platform !== 'darwin') {
-			throw new Error('Microphone recording is currently only supported on macOS.');
-		}
-
 		const ffmpegPath = this.findFfmpeg();
 		if (!ffmpegPath) {
-			throw new Error('ffmpeg not found. Install it via: brew install ffmpeg');
+			throw new Error(`ffmpeg not found. ${this.getFfmpegInstallHint()}`);
 		}
+
+		const { inputFormat, inputDevice } = this.getPlatformAudioConfig(ffmpegPath);
 
 		const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
 		this._outputPath = path.join(os.tmpdir(), `verba-recording-${timestamp}.wav`);
 
 		this.process = spawn(ffmpegPath, [
-			'-f', 'avfoundation',
-			'-i', ':default',
+			'-f', inputFormat,
+			'-i', inputDevice,
 			'-ar', '16000',
 			'-ac', '1',
 			'-acodec', 'pcm_s16le',
@@ -226,18 +224,97 @@ export class FfmpegRecorder {
 		}
 	}
 
+	private getPlatformAudioConfig(ffmpegPath: string): { inputFormat: string; inputDevice: string } {
+		switch (process.platform) {
+			case 'darwin':
+				return { inputFormat: 'avfoundation', inputDevice: ':default' };
+			case 'linux':
+				return { inputFormat: 'pulse', inputDevice: 'default' };
+			case 'win32':
+				return { inputFormat: 'dshow', inputDevice: this.detectWindowsAudioDevice(ffmpegPath) };
+			default:
+				throw new Error(
+					`Unsupported platform: ${process.platform}. Verba supports macOS, Linux, and Windows.`
+				);
+		}
+	}
+
+	private detectWindowsAudioDevice(ffmpegPath: string): string {
+		let stderr = '';
+		try {
+			execSync(`"${ffmpegPath}" -list_devices true -f dshow -i dummy`, {
+				encoding: 'utf-8',
+				timeout: 10000,
+			});
+		} catch (err: unknown) {
+			if (err && typeof err === 'object' && 'stderr' in err) {
+				stderr = String((err as { stderr: unknown }).stderr);
+			}
+			if (!stderr) {
+				const detail = err instanceof Error ? err.message : String(err);
+				throw new Error(
+					`Failed to list audio devices: ${detail}`
+				);
+			}
+		}
+
+		const lines = stderr.split('\n');
+		let inAudioSection = false;
+
+		for (const line of lines) {
+			if (line.includes('DirectShow audio devices')) {
+				inAudioSection = true;
+				continue;
+			}
+			if (inAudioSection) {
+				const match = line.match(/"([^"]+)"/);
+				if (match) {
+					return `audio=${match[1]}`;
+				}
+			}
+		}
+
+		throw new Error(
+			'No audio input device found. Check that a microphone is connected and recognized by Windows.'
+		);
+	}
+
 	private cleanup(): void {
 		this._isRecording = false;
 		this.process = null;
 	}
 
-	// Check common Homebrew paths first (avoids execSync overhead and PATH issues
-	// in VS Code's sandboxed environment), then fall back to which(1).
+	private getFfmpegCandidatePaths(): string[] {
+		switch (process.platform) {
+			case 'darwin':
+				return ['/opt/homebrew/bin/ffmpeg', '/usr/local/bin/ffmpeg'];
+			case 'linux':
+				return ['/usr/bin/ffmpeg', '/usr/local/bin/ffmpeg'];
+			case 'win32':
+				return [];
+			default:
+				return [];
+		}
+	}
+
+	private getFfmpegInstallHint(): string {
+		switch (process.platform) {
+			case 'darwin':
+				return 'Install it via: brew install ffmpeg';
+			case 'linux':
+				return 'Install it via: sudo apt install ffmpeg (Debian/Ubuntu) or sudo dnf install ffmpeg (Fedora)';
+			case 'win32':
+				return 'Download from https://ffmpeg.org/download.html and add to PATH';
+			default:
+				return 'Install ffmpeg and ensure it is available in PATH';
+		}
+	}
+
+	// Check common platform-specific paths first (avoids execSync overhead and
+	// PATH issues in VS Code's sandboxed environment), then fall back to
+	// which(1) (Unix) or where (Windows).
 	private findFfmpeg(): string | null {
-		const candidates = [
-			'/opt/homebrew/bin/ffmpeg',
-			'/usr/local/bin/ffmpeg',
-		];
+		const candidates = this.getFfmpegCandidatePaths();
 
 		for (const candidate of candidates) {
 			if (fs.existsSync(candidate)) {
@@ -245,18 +322,21 @@ export class FfmpegRecorder {
 			}
 		}
 
+		const lookupCommand = process.platform === 'win32' ? 'where ffmpeg' : 'which ffmpeg';
+
 		try {
-			const result = execSync('which ffmpeg', {
+			const result = execSync(lookupCommand, {
 				encoding: 'utf-8',
 				timeout: 5000,
 			}).trim();
 			if (result) {
-				return result;
+				// 'where' on Windows may return multiple lines; take the first match
+				return result.split(/\r?\n/)[0];
 			}
 		} catch (err: unknown) {
-			// which(1) exits non-zero when ffmpeg is not in PATH
+			// which/where exits non-zero when ffmpeg is not in PATH
 			const detail = err instanceof Error ? err.message : String(err);
-			console.warn(`[Verba] "which ffmpeg" lookup failed: ${detail}`);
+			console.warn(`[Verba] "${lookupCommand}" lookup failed: ${detail}`);
 		}
 
 		return null;

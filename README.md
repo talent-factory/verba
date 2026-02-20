@@ -13,14 +13,45 @@ Verba nimmt Sprache ueber das Mikrofon auf, transkribiert sie mit OpenAI Whisper
 
 ## Voraussetzungen
 
-- [ffmpeg](https://formulae.brew.sh/formula/ffmpeg) muss installiert sein (Audioaufnahme)
+- [ffmpeg](https://ffmpeg.org/) muss installiert sein (Audioaufnahme)
 - OpenAI API Key (Whisper-Transkription)
 - Anthropic API Key (Claude Post-Processing)
 
+### ffmpeg installieren
+
+**macOS:**
 ```bash
-# macOS
 brew install ffmpeg
 ```
+
+**Linux (Debian/Ubuntu):**
+```bash
+sudo apt install ffmpeg
+```
+
+**Linux (Fedora):**
+```bash
+sudo dnf install ffmpeg
+```
+
+**Windows:**
+
+ffmpeg von [ffmpeg.org/download.html](https://ffmpeg.org/download.html) herunterladen und zum PATH hinzufuegen. Oder via [Chocolatey](https://chocolatey.org/):
+```powershell
+choco install ffmpeg
+```
+
+### Plattform-spezifische Hinweise
+
+| Plattform | Audio-Backend | Mikrofon-Auswahl |
+|-----------|--------------|-----------------|
+| macOS | AVFoundation | Standard-Mikrofon |
+| Linux | PulseAudio | Standard-Mikrofon |
+| Windows | DirectShow | Automatisch erkannt |
+
+**Linux:** PulseAudio muss laufen (Standard auf Ubuntu, Fedora und den meisten Desktop-Distributionen).
+
+**Windows:** Das erste erkannte Audio-Eingabegeraet wird automatisch verwendet.
 
 ## Installation
 
@@ -101,7 +132,7 @@ Mikrofon --> ffmpeg (WAV) --> Whisper API --> Claude API --> Editor/Terminal
 ```bash
 npm run compile     # TypeScript kompilieren
 npm run watch       # Watch-Modus
-npm run test:unit   # Unit Tests (66 Tests)
+npm run test:unit   # Unit Tests (75 Tests)
 npm run test        # Alle Tests (Compile + Unit + Integration)
 ```
 

@@ -132,7 +132,7 @@ Mikrofon --> ffmpeg (WAV) --> Whisper API --> Claude API --> Editor/Terminal
 ```bash
 npm run compile     # TypeScript kompilieren
 npm run watch       # Watch-Modus
-npm run test:unit   # Unit Tests (66 Tests)
+npm run test:unit   # Unit Tests (75 Tests)
 npm run test        # Alle Tests (Compile + Unit + Integration)
 ```
 

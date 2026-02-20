@@ -42,7 +42,7 @@ export class FfmpegRecorder {
 			throw new Error(`ffmpeg not found. ${this.getFfmpegInstallHint()}`);
 		}
 
-		const { inputFormat, inputDevice } = this.getPlatformAudioConfig();
+		const { inputFormat, inputDevice } = this.getPlatformAudioConfig(ffmpegPath);
 
 		const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
 		this._outputPath = path.join(os.tmpdir(), `verba-recording-${timestamp}.wav`);
@@ -224,14 +224,14 @@ export class FfmpegRecorder {
 		}
 	}
 
-	private getPlatformAudioConfig(): { inputFormat: string; inputDevice: string } {
+	private getPlatformAudioConfig(ffmpegPath: string): { inputFormat: string; inputDevice: string } {
 		switch (process.platform) {
 			case 'darwin':
 				return { inputFormat: 'avfoundation', inputDevice: ':default' };
 			case 'linux':
 				return { inputFormat: 'pulse', inputDevice: 'default' };
 			case 'win32':
-				return { inputFormat: 'dshow', inputDevice: this.detectWindowsAudioDevice() };
+				return { inputFormat: 'dshow', inputDevice: this.detectWindowsAudioDevice(ffmpegPath) };
 			default:
 				throw new Error(
 					`Unsupported platform: ${process.platform}. Verba supports macOS, Linux, and Windows.`
@@ -239,16 +239,22 @@ export class FfmpegRecorder {
 		}
 	}
 
-	private detectWindowsAudioDevice(): string {
+	private detectWindowsAudioDevice(ffmpegPath: string): string {
 		let stderr = '';
 		try {
-			execSync('ffmpeg -list_devices true -f dshow -i dummy', {
+			execSync(`"${ffmpegPath}" -list_devices true -f dshow -i dummy`, {
 				encoding: 'utf-8',
 				timeout: 10000,
 			});
 		} catch (err: unknown) {
 			if (err && typeof err === 'object' && 'stderr' in err) {
 				stderr = String((err as { stderr: unknown }).stderr);
+			}
+			if (!stderr) {
+				const detail = err instanceof Error ? err.message : String(err);
+				throw new Error(
+					`Failed to list audio devices: ${detail}`
+				);
 			}
 		}
 

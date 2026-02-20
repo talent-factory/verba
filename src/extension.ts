@@ -132,9 +132,12 @@ export function activate(context: vscode.ExtensionContext) {
 						'Install Instructions'
 					);
 					if (action === 'Install Instructions') {
-						vscode.env.openExternal(
-							vscode.Uri.parse('https://formulae.brew.sh/formula/ffmpeg')
-						);
+						const url = process.platform === 'win32'
+							? 'https://ffmpeg.org/download.html'
+							: process.platform === 'linux'
+								? 'https://ffmpeg.org/download.html#build-linux'
+								: 'https://formulae.brew.sh/formula/ffmpeg';
+						vscode.env.openExternal(vscode.Uri.parse(url));
 					}
 				} else {
 					vscode.window.showErrorMessage(`Verba: ${message}`);

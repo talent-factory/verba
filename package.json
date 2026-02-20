@@ -1,0 +1,67 @@
+{
+  "name": "verba",
+  "displayName": "Verba",
+  "description": "The Developer's Dictation Extension – Voice dictation with AI-powered post-processing for VS Code",
+  "version": "0.0.1",
+  "publisher": "talent-factory",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/talent-factory/verba"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "dictation.start",
+        "title": "Toggle Dictation",
+        "category": "Verba"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "dictation.start",
+        "key": "ctrl+shift+d",
+        "mac": "cmd+shift+d"
+      }
+    ],
+    "configuration": {
+      "title": "Verba",
+      "properties": {
+        "verba.terminal.executeCommand": {
+          "type": "boolean",
+          "default": false,
+          "description": "If true, sends Enter after inserting dictated text into the terminal (executes the text as a command)."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "test:unit": "mocha",
+    "test:integration": "node out/test/runIntegrationTests.js",
+    "test": "npm run compile && npm run test:unit && npm run test:integration"
+  },
+  "devDependencies": {
+    "@types/mocha": "^10.0.10",
+    "@types/node": "^20.11.0",
+    "@types/sinon": "^21.0.0",
+    "@types/vscode": "^1.85.0",
+    "@vscode/test-electron": "^2.5.2",
+    "mocha": "^11.7.5",
+    "sinon": "^21.0.1",
+    "typescript": "^5.3.0"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.78.0",
+    "openai": "^6.22.0"
+  }
+}

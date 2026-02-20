@@ -5,6 +5,7 @@ import { StatusBarManager } from './statusBarManager';
 import { DictationPipeline } from './pipeline';
 import { TranscriptionService } from './transcriptionService';
 import { CleanupService } from './cleanupService';
+import { insertText } from './insertText';
 
 class VerbaTranscriptionService extends TranscriptionService {
 	protected async promptForApiKey(): Promise<string | undefined> {
@@ -25,21 +26,6 @@ class VerbaCleanupService extends CleanupService {
 			password: true,
 			ignoreFocusOut: true,
 		});
-	}
-}
-
-async function insertTextAtCursor(text: string): Promise<void> {
-	const editor = vscode.window.activeTextEditor;
-	if (!editor) {
-		throw new Error('No active text editor. Open a file before dictating.');
-	}
-	const success = await editor.edit((editBuilder) => {
-		editBuilder.insert(editor.selection.active, text);
-	});
-	if (!success) {
-		throw new Error(
-			'Failed to insert transcription — the editor may have been closed or the document changed.'
-		);
 	}
 }
 
@@ -77,7 +63,13 @@ export function activate(context: vscode.ExtensionContext) {
 					statusBar.setTranscribing();
 
 					const transcript = await pipeline.run(filePath);
-					await insertTextAtCursor(transcript);
+					const executeCommand = vscode.workspace.getConfiguration('verba.terminal').get<boolean>('executeCommand', false);
+					await insertText(
+						transcript,
+						vscode.window.activeTextEditor,
+						vscode.window.activeTerminal,
+						executeCommand,
+					);
 
 					statusBar.setIdle();
 					vscode.window.setStatusBarMessage(

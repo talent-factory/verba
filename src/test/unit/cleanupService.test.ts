@@ -202,7 +202,8 @@ suite('CleanupService', () => {
 			await service.process('test input', context);
 
 			const callArgs = fakeClient.messages.create.firstCall.args[0];
-			assert.strictEqual(callArgs.system, 'Convert to a commit message.');
+			assert.ok(callArgs.system.includes('Convert to a commit message.'), 'should contain template prompt');
+			assert.ok(callArgs.system.includes('raw speech transcript'), 'should contain framing context');
 		});
 
 		test('uses default system prompt when no context is provided', async () => {

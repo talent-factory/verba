@@ -3,6 +3,10 @@ import { ProcessingStage, PipelineContext } from './pipeline';
 
 const API_KEY_STORAGE_KEY = 'anthropic-api-key';
 
+const TEMPLATE_FRAMING = `You will receive a raw speech transcript as the user message. Process it according to the following instructions and return ONLY the processed result — no commentary, no explanation, no preamble.
+
+`;
+
 const CLEANUP_SYSTEM_PROMPT = `Du erhältst ein rohes Sprach-Transkript. Bereinige es:
 - Entferne Füllwörter (ähm, äh, halt, eigentlich, sozusagen, quasi, irgendwie, etc.)
 - Glätte abgebrochene oder wiederholte Satzanfänge
@@ -32,7 +36,9 @@ export class CleanupService implements ProcessingStage {
 	}
 
 	async process(input: string, context?: PipelineContext): Promise<string> {
-		const systemPrompt = context?.templatePrompt ?? CLEANUP_SYSTEM_PROMPT;
+		const systemPrompt = context?.templatePrompt
+			? TEMPLATE_FRAMING + context.templatePrompt
+			: CLEANUP_SYSTEM_PROMPT;
 		const apiKey = await this.getApiKey();
 		const client = this.getClient(apiKey);
 

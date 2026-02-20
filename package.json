@@ -38,6 +38,49 @@
           "type": "boolean",
           "default": false,
           "description": "If true, sends Enter after inserting dictated text into the terminal (executes the text as a command)."
+        },
+        "verba.templates": {
+          "type": "array",
+          "description": "Dictation templates that control how the transcribed text is post-processed by Claude.",
+          "items": {
+            "type": "object",
+            "required": [
+              "name",
+              "prompt"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "Display name shown in the Quick-Pick menu."
+              },
+              "prompt": {
+                "type": "string",
+                "description": "System prompt sent to Claude for post-processing the transcript."
+              }
+            }
+          },
+          "default": [
+            {
+              "name": "Freitext",
+              "prompt": "Clean up the transcript: remove filler words (um, uh, like, you know, halt, eigentlich, sozusagen, quasi), smooth broken or repeated sentence starts, fix obvious transcription errors. Keep the original language and meaning exactly. Return only the cleaned text without explanation."
+            },
+            {
+              "name": "Commit Message",
+              "prompt": "Convert this transcript into a Git commit message following Conventional Commits format. First line: type(scope): short description. Optional body after blank line for details. Keep the original language. Return only the commit message without explanation."
+            },
+            {
+              "name": "JavaDoc",
+              "prompt": "Convert this transcript into a JavaDoc comment block (/** ... */). Structure with @param, @return, @throws tags as appropriate based on the described function. Keep the original language. Return only the JavaDoc block without explanation."
+            },
+            {
+              "name": "Markdown",
+              "prompt": "Convert this transcript into well-structured Markdown text. Use headings, bullet lists, numbered lists, and emphasis as appropriate. Keep the original language. Return only the Markdown without explanation."
+            },
+            {
+              "name": "E-Mail",
+              "prompt": "Convert this transcript into a professional email with appropriate greeting and closing. Maintain the original language and intended tone (formal or informal). Return only the email text without explanation."
+            }
+          ]
         }
       }
     }

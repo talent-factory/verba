@@ -2,17 +2,29 @@
   "name": "verba",
   "displayName": "Verba",
   "description": "The Developer's Dictation Extension – Voice dictation with AI-powered post-processing for VS Code",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "publisher": "talent-factory",
   "repository": {
     "type": "git",
     "url": "https://github.com/talent-factory/verba"
   },
+  "license": "MIT",
+  "icon": "images/icon.png",
+  "galleryBanner": {
+    "color": "#1e1e1e",
+    "theme": "dark"
+  },
+  "keywords": ["dictation", "voice", "whisper", "speech-to-text", "ai"],
+  "homepage": "https://github.com/talent-factory/verba",
+  "bugs": {
+    "url": "https://github.com/talent-factory/verba/issues"
+  },
   "engines": {
     "vscode": "^1.85.0"
   },
   "categories": [
-    "Other"
+    "Other",
+    "Machine Learning"
   ],
   "activationEvents": [],
   "main": "./out/extension.js",

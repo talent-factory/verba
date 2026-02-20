@@ -8,16 +8,24 @@ suite('insertText', () => {
 		sinon.restore();
 	});
 
-	test('inserts text into active editor when available', async () => {
-		const editStub = sinon.stub().resolves(true);
+	test('inserts text into active editor at cursor position', async () => {
+		const insertStub = sinon.stub();
+		const editStub = sinon.stub().callsFake((cb: Function) => {
+			cb({ insert: insertStub });
+			return Promise.resolve(true);
+		});
+		const cursorPosition = { line: 5, character: 10 };
 		const fakeEditor = {
-			selection: { active: { line: 0, character: 0 } },
+			selection: { active: cursorPosition },
 			edit: editStub,
 		};
 
 		await insertText('hello world', fakeEditor as any, undefined, false);
 
 		assert.ok(editStub.calledOnce);
+		assert.ok(insertStub.calledOnce);
+		assert.strictEqual(insertStub.firstCall.args[0], cursorPosition);
+		assert.strictEqual(insertStub.firstCall.args[1], 'hello world');
 	});
 
 	test('sends text to active terminal when no editor', async () => {
@@ -56,6 +64,19 @@ suite('insertText', () => {
 		await assert.rejects(
 			() => insertText('hello', fakeEditor as any, undefined, false),
 			/Failed to insert transcription/
+		);
+	});
+
+	test('throws actionable message when editor.edit rejects', async () => {
+		const editStub = sinon.stub().rejects(new Error('Editor disposed'));
+		const fakeEditor = {
+			selection: { active: { line: 0, character: 0 } },
+			edit: editStub,
+		};
+
+		await assert.rejects(
+			() => insertText('hello', fakeEditor as any, undefined, false),
+			/Failed to insert transcription.*Editor disposed/
 		);
 	});
 

@@ -14,9 +14,17 @@ export async function insertText(
 	executeCommand: boolean,
 ): Promise<void> {
 	if (editor) {
-		const success = await editor.edit((editBuilder) => {
-			editBuilder.insert(editor.selection.active, text);
-		});
+		let success: boolean;
+		try {
+			success = await editor.edit((editBuilder) => {
+				editBuilder.insert(editor.selection.active, text);
+			});
+		} catch (err: unknown) {
+			const detail = err instanceof Error ? err.message : String(err);
+			throw new Error(
+				`Failed to insert transcription — the editor may have been closed or the document changed. (${detail})`
+			);
+		}
 		if (!success) {
 			throw new Error(
 				'Failed to insert transcription — the editor may have been closed or the document changed.'
@@ -26,6 +34,7 @@ export async function insertText(
 	}
 
 	if (terminal) {
+		console.log(`[Verba] Sending text to terminal (executeCommand=${executeCommand}, length=${text.length})`);
 		terminal.sendText(text, executeCommand);
 		return;
 	}

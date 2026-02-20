@@ -78,14 +78,47 @@ suite('FfmpegRecorder', () => {
 			);
 		});
 
-		test('should throw on non-macOS platform', async () => {
+		test('should throw on unsupported platform', async () => {
 			const originalDescriptor = Object.getOwnPropertyDescriptor(process, 'platform');
-			Object.defineProperty(process, 'platform', { value: 'linux', configurable: true });
+			Object.defineProperty(process, 'platform', { value: 'freebsd', configurable: true });
 			try {
 				await assert.rejects(
 					() => recorder.start(),
-					/only supported on macOS/
+					/Unsupported platform: freebsd/
 				);
+			} finally {
+				if (originalDescriptor) {
+					Object.defineProperty(process, 'platform', originalDescriptor);
+				}
+			}
+		});
+
+		test('should use avfoundation input on macOS', async () => {
+			await startRecording();
+
+			const spawnStub = child_process.spawn as sinon.SinonStub;
+			const args = spawnStub.firstCall.args[1] as string[];
+			assert.ok(args.includes('avfoundation'), 'Expected spawn args to include avfoundation');
+			assert.ok(args.includes(':default'), 'Expected spawn args to include :default');
+		});
+
+		test('should use pulse input on Linux', async () => {
+			const originalDescriptor = Object.getOwnPropertyDescriptor(process, 'platform');
+			Object.defineProperty(process, 'platform', { value: 'linux', configurable: true });
+
+			(fs.existsSync as sinon.SinonStub).callsFake(
+				(p: fs.PathLike) => p === '/usr/bin/ffmpeg'
+			);
+
+			try {
+				const startPromise = recorder.start();
+				await clock.tickAsync(500);
+				await startPromise;
+
+				const spawnStub = child_process.spawn as sinon.SinonStub;
+				const args = spawnStub.firstCall.args[1] as string[];
+				assert.ok(args.includes('pulse'), 'Expected spawn args to include pulse');
+				assert.ok(args.includes('default'), 'Expected spawn args to include default');
 			} finally {
 				if (originalDescriptor) {
 					Object.defineProperty(process, 'platform', originalDescriptor);

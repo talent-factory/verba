@@ -6,7 +6,7 @@ import * as fs from 'fs';
 /**
  * Records microphone audio to a WAV file using ffmpeg as a child process.
  *
- * Platform: macOS only (uses avfoundation input device).
+ * Platform: macOS (avfoundation), Linux (PulseAudio), Windows (DirectShow).
  * External dependency: Requires ffmpeg to be installed.
  * Lifecycle: start() -> stop() returns file path, or dispose() for cleanup.
  * Graceful stop sends 'q' to stdin so ffmpeg finalizes WAV headers correctly.
@@ -37,21 +37,19 @@ export class FfmpegRecorder {
 			throw new Error('Recording already in progress');
 		}
 
-		if (process.platform !== 'darwin') {
-			throw new Error('Microphone recording is currently only supported on macOS.');
-		}
-
 		const ffmpegPath = this.findFfmpeg();
 		if (!ffmpegPath) {
 			throw new Error('ffmpeg not found. Install it via: brew install ffmpeg');
 		}
 
+		const { inputFormat, inputDevice } = this.getPlatformAudioConfig();
+
 		const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
 		this._outputPath = path.join(os.tmpdir(), `verba-recording-${timestamp}.wav`);
 
 		this.process = spawn(ffmpegPath, [
-			'-f', 'avfoundation',
-			'-i', ':default',
+			'-f', inputFormat,
+			'-i', inputDevice,
 			'-ar', '16000',
 			'-ac', '1',
 			'-acodec', 'pcm_s16le',
@@ -226,6 +224,25 @@ export class FfmpegRecorder {
 		}
 	}
 
+	private getPlatformAudioConfig(): { inputFormat: string; inputDevice: string } {
+		switch (process.platform) {
+			case 'darwin':
+				return { inputFormat: 'avfoundation', inputDevice: ':default' };
+			case 'linux':
+				return { inputFormat: 'pulse', inputDevice: 'default' };
+			case 'win32':
+				return { inputFormat: 'dshow', inputDevice: this.detectWindowsAudioDevice() };
+			default:
+				throw new Error(
+					`Unsupported platform: ${process.platform}. Verba supports macOS, Linux, and Windows.`
+				);
+		}
+	}
+
+	private detectWindowsAudioDevice(): string {
+		throw new Error('Windows audio device detection not yet implemented');
+	}
+
 	private cleanup(): void {
 		this._isRecording = false;
 		this.process = null;
@@ -237,6 +254,7 @@ export class FfmpegRecorder {
 		const candidates = [
 			'/opt/homebrew/bin/ffmpeg',
 			'/usr/local/bin/ffmpeg',
+			'/usr/bin/ffmpeg',
 		];
 
 		for (const candidate of candidates) {

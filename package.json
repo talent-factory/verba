@@ -34,7 +34,8 @@
       {
         "command": "dictation.start",
         "key": "ctrl+shift+d",
-        "mac": "cmd+shift+d"
+        "mac": "cmd+shift+d",
+        "when": "!terminalFocus"
       }
     ],
     "configuration": {

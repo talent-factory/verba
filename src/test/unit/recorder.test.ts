@@ -126,6 +126,66 @@ suite('FfmpegRecorder', () => {
 			}
 		});
 
+		test('should find ffmpeg at /usr/bin/ffmpeg on Linux', async () => {
+			const originalDescriptor = Object.getOwnPropertyDescriptor(process, 'platform');
+			Object.defineProperty(process, 'platform', { value: 'linux', configurable: true });
+
+			(fs.existsSync as sinon.SinonStub).callsFake(
+				(p: fs.PathLike) => p === '/usr/bin/ffmpeg'
+			);
+
+			try {
+				const startPromise = recorder.start();
+				await clock.tickAsync(500);
+				await startPromise;
+
+				const spawnStub = child_process.spawn as sinon.SinonStub;
+				assert.strictEqual(
+					spawnStub.firstCall.args[0],
+					'/usr/bin/ffmpeg',
+					'Expected spawn to be called with /usr/bin/ffmpeg'
+				);
+			} finally {
+				if (originalDescriptor) {
+					Object.defineProperty(process, 'platform', originalDescriptor);
+				}
+			}
+		});
+
+		test('should use where command on Windows to find ffmpeg', async () => {
+			const originalDescriptor = Object.getOwnPropertyDescriptor(process, 'platform');
+			Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
+
+			(fs.existsSync as sinon.SinonStub).returns(false);
+			sinon.stub(child_process, 'execSync').callsFake((cmd: string) => {
+				if (cmd === 'where ffmpeg') {
+					return 'C:\\ffmpeg\\bin\\ffmpeg.exe\r\n';
+				}
+				throw new Error('not found');
+			});
+			sinon.stub(
+				FfmpegRecorder.prototype as unknown as { detectWindowsAudioDevice: () => string },
+				'detectWindowsAudioDevice'
+			).returns('audio=Microphone');
+
+			try {
+				const startPromise = recorder.start();
+				await clock.tickAsync(500);
+				await startPromise;
+
+				const spawnStub = child_process.spawn as sinon.SinonStub;
+				assert.strictEqual(
+					spawnStub.firstCall.args[0],
+					'C:\\ffmpeg\\bin\\ffmpeg.exe',
+					'Expected spawn to be called with the path returned by where'
+				);
+			} finally {
+				if (originalDescriptor) {
+					Object.defineProperty(process, 'platform', originalDescriptor);
+				}
+			}
+		});
+
 		test('should throw when ffmpeg is not found', async () => {
 			(fs.existsSync as sinon.SinonStub).returns(false);
 			sinon.stub(child_process, 'execSync').throws(new Error('not found'));

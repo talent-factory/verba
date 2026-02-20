@@ -39,7 +39,7 @@ export class FfmpegRecorder {
 
 		const ffmpegPath = this.findFfmpeg();
 		if (!ffmpegPath) {
-			throw new Error('ffmpeg not found. Install it via: brew install ffmpeg');
+			throw new Error(`ffmpeg not found. ${this.getFfmpegInstallHint()}`);
 		}
 
 		const { inputFormat, inputDevice } = this.getPlatformAudioConfig();
@@ -248,14 +248,37 @@ export class FfmpegRecorder {
 		this.process = null;
 	}
 
-	// Check common Homebrew paths first (avoids execSync overhead and PATH issues
-	// in VS Code's sandboxed environment), then fall back to which(1).
+	private getFfmpegCandidatePaths(): string[] {
+		switch (process.platform) {
+			case 'darwin':
+				return ['/opt/homebrew/bin/ffmpeg', '/usr/local/bin/ffmpeg'];
+			case 'linux':
+				return ['/usr/bin/ffmpeg', '/usr/local/bin/ffmpeg'];
+			case 'win32':
+				return [];
+			default:
+				return [];
+		}
+	}
+
+	private getFfmpegInstallHint(): string {
+		switch (process.platform) {
+			case 'darwin':
+				return 'Install it via: brew install ffmpeg';
+			case 'linux':
+				return 'Install it via: sudo apt install ffmpeg (Debian/Ubuntu) or sudo dnf install ffmpeg (Fedora)';
+			case 'win32':
+				return 'Download from https://ffmpeg.org/download.html and add to PATH';
+			default:
+				return 'Install ffmpeg and ensure it is available in PATH';
+		}
+	}
+
+	// Check common platform-specific paths first (avoids execSync overhead and
+	// PATH issues in VS Code's sandboxed environment), then fall back to
+	// which(1) (Unix) or where (Windows).
 	private findFfmpeg(): string | null {
-		const candidates = [
-			'/opt/homebrew/bin/ffmpeg',
-			'/usr/local/bin/ffmpeg',
-			'/usr/bin/ffmpeg',
-		];
+		const candidates = this.getFfmpegCandidatePaths();
 
 		for (const candidate of candidates) {
 			if (fs.existsSync(candidate)) {
@@ -263,18 +286,21 @@ export class FfmpegRecorder {
 			}
 		}
 
+		const lookupCommand = process.platform === 'win32' ? 'where ffmpeg' : 'which ffmpeg';
+
 		try {
-			const result = execSync('which ffmpeg', {
+			const result = execSync(lookupCommand, {
 				encoding: 'utf-8',
 				timeout: 5000,
 			}).trim();
 			if (result) {
-				return result;
+				// 'where' on Windows may return multiple lines; take the first match
+				return result.split(/\r?\n/)[0];
 			}
 		} catch (err: unknown) {
-			// which(1) exits non-zero when ffmpeg is not in PATH
+			// which/where exits non-zero when ffmpeg is not in PATH
 			const detail = err instanceof Error ? err.message : String(err);
-			console.warn(`[Verba] "which ffmpeg" lookup failed: ${detail}`);
+			console.warn(`[Verba] "${lookupCommand}" lookup failed: ${detail}`);
 		}
 
 		return null;

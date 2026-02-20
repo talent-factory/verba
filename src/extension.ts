@@ -57,96 +57,96 @@ export function activate(context: vscode.ExtensionContext) {
 		vscode.window.showErrorMessage(`Verba: ${error.message}`);
 	};
 
-	const disposable = vscode.commands.registerCommand(
-		'dictation.start',
-		async (args?: { source?: string }) => {
-			if (recorder.isRecording) {
-				let filePath: string | undefined;
-				try {
-					filePath = await recorder.stop();
-					statusBar.setTranscribing();
+	const handleDictation = async (forTerminal: boolean) => {
+		if (recorder.isRecording) {
+			let filePath: string | undefined;
+			try {
+				filePath = await recorder.stop();
+				statusBar.setTranscribing();
 
-					const pipelineContext: PipelineContext | undefined = selectedTemplate
-						? { templatePrompt: selectedTemplate.prompt }
-						: undefined;
-					const transcript = await pipeline.run(filePath, pipelineContext);
-					const executeCommand = vscode.workspace.getConfiguration('verba.terminal').get<boolean>('executeCommand', false);
-					await insertText(
-						transcript,
-						vscode.window.activeTextEditor,
-						vscode.window.activeTerminal,
-						executeCommand,
-						preferTerminal,
-					);
+				const pipelineContext: PipelineContext | undefined = selectedTemplate
+					? { templatePrompt: selectedTemplate.prompt }
+					: undefined;
+				const transcript = await pipeline.run(filePath, pipelineContext);
+				const executeCommand = vscode.workspace.getConfiguration('verba.terminal').get<boolean>('executeCommand', false);
+				await insertText(
+					transcript,
+					vscode.window.activeTextEditor,
+					vscode.window.activeTerminal,
+					executeCommand,
+					preferTerminal,
+				);
 
-					statusBar.setIdle();
-					vscode.window.setStatusBarMessage(
-						'$(check) Verba: transcription inserted', 5000
-					);
-				} catch (err: unknown) {
-					selectedTemplate = undefined;
-					statusBar.setIdle();
-					console.error('[Verba] Transcription failed:', err);
-					const message = err instanceof Error ? err.message : String(err);
-					vscode.window.showErrorMessage(`Verba: ${message}`);
-				} finally {
-					if (filePath) {
-						cleanupFile(filePath);
-					}
+				statusBar.setIdle();
+				vscode.window.setStatusBarMessage(
+					'$(check) Verba: transcription inserted', 5000
+				);
+			} catch (err: unknown) {
+				selectedTemplate = undefined;
+				statusBar.setIdle();
+				console.error('[Verba] Transcription failed:', err);
+				const message = err instanceof Error ? err.message : String(err);
+				vscode.window.showErrorMessage(`Verba: ${message}`);
+			} finally {
+				if (filePath) {
+					cleanupFile(filePath);
 				}
-			} else {
-				try {
-					preferTerminal = args?.source === 'terminal';
-					const rawTemplates = vscode.workspace
-						.getConfiguration('verba')
-						.get<Template[]>('templates', []);
-					const templates = rawTemplates.filter(
-						(t): t is Template =>
-							typeof t?.name === 'string' && t.name.trim() !== ''
-							&& typeof t?.prompt === 'string' && t.prompt.trim() !== '',
-					);
-					const lastUsedName = context.workspaceState.get<string>('verba.lastTemplateName');
+			}
+		} else {
+			try {
+				preferTerminal = forTerminal;
+				const rawTemplates = vscode.workspace
+					.getConfiguration('verba')
+					.get<Template[]>('templates', []);
+				const templates = rawTemplates.filter(
+					(t): t is Template =>
+						typeof t?.name === 'string' && t.name.trim() !== ''
+						&& typeof t?.prompt === 'string' && t.prompt.trim() !== '',
+				);
+				const lastUsedName = context.workspaceState.get<string>('verba.lastTemplateName');
 
-					const template = await selectTemplate(
-						templates,
-						lastUsedName,
-						(items, options) => vscode.window.showQuickPick(items, options) as any,
-					);
-					if (!template) {
-						return;
-					}
-					selectedTemplate = template;
-					await context.workspaceState.update('verba.lastTemplateName', template.name);
+				const template = await selectTemplate(
+					templates,
+					lastUsedName,
+					(items, options) => vscode.window.showQuickPick(items, options) as any,
+				);
+				if (!template) {
+					return;
+				}
+				selectedTemplate = template;
+				await context.workspaceState.update('verba.lastTemplateName', template.name);
 
-					await recorder.start();
-					statusBar.setRecording();
-					vscode.window.showInformationMessage(
-						`Verba: Recording started (${template.name})...`
-					);
-				} catch (err: unknown) {
-					statusBar.setIdle();
-					console.error('[Verba] Start recording failed:', err);
-					const message = err instanceof Error ? err.message : String(err);
+				await recorder.start();
+				statusBar.setRecording();
+				vscode.window.showInformationMessage(
+					`Verba: Recording started (${template.name})...`
+				);
+			} catch (err: unknown) {
+				statusBar.setIdle();
+				console.error('[Verba] Start recording failed:', err);
+				const message = err instanceof Error ? err.message : String(err);
 
-					if (message.includes('ffmpeg not found')) {
-						const action = await vscode.window.showErrorMessage(
-							`Verba: ${message}`,
-							'Install Instructions'
+				if (message.includes('ffmpeg not found')) {
+					const action = await vscode.window.showErrorMessage(
+						`Verba: ${message}`,
+						'Install Instructions'
+					);
+					if (action === 'Install Instructions') {
+						vscode.env.openExternal(
+							vscode.Uri.parse('https://formulae.brew.sh/formula/ffmpeg')
 						);
-						if (action === 'Install Instructions') {
-							vscode.env.openExternal(
-								vscode.Uri.parse('https://formulae.brew.sh/formula/ffmpeg')
-							);
-						}
-					} else {
-						vscode.window.showErrorMessage(`Verba: ${message}`);
 					}
+				} else {
+					vscode.window.showErrorMessage(`Verba: ${message}`);
 				}
 			}
 		}
-	);
+	};
 
-	context.subscriptions.push(disposable, { dispose: () => recorder.dispose() }, statusBar);
+	const editorCommand = vscode.commands.registerCommand('dictation.start', () => handleDictation(false));
+	const terminalCommand = vscode.commands.registerCommand('dictation.startFromTerminal', () => handleDictation(true));
+
+	context.subscriptions.push(editorCommand, terminalCommand, { dispose: () => recorder.dispose() }, statusBar);
 }
 
 export function deactivate() {}

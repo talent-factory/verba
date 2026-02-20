@@ -26,11 +26,10 @@
     ],
     "keybindings": [
       {
-        "command": "dictation.start",
+        "command": "dictation.startFromTerminal",
         "key": "ctrl+shift+d",
         "mac": "cmd+shift+d",
-        "when": "terminalFocus",
-        "args": { "source": "terminal" }
+        "when": "terminalFocus"
       },
       {
         "command": "dictation.start",

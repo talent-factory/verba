@@ -1,5 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { ProcessingStage } from './pipeline';
+import { ProcessingStage, PipelineContext } from './pipeline';
 
 const API_KEY_STORAGE_KEY = 'anthropic-api-key';
 
@@ -31,7 +31,8 @@ export class CleanupService implements ProcessingStage {
 		this.secretStorage = secretStorage;
 	}
 
-	async process(input: string): Promise<string> {
+	async process(input: string, context?: PipelineContext): Promise<string> {
+		const systemPrompt = context?.templatePrompt ?? CLEANUP_SYSTEM_PROMPT;
 		const apiKey = await this.getApiKey();
 		const client = this.getClient(apiKey);
 
@@ -40,7 +41,7 @@ export class CleanupService implements ProcessingStage {
 			response = await client.messages.create({
 				model: 'claude-haiku-4-5-20251001',
 				max_tokens: 4096,
-				system: CLEANUP_SYSTEM_PROMPT,
+				system: systemPrompt,
 				messages: [{ role: 'user', content: input }],
 			});
 		} catch (err: unknown) {

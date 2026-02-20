@@ -2,6 +2,7 @@ import * as assert from 'assert';
 import * as sinon from 'sinon';
 
 import { CleanupService } from '../../cleanupService';
+import { PipelineContext } from '../../pipeline';
 
 // Fake SecretStorage matching the SecretStorage interface in cleanupService.ts
 function createFakeSecretStorage(): {
@@ -188,5 +189,33 @@ suite('CleanupService', () => {
 				/Post-processing failed: ECONNREFUSED/
 			);
 		});
+
+		test('uses custom system prompt from context when provided', async () => {
+			secretStorage.get.resolves('sk-ant-test-key');
+			fakeClient.messages.create.resolves({
+				content: [{ type: 'text', text: 'commit: fix login bug' }],
+			});
+
+			const context: PipelineContext = {
+				templatePrompt: 'Convert to a commit message.',
+			};
+			await service.process('test input', context);
+
+			const callArgs = fakeClient.messages.create.firstCall.args[0];
+			assert.strictEqual(callArgs.system, 'Convert to a commit message.');
+		});
+
+		test('uses default system prompt when no context is provided', async () => {
+			secretStorage.get.resolves('sk-ant-test-key');
+			fakeClient.messages.create.resolves({
+				content: [{ type: 'text', text: 'cleaned' }],
+			});
+
+			await service.process('test input');
+
+			const callArgs = fakeClient.messages.create.firstCall.args[0];
+			assert.ok(callArgs.system.includes('Füllwörter'), 'should use default filler word prompt');
+		});
+
 	});
 });

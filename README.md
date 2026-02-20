@@ -2,22 +2,25 @@
 
 **The Developer's Dictation Extension** -- Voice dictation with AI-powered post-processing for VS Code.
 
-Verba nimmt Sprache ueber das Mikrofon auf, transkribiert sie mit OpenAI Whisper und verarbeitet das Transkript mit Claude nach -- alles direkt in VS Code. Fuellwoerter werden entfernt, Saetze geglaettet und das Ergebnis an der Cursor-Position eingefuegt.
+[![Visual Studio Marketplace](https://img.shields.io/visual-studio-marketplace/v/talent-factory.verba)](https://marketplace.visualstudio.com/items?itemName=talent-factory.verba)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+Verba records speech via your microphone, transcribes it with OpenAI Whisper, and post-processes the transcript with Claude -- all directly inside VS Code. Filler words are removed, sentences are smoothed, and the result is inserted at your cursor position.
 
 ## Features
 
-- **Diktat in Editor und Terminal** -- `Cmd+Shift+D` (Mac) / `Ctrl+Shift+D` (Windows/Linux) startet und stoppt die Aufnahme. Text wird kontextabhaengig im Editor oder Terminal eingefuegt.
-- **Prompt-Templates** -- Vor jeder Aufnahme wird ein Template gewaehlt: Freitext, Commit Message, JavaDoc, Markdown oder E-Mail. Das Template steuert, wie Claude das Transkript nachbearbeitet.
-- **Konfigurierbar** -- Templates sind in `settings.json` definiert und frei erweiterbar. Eigene Templates mit beliebigen Prompts hinzufuegen.
-- **Bring-Your-Own-Key** -- Eigene OpenAI- und Anthropic-API-Keys. Keine Abo-Kosten, volle Datenkontrolle. Keys werden sicher in VS Code's SecretStorage gespeichert.
+- **Dictation in Editor and Terminal** -- `Cmd+Shift+D` (Mac) / `Ctrl+Shift+D` (Windows/Linux) starts and stops recording. Text is inserted contextually in the editor or terminal.
+- **Prompt Templates** -- Choose a template before each recording: Free Text, Commit Message, JavaDoc, Markdown, or Email. The template controls how Claude post-processes the transcript.
+- **Fully Configurable** -- Templates are defined in `settings.json` and freely extensible. Add custom templates with any prompt.
+- **Bring Your Own Key** -- Use your own OpenAI and Anthropic API keys. No subscription costs, full data control. Keys are stored securely in VS Code's SecretStorage.
 
-## Voraussetzungen
+## Prerequisites
 
-- [ffmpeg](https://ffmpeg.org/) muss installiert sein (Audioaufnahme)
-- OpenAI API Key (Whisper-Transkription)
-- Anthropic API Key (Claude Post-Processing)
+- [ffmpeg](https://ffmpeg.org/) must be installed (audio recording)
+- OpenAI API Key (Whisper transcription)
+- Anthropic API Key (Claude post-processing)
 
-### ffmpeg installieren
+### Installing ffmpeg
 
 **macOS:**
 ```bash
@@ -36,61 +39,58 @@ sudo dnf install ffmpeg
 
 **Windows:**
 
-ffmpeg von [ffmpeg.org/download.html](https://ffmpeg.org/download.html) herunterladen und zum PATH hinzufuegen. Oder via [Chocolatey](https://chocolatey.org/):
+Download from [ffmpeg.org](https://ffmpeg.org/download.html) and add to PATH, or via [Chocolatey](https://chocolatey.org/):
 ```powershell
 choco install ffmpeg
 ```
 
-### Plattform-spezifische Hinweise
+### Platform-Specific Notes
 
-| Plattform | Audio-Backend | Mikrofon-Auswahl |
-|-----------|--------------|-----------------|
-| macOS | AVFoundation | Standard-Mikrofon |
-| Linux | PulseAudio | Standard-Mikrofon |
-| Windows | DirectShow | Automatisch erkannt |
+| Platform | Audio Backend | Microphone Selection |
+|----------|--------------|---------------------|
+| macOS | AVFoundation | Default microphone |
+| Linux | PulseAudio | Default microphone |
+| Windows | DirectShow | Auto-detected |
 
-**Linux:** PulseAudio muss laufen (Standard auf Ubuntu, Fedora und den meisten Desktop-Distributionen).
+**Linux:** PulseAudio must be running (default on Ubuntu, Fedora, and most desktop distributions).
 
-**Windows:** Das erste erkannte Audio-Eingabegeraet wird automatisch verwendet.
+**Windows:** The first detected audio input device is used automatically.
 
 ## Installation
 
-Die Extension ist noch nicht im Marketplace veroeffentlicht. Zum lokalen Testen:
+Install from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=talent-factory.verba):
 
-```bash
-git clone https://github.com/talent-factory/verba.git
-cd verba
-npm install
-npm run compile
+```
+ext install talent-factory.verba
 ```
 
-Dann in VS Code: `F5` startet den Extension Development Host.
+Or search for "Verba" in the VS Code Extensions sidebar.
 
-## Verwendung
+## Quick Start
 
-1. `Cmd+Shift+D` -- Quick-Pick mit Template-Auswahl erscheint
-2. Template waehlen (z.B. "Freitext") -- Aufnahme startet
-3. Sprechen
-4. `Cmd+Shift+D` -- Aufnahme stoppt, Text wird transkribiert und verarbeitet
-5. Ergebnis erscheint an der Cursor-Position
+1. `Cmd+Shift+D` -- Quick Pick with template selection appears
+2. Choose a template (e.g., "Free Text") -- recording starts
+3. Speak
+4. `Cmd+Shift+D` -- recording stops, text is transcribed and processed
+5. Result appears at your cursor position
 
-Beim ersten Aufruf werden die API Keys abgefragt und sicher gespeichert.
+On first use, you will be prompted for your API keys, which are stored securely.
 
-### Terminal-Modus
+### Terminal Mode
 
-Wenn der Fokus auf dem integrierten Terminal liegt, wird der diktierte Text dort eingefuegt. Mit der Einstellung `verba.terminal.executeCommand: true` wird der Text zusaetzlich mit Enter bestaetigt.
+When the integrated terminal is focused, dictated text is inserted there instead. With `verba.terminal.executeCommand: true`, the text is additionally submitted with Enter.
 
-## Konfiguration
+## Configuration
 
-### Templates anpassen
+### Custom Templates
 
-In `settings.json` koennen eigene Templates definiert werden:
+Define custom templates in `settings.json`:
 
 ```json
 {
   "verba.templates": [
     {
-      "name": "Freitext",
+      "name": "Free Text",
       "prompt": "Clean up the transcript: remove filler words, smooth broken sentence starts, fix transcription errors. Keep the original language and meaning. Return only the cleaned text."
     },
     {
@@ -101,41 +101,45 @@ In `settings.json` koennen eigene Templates definiert werden:
 }
 ```
 
-Jedes Template besteht aus `name` (Anzeige im Quick-Pick) und `prompt` (Anweisung an Claude fuer die Nachbearbeitung).
+Each template consists of `name` (displayed in Quick Pick) and `prompt` (instruction sent to Claude for post-processing).
 
-### Einstellungen
+### Settings
 
-| Setting | Typ | Default | Beschreibung |
-|---------|-----|---------|--------------|
-| `verba.templates` | Array | 5 Standard-Templates | Prompt-Templates fuer die Nachbearbeitung |
-| `verba.terminal.executeCommand` | Boolean | `false` | Text im Terminal mit Enter bestaetigen |
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `verba.templates` | Array | 5 built-in templates | Prompt templates for post-processing |
+| `verba.terminal.executeCommand` | Boolean | `false` | Submit text in terminal with Enter |
 
-## Architektur
+## Architecture
 
 ```
-Mikrofon --> ffmpeg (WAV) --> Whisper API --> Claude API --> Editor/Terminal
-                                              (Template)
+Microphone --> ffmpeg (WAV) --> Whisper API --> Claude API --> Editor/Terminal
+                                                (Template)
 ```
 
-| Modul | Aufgabe |
-|-------|---------|
-| `recorder.ts` | ffmpeg-Kindprozess fuer Audioaufnahme |
-| `transcriptionService.ts` | OpenAI Whisper API Integration |
-| `cleanupService.ts` | Anthropic Claude API Integration |
-| `pipeline.ts` | Verkettung der Verarbeitungsstufen |
-| `templatePicker.ts` | Quick-Pick-Menue fuer Template-Auswahl |
-| `insertText.ts` | Texteinfuegung in Editor oder Terminal |
-| `statusBarManager.ts` | Statusbar-Anzeige (Idle/Recording/Transcribing) |
+| Module | Purpose |
+|--------|---------|
+| `recorder.ts` | ffmpeg child process for audio recording |
+| `transcriptionService.ts` | OpenAI Whisper API integration |
+| `cleanupService.ts` | Anthropic Claude API integration |
+| `pipeline.ts` | Processing stage orchestration |
+| `templatePicker.ts` | Quick Pick menu for template selection |
+| `insertText.ts` | Text insertion into editor or terminal |
+| `statusBarManager.ts` | Status bar display (Idle/Recording/Transcribing) |
 
-## Entwicklung
+## Development
 
 ```bash
-npm run compile     # TypeScript kompilieren
-npm run watch       # Watch-Modus
-npm run test:unit   # Unit Tests (75 Tests)
-npm run test        # Alle Tests (Compile + Unit + Integration)
+npm run compile     # Compile TypeScript
+npm run watch       # Watch mode
+npm run test:unit   # Unit tests
+npm run test        # All tests (compile + unit + integration)
 ```
 
-## Lizenz
+## Contributing
 
-Proprietaer -- talent-factory
+Found a bug or have a feature request? [Open an issue](https://github.com/talent-factory/verba/issues).
+
+## License
+
+[MIT](LICENSE)

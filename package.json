@@ -29,7 +29,7 @@
     "vscode": "^1.85.0"
   },
   "categories": [
-    "Other",
+    "Snippets",
     "Machine Learning"
   ],
   "main": "./dist/extension.js",

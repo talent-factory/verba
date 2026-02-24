@@ -1,4 +1,6 @@
 import { spawnSync } from 'child_process';
+import * as fs from 'fs';
+import * as path from 'path';
 
 export interface SearchResult {
 	file: string;
@@ -34,7 +36,11 @@ export class GrepaiProvider {
 		this.workspaceRoot = workspaceRoot;
 	}
 
-	static isAvailable(): boolean {
+	static isAvailable(workspaceRoot: string): boolean {
+		// grepai must be installed AND initialized for this workspace (.grepai/ must exist)
+		if (!fs.existsSync(path.join(workspaceRoot, '.grepai'))) {
+			return false;
+		}
 		const cmd = process.platform === 'win32' ? 'where' : 'which';
 		const result = spawnSync(cmd, ['grepai'], {
 			encoding: 'utf-8',

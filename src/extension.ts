@@ -66,7 +66,7 @@ export function activate(context: vscode.ExtensionContext) {
 		}
 
 		const useGrepai = providerSetting === 'grepai'
-			|| (providerSetting === 'auto' && GrepaiProvider.isAvailable());
+			|| (providerSetting === 'auto' && GrepaiProvider.isAvailable(workspaceRoot));
 
 		if (useGrepai) {
 			console.log('[Verba] Using grepai for context search');

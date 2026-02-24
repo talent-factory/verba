@@ -227,9 +227,15 @@ export class FfmpegRecorder {
 	private getPlatformAudioConfig(ffmpegPath: string, preferredDevice?: string): { inputFormat: string; inputDevice: string } {
 		switch (process.platform) {
 			case 'darwin':
-				return { inputFormat: 'avfoundation', inputDevice: ':default' };
+				return {
+					inputFormat: 'avfoundation',
+					inputDevice: preferredDevice ? `:${preferredDevice}` : ':default',
+				};
 			case 'linux':
-				return { inputFormat: 'pulse', inputDevice: 'default' };
+				return {
+					inputFormat: 'pulse',
+					inputDevice: preferredDevice || 'default',
+				};
 			case 'win32': {
 				const device = preferredDevice
 					? `audio=${preferredDevice}`
@@ -267,7 +273,16 @@ export class FfmpegRecorder {
 		if (!ffmpegPath) {
 			return [];
 		}
-		return this.listAudioDevicesFromFfmpeg(ffmpegPath);
+		switch (process.platform) {
+			case 'darwin':
+				return this.listMacOSAudioDevices(ffmpegPath);
+			case 'linux':
+				return this.listLinuxAudioDevices();
+			case 'win32':
+				return this.listAudioDevicesFromFfmpeg(ffmpegPath);
+			default:
+				return [];
+		}
 	}
 
 	private listAudioDevicesFromFfmpeg(ffmpegPath: string): string[] {
@@ -326,6 +341,84 @@ export class FfmpegRecorder {
 
 		if (devices.length === 0) {
 			console.warn(`[Verba] ffmpeg found no audio devices in output (${stderr.length} bytes, ${lines.length} lines)`);
+		}
+
+		return devices;
+	}
+
+	private listMacOSAudioDevices(ffmpegPath: string): string[] {
+		const result = spawnSync(ffmpegPath, [
+			'-f', 'avfoundation', '-list_devices', 'true', '-i', '',
+		], {
+			encoding: 'utf-8',
+			timeout: 10000,
+		});
+
+		if (result.error) {
+			console.warn(`[Verba] ffmpeg list_devices failed: ${result.error.message}`);
+			return [];
+		}
+
+		const stderr = result.stderr || '';
+		const lines = stderr.split('\n');
+		const devices: string[] = [];
+		let inAudioSection = false;
+
+		for (const line of lines) {
+			if (line.includes('AVFoundation audio devices')) {
+				inAudioSection = true;
+				continue;
+			}
+			if (inAudioSection) {
+				const match = line.match(/\[\d+\]\s+(.+)/);
+				if (match) {
+					devices.push(match[1].trim());
+				} else if (line.includes('indev')) {
+					// Skip ffmpeg metadata lines like "[AVFoundation indev @ 0x...]"
+					continue;
+				} else {
+					break;
+				}
+			}
+		}
+
+		if (devices.length === 0) {
+			console.warn(`[Verba] ffmpeg found no audio devices in avfoundation output (${stderr.length} bytes, ${lines.length} lines)`);
+		}
+
+		return devices;
+	}
+
+	private listLinuxAudioDevices(): string[] {
+		const result = spawnSync('pactl', ['list', 'sources', 'short'], {
+			encoding: 'utf-8',
+			timeout: 10000,
+		});
+
+		if (result.error) {
+			console.warn(`[Verba] pactl failed: ${result.error.message}`);
+			return [];
+		}
+
+		if (result.status !== 0) {
+			const stderr = (result.stderr || '').trim();
+			console.warn(`[Verba] pactl exited with status ${result.status}${stderr ? ': ' + stderr : ''}`);
+			return [];
+		}
+
+		const stdout = (result.stdout || '').trim();
+		if (!stdout) {
+			console.warn('[Verba] pactl returned no audio sources');
+			return [];
+		}
+
+		// pactl list sources short: "ID\tNAME\tMODULE\tFORMAT\tSTATE"
+		const devices = stdout.split('\n')
+			.map(line => line.split('\t')[1])
+			.filter((name): name is string => !!name);
+
+		if (devices.length === 0) {
+			console.warn(`[Verba] pactl returned ${stdout.split('\n').length} lines but no parseable audio sources`);
 		}
 
 		return devices;

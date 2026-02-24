@@ -1,6 +1,9 @@
 import OpenAI from 'openai';
 
 const API_KEY_STORAGE_KEY = 'openai-api-key';
+// text-embedding-3-small supports 8192 tokens; chars/token ratio varies widely (1.5–4)
+// 8000 chars stays safe even at worst-case ratios
+const MAX_EMBEDDING_CHARS = 8000;
 
 interface SecretStorage {
 	get(key: string): Thenable<string | undefined>;
@@ -29,11 +32,13 @@ export class EmbeddingService {
 		const apiKey = await this.getApiKey();
 		const client = this.getClient(apiKey);
 
+		const truncated = texts.map(t => t.length > MAX_EMBEDDING_CHARS ? t.slice(0, MAX_EMBEDDING_CHARS) : t);
+
 		let response;
 		try {
 			response = await client.embeddings.create({
 				model: 'text-embedding-3-small',
-				input: texts,
+				input: truncated,
 			});
 		} catch (err: unknown) {
 			if (err instanceof Error && (err as any).status === 401) {

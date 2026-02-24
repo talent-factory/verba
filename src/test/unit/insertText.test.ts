@@ -80,6 +80,33 @@ suite('insertText', () => {
 		);
 	});
 
+	test('prefers terminal when preferTerminal is true and both are available', async () => {
+		const editStub = sinon.stub().resolves(true);
+		const fakeEditor = {
+			selection: { active: { line: 0, character: 0 } },
+			edit: editStub,
+		};
+		const sendTextStub = sinon.stub();
+		const fakeTerminal = { sendText: sendTextStub };
+
+		await insertText('hello', fakeEditor as any, fakeTerminal as any, false, true);
+
+		assert.ok(sendTextStub.calledOnce, 'terminal.sendText should be called');
+		assert.ok(editStub.notCalled, 'editor.edit should not be called');
+	});
+
+	test('falls back to editor when preferTerminal is true but no terminal', async () => {
+		const editStub = sinon.stub().resolves(true);
+		const fakeEditor = {
+			selection: { active: { line: 0, character: 0 } },
+			edit: editStub,
+		};
+
+		await insertText('hello', fakeEditor as any, undefined, false, true);
+
+		assert.ok(editStub.calledOnce, 'editor.edit should be called as fallback');
+	});
+
 	test('prefers editor over terminal when both are available', async () => {
 		const editStub = sinon.stub().resolves(true);
 		const fakeEditor = {

@@ -1,4 +1,16 @@
-.PHONY: help dev compile watch test test-unit
+# On Windows with Cygwin make, the default /bin/sh cannot resolve npm/npx
+# paths correctly due to Cygwin/Windows path conflicts. Route through cmd.exe.
+ifeq ($(OS),Windows_NT)
+  NPM := cmd.exe /c npm
+  NPXC := cmd.exe /c npx
+  CODE := cmd.exe /c code
+else
+  NPM := npm
+  NPXC := npx
+  CODE := code
+endif
+
+.PHONY: help dev compile watch test test-unit package install
 
 help: ## Show available targets
 	@echo "Usage: make <target>"
@@ -9,19 +21,29 @@ help: ## Show available targets
 	@echo "  watch       Compile TypeScript in watch mode"
 	@echo "  test        Run all tests (unit + integration)"
 	@echo "  test-unit   Run unit tests only"
+	@echo "  package     Package extension as .vsix"
+	@echo "  install     Package and install extension locally"
+	@echo ""
+	@echo "All targets are also available as npm scripts (cross-platform):"
+	@echo "  npm run dev / compile / watch / test / test:unit / package:vsix / install:local"
 
-dev: compile
-	code --extensionDevelopmentPath=$(CURDIR)
+dev:
+	$(NPM) run dev
 
 compile:
-	npm run compile
+	$(NPM) run compile
 
 watch:
-	npm run watch
+	$(NPM) run watch
 
-test: compile
-	npm run test:unit
-	npm run test:integration
+test:
+	$(NPM) run test
 
-test-unit: compile
-	npm run test:unit
+test-unit:
+	$(NPM) run test:unit
+
+package:
+	$(NPM) run package:vsix
+
+install:
+	$(NPM) run install:local

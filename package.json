@@ -2,61 +2,153 @@
   "name": "verba",
   "displayName": "Verba",
   "description": "The Developer's Dictation Extension – Voice dictation with AI-powered post-processing for VS Code",
-  "version": "0.0.1",
+  "version": "0.1.1",
   "publisher": "talent-factory",
   "repository": {
     "type": "git",
     "url": "https://github.com/talent-factory/verba"
   },
+  "license": "MIT",
+  "icon": "images/icon.png",
+  "galleryBanner": {
+    "color": "#1e1e1e",
+    "theme": "dark"
+  },
+  "keywords": [
+    "dictation",
+    "voice",
+    "whisper",
+    "speech-to-text",
+    "ai"
+  ],
+  "homepage": "https://github.com/talent-factory/verba",
+  "bugs": {
+    "url": "https://github.com/talent-factory/verba/issues"
+  },
   "engines": {
     "vscode": "^1.85.0"
   },
   "categories": [
-    "Other"
+    "Other",
+    "Machine Learning"
   ],
-  "activationEvents": [],
-  "main": "./out/extension.js",
+  "main": "./dist/extension.js",
   "contributes": {
     "commands": [
       {
         "command": "dictation.start",
         "title": "Toggle Dictation",
         "category": "Verba"
+      },
+      {
+        "command": "dictation.startFromTerminal",
+        "title": "Toggle Dictation (Terminal)",
+        "category": "Verba"
+      },
+      {
+        "command": "dictation.selectAudioDevice",
+        "title": "Select Audio Device",
+        "category": "Verba"
       }
     ],
     "keybindings": [
       {
+        "command": "dictation.startFromTerminal",
+        "key": "ctrl+shift+d",
+        "mac": "cmd+shift+d",
+        "when": "terminalFocus"
+      },
+      {
         "command": "dictation.start",
         "key": "ctrl+shift+d",
-        "mac": "cmd+shift+d"
+        "mac": "cmd+shift+d",
+        "when": "!terminalFocus"
       }
     ],
     "configuration": {
       "title": "Verba",
       "properties": {
+        "verba.audioDevice": {
+          "type": "string",
+          "default": "",
+          "description": "Name of the audio input device for recording (e.g. 'Mikrofon (USB MICROPHONE)'). Leave empty for auto-detection. On Windows, run 'ffmpeg -list_devices true -f dshow -i dummy' to see available devices."
+        },
         "verba.terminal.executeCommand": {
           "type": "boolean",
           "default": false,
           "description": "If true, sends Enter after inserting dictated text into the terminal (executes the text as a command)."
+        },
+        "verba.templates": {
+          "type": "array",
+          "description": "Dictation templates that control how the transcribed text is post-processed by Claude.",
+          "items": {
+            "type": "object",
+            "required": [
+              "name",
+              "prompt"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "Display name shown in the Quick-Pick menu."
+              },
+              "prompt": {
+                "type": "string",
+                "description": "System prompt sent to Claude for post-processing the transcript."
+              }
+            }
+          },
+          "default": [
+            {
+              "name": "Freitext",
+              "prompt": "Clean up the transcript: remove filler words (um, uh, like, you know, halt, eigentlich, sozusagen, quasi), smooth broken or repeated sentence starts, fix obvious transcription errors. Keep the original language and meaning exactly. Return only the cleaned text without explanation."
+            },
+            {
+              "name": "Commit Message",
+              "prompt": "Convert this transcript into a Git commit message following Conventional Commits format. First line: type(scope): short description. Optional body after blank line for details. Keep the original language. Return only the commit message without explanation."
+            },
+            {
+              "name": "JavaDoc",
+              "prompt": "Convert this transcript into a JavaDoc comment block (/** ... */). Structure with @param, @return, @throws tags as appropriate based on the described function. Keep the original language. Return only the JavaDoc block without explanation."
+            },
+            {
+              "name": "Markdown",
+              "prompt": "Convert this transcript into well-structured Markdown text. Use headings, bullet lists, numbered lists, and emphasis as appropriate. Keep the original language. Return only the Markdown without explanation."
+            },
+            {
+              "name": "E-Mail",
+              "prompt": "Convert this transcript into a professional email with appropriate greeting and closing. Maintain the original language and intended tone (formal or informal). Return only the email text without explanation."
+            }
+          ]
         }
       }
     }
   },
   "scripts": {
-    "vscode:prepublish": "npm run compile",
+    "vscode:prepublish": "npm run bundle",
     "compile": "tsc -p ./",
+    "bundle": "esbuild src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node --minify",
     "watch": "tsc -watch -p ./",
-    "test:unit": "mocha",
-    "test:integration": "node out/test/runIntegrationTests.js",
+    "dev": "npm run compile && code --extensionDevelopmentPath=.",
+    "package:vsix": "npx @vscode/vsce package --allow-missing-repository",
+    "install:local": "npm run package:vsix && node -e \"var p=require('./package.json');require('child_process').execSync('code --install-extension '+p.name+'-'+p.version+'.vsix',{stdio:'inherit'})\"",
+    "test:unit": "npm run compile && mocha",
+    "test:integration": "npm run compile && node out/test/runIntegrationTests.js",
     "test": "npm run compile && npm run test:unit && npm run test:integration"
   },
   "devDependencies": {
+    "@semantic-release/changelog": "^6.0.3",
+    "@semantic-release/git": "^10.0.1",
     "@types/mocha": "^10.0.10",
     "@types/node": "^20.11.0",
     "@types/sinon": "^21.0.0",
     "@types/vscode": "^1.85.0",
     "@vscode/test-electron": "^2.5.2",
+    "conventional-changelog-conventionalcommits": "^9.1.0",
+    "esbuild": "^0.27.3",
     "mocha": "^11.7.5",
+    "semantic-release": "^25.0.3",
+    "semantic-release-vsce": "^6.0.24",
     "sinon": "^21.0.1",
     "typescript": "^5.3.0"
   },

@@ -46,11 +46,22 @@ export class TranscriptionService implements ProcessingStage {
 			throw new Error(`Transcription failed: ${detail}`);
 		}
 
-		if (!transcription.text || transcription.text.trim() === '') {
+		const rawText = transcription.text || '';
+		console.log(`[Verba] Whisper raw response (${rawText.length} chars): ${rawText.substring(0, 200)}`);
+
+		if (!rawText || rawText.trim() === '') {
 			throw new Error('No speech detected in recording.');
 		}
 
-		return transcription.text;
+		// Whisper hallucinates dots/ellipsis when it receives audio without speech
+		if (/^[\s.…]+$/.test(rawText)) {
+			throw new Error(
+				'No speech detected in recording (only silence). '
+				+ 'Check that the correct microphone is selected — configure "verba.audioDevice" in Settings.'
+			);
+		}
+
+		return rawText;
 	}
 
 	private async getApiKey(): Promise<string> {

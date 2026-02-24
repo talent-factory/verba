@@ -25,66 +25,50 @@ Powered by OpenAI Whisper (Transkription) und Claude API (Post-Processing).
 
 ## Implementierungsphasen (Linear Issues)
 
-Alle Phasen sind Sub-Issues von TF-243 (Projektuebersicht, In Progress).
-
-### Phase 1: Extension Grundgeruest (TF-244) - Status: Todo
-
-- Extension-Grundgeruest mit `yo code` generieren (TypeScript)
-- Command `dictation.start` registrieren (Tastenkuerzel `Ctrl+Shift+D`)
-- Dummy-Text an Cursor-Position einfuegen (Proof of Concept)
-- Extension im Extension Development Host testen
-- **Akzeptanz:** `Ctrl+Shift+D` fuegt Testtext an Cursorposition ein, kompiliert fehlerfrei
-
-### Phase 2: Mikrofon-Aufnahme (TF-245) - Status: Backlog
-
-- Recherche: Node.js vs. WebView fuer Audioaufnahme in VS Code
-- Start/Stop-Aufnahme per Command implementieren
-- Audio als temporaere WAV/MP3-Datei speichern
-- Visuelles Feedback via Statusbar-Indikator
-- **Akzeptanz:** Aufnahme startet/stoppt via Tastenkuerzel, Audiodatei abspielbar, Statusbar zeigt Aufnahmestatus
-
-### Phase 3: Whisper API Transkription (TF-246) - Status: Backlog
-
-- OpenAI API Key konfigurierbar via `vscode.SecretStorage`
-- `openai` npm Package integrieren
-- Audiodatei an `whisper-1` Model senden
-- Transkript empfangen und in Editor einfuegen
-- Fehlerbehandlung (kein API Key, Netzwerkfehler)
-- **Akzeptanz:** Gesprochener Text erscheint an Cursor-Position, API Key sicher gespeichert
-
-### Phase 4: Claude Post-Processing (TF-247) - Status: Backlog
-
-- Anthropic API Key in SecretStorage integrieren
-- `@anthropic-ai/sdk` npm Package integrieren
-- Standard-Prompt: Fuellwoerter entfernen ("aehm", "aeh", "halt", "eigentlich"), Saetze glaetten
-- Pipeline: Transkript -> Claude -> bereinigter Text -> Editor
-- **Akzeptanz:** Fuellwoerter zuverlaessig entfernt, Sinn erhalten, Latenz < 5s gesamt
-
-### Phase 5: Konfigurierbare Prompt-Templates (TF-248) - Status: Backlog
-
-- Template-Struktur in `settings.json` (Name, Prompt, Tastenkuerzel)
-- Standard-Templates: Freitext, Commit Message, JavaDoc, Markdown, E-Mail
-- Quick-Pick Menue zum Template-Wechsel vor der Aufnahme
-- Templates vollstaendig vom User anpassbar und erweiterbar
-- **Akzeptanz:** Eigene Templates in settings.json, Quick-Pick zeigt alle Templates
+Alle Phasen sind Sub-Issues von TF-243 (Projektuebersicht). Alle Kernphasen sind abgeschlossen.
 
 ### Abgeschlossen
 
-- **TF-249: Marktanalyse** - Done. Konkurrenzanalyse (Wispr Flow, Superwhisper, Willow Voice, VoiceInk, etc.) mit Identifikation der Marktluecken.
+- **TF-244: Extension Grundgeruest** - Done. Command `dictation.start` mit Tastenkuerzel, Extension-Grundstruktur.
+- **TF-245: Mikrofon-Aufnahme** - Done. ffmpeg-Kindprozess fuer Audioaufnahme, Statusbar-Feedback, Cross-Platform (macOS/Linux/Windows).
+- **TF-246: Whisper API Transkription** - Done. OpenAI Whisper Integration, API Key via SecretStorage.
+- **TF-247: Claude Post-Processing** - Done. Anthropic Claude Integration, Fuellwoerter-Entfernung, Pipeline-Architektur.
+- **TF-248: Konfigurierbare Prompt-Templates** - Done. Quick-Pick-Menue, 5 Standard-Templates, frei erweiterbar via `settings.json`.
+- **TF-249: Marktanalyse** - Done. Konkurrenzanalyse (Wispr Flow, Superwhisper, Willow Voice, VoiceInk, etc.).
+- **TF-250: Terminal-Unterstuetzung** - Done. Diktat in Terminal einfuegen, `verba.terminal.executeCommand` Setting.
+- **Cross-Platform Audio-Aufnahme** - Done. macOS (AVFoundation), Linux (PulseAudio), Windows (DirectShow) mit konfigurierbarer Geraeteauswahl auf allen Plattformen (Quick Pick + `verba.audioDevice` Setting). Geraete-Listing via avfoundation (macOS), pactl (Linux), dshow (Windows). ffmpeg v7 und v8+ Format-Erkennung, PowerShell-Fallback auf Windows.
+
+## Git-Workflow
+
+- **Branching:** `main` ist der stabile Release-Branch, `develop` ist der Integrations-Branch
+- **PRs immer `feature/*` -> `develop`** — niemals direkt auf `main`
+- **Releases:** `develop` wird in `main` gemerged wenn ein Release ansteht
+- **Feature-Branches:** `feature/<issue-id>-<beschreibung>` (z.B. `feature/tf-250-terminal-dictation`)
 
 ## Konventionen
 
 - Extension-Name: `verba`
 - Command-Prefix: `dictation.`
-- Hauptcommand: `dictation.start` (`Ctrl+Shift+D`)
+- Hauptcommand: `dictation.start` (`Cmd+Shift+D` / `Ctrl+Shift+D`)
+- Terminal-Command: `dictation.startFromTerminal` (gleiche Tastenkuerzel, wenn Terminal fokussiert)
+- Audio-Device-Command: `dictation.selectAudioDevice` (Mikrofon-Auswahl via Quick Pick)
 - API Keys werden ausschliesslich ueber `vscode.SecretStorage` gespeichert (nie im Klartext)
 - TypeScript strict mode
 - VS Code Extension Best Practices befolgen
 
-## Abhaengigkeiten zwischen Phasen
+## Architektur
 
 ```
-Phase 1 (Grundgeruest) -> Phase 2 (Mikrofon) -> Phase 3 (Whisper) -> Phase 4 (Claude) -> Phase 5 (Templates)
+Mikrofon --> ffmpeg (WAV) --> Whisper API --> Claude API --> Editor/Terminal
+                                              (Template)
 ```
 
-Jede Phase baut auf der vorherigen auf. Phase 1 ist der naechste Schritt.
+| Modul | Aufgabe |
+|-------|---------|
+| `recorder.ts` | ffmpeg-Kindprozess fuer Audioaufnahme (macOS/Linux/Windows) |
+| `transcriptionService.ts` | OpenAI Whisper API Integration |
+| `cleanupService.ts` | Anthropic Claude API Integration |
+| `pipeline.ts` | Verkettung der Verarbeitungsstufen |
+| `templatePicker.ts` | Quick-Pick-Menue fuer Template-Auswahl |
+| `insertText.ts` | Texteinfuegung in Editor oder Terminal |
+| `statusBarManager.ts` | Statusbar-Anzeige (Idle/Recording/Transcribing) |

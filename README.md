@@ -58,13 +58,15 @@ choco install ffmpeg
 
 | Platform | Audio Backend | Microphone Selection |
 |----------|--------------|---------------------|
-| macOS | AVFoundation | Default microphone |
-| Linux | PulseAudio | Default microphone |
+| macOS | AVFoundation | Configurable via `verba.audioDevice` or Quick Pick |
+| Linux | PulseAudio | Configurable via `verba.audioDevice` or Quick Pick |
 | Windows | DirectShow | Configurable via `verba.audioDevice` or Quick Pick |
+
+On all platforms, you can select the microphone anytime with the command `Verba: Select Audio Device` or by setting `verba.audioDevice` in Settings. Without configuration, the system default microphone is used.
 
 **Linux:** PulseAudio must be running (default on Ubuntu, Fedora, and most desktop distributions).
 
-**Windows:** On first use, a Quick Pick dialog lets you select the microphone. You can change it anytime with the command `Verba: Select Audio Device` or by setting `verba.audioDevice` in Settings. Verba detects devices via ffmpeg (v7 and v8+ formats) with a PowerShell fallback.
+**Windows:** On first use, a Quick Pick dialog lets you select the microphone. Verba detects devices via ffmpeg (v7 and v8+ formats) with a PowerShell fallback.
 
 ## Installation
 
@@ -117,7 +119,7 @@ Each template consists of `name` (displayed in Quick Pick) and `prompt` (instruc
 
 | Setting | Type | Default | Description |
 |---------|------|---------|-------------|
-| `verba.audioDevice` | String | `""` | Audio input device name (Windows). Leave empty for auto-detection. |
+| `verba.audioDevice` | String | `""` | Audio input device name. Leave empty for system default. |
 | `verba.templates` | Array | 5 built-in templates | Prompt templates for post-processing |
 | `verba.terminal.executeCommand` | Boolean | `false` | Submit text in terminal with Enter |
 

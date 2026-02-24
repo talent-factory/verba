@@ -13,10 +13,14 @@ export class StatusBarManager {
 		this.item.show();
 	}
 
-	setIdle(): void {
-		this.item.text = '$(mic) Verba';
+	setIdle(templateName?: string): void {
+		this.item.text = templateName
+			? `$(mic) Verba: ${templateName}`
+			: '$(mic) Verba';
 		this.item.backgroundColor = undefined;
-		this.item.tooltip = 'Click to start dictation';
+		this.item.tooltip = templateName
+			? `Active template: ${templateName} — Click to start dictation`
+			: 'Click to start dictation';
 	}
 
 	setRecording(): void {

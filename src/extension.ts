@@ -47,6 +47,23 @@ export function activate(context: vscode.ExtensionContext) {
 	let selectedTemplate: Template | undefined;
 	let preferTerminal = false;
 
+	function loadTemplates(): Template[] {
+		const rawTemplates = vscode.workspace
+			.getConfiguration('verba')
+			.get<Template[]>('templates', []);
+		return rawTemplates.filter(
+			(t): t is Template =>
+				typeof t?.name === 'string' && t.name.trim() !== ''
+				&& typeof t?.prompt === 'string' && t.prompt.trim() !== '',
+		);
+	}
+
+	// Show active template in status bar on startup
+	const initialTemplateName = context.workspaceState.get<string>('verba.lastTemplateName');
+	if (initialTemplateName) {
+		statusBar.setIdle(initialTemplateName);
+	}
+
 	pipeline.addStage(new VerbaTranscriptionService(context.secrets));
 	pipeline.addStage(new VerbaCleanupService(context.secrets));
 
@@ -83,7 +100,7 @@ export function activate(context: vscode.ExtensionContext) {
 					preferTerminal,
 				);
 
-				statusBar.setIdle();
+				statusBar.setIdle(selectedTemplate?.name);
 				vscode.window.setStatusBarMessage(
 					'$(check) Verba: transcription inserted', 5000
 				);
@@ -101,26 +118,27 @@ export function activate(context: vscode.ExtensionContext) {
 		} else {
 			try {
 				preferTerminal = forTerminal;
-				const rawTemplates = vscode.workspace
-					.getConfiguration('verba')
-					.get<Template[]>('templates', []);
-				const templates = rawTemplates.filter(
-					(t): t is Template =>
-						typeof t?.name === 'string' && t.name.trim() !== ''
-						&& typeof t?.prompt === 'string' && t.prompt.trim() !== '',
-				);
+				const templates = loadTemplates();
 				const lastUsedName = context.workspaceState.get<string>('verba.lastTemplateName');
+				const lastUsedTemplate = lastUsedName
+					? templates.find(t => t.name === lastUsedName)
+					: undefined;
 
-				const template = await selectTemplate(
-					templates,
-					lastUsedName,
-					(items, options) => vscode.window.showQuickPick(items, options) as any,
-				);
-				if (!template) {
-					return;
+				let template: Template | undefined;
+				if (lastUsedTemplate) {
+					template = lastUsedTemplate;
+				} else {
+					template = await selectTemplate(
+						templates,
+						undefined,
+						(items, options) => vscode.window.showQuickPick(items, options) as any,
+					);
+					if (!template) {
+						return;
+					}
+					await context.workspaceState.update('verba.lastTemplateName', template.name);
 				}
 				selectedTemplate = template;
-				await context.workspaceState.update('verba.lastTemplateName', template.name);
 
 				let audioDevice = vscode.workspace.getConfiguration('verba').get<string>('audioDevice', '').trim() || undefined;
 				if (!audioDevice && process.platform === 'win32') {
@@ -135,7 +153,7 @@ export function activate(context: vscode.ExtensionContext) {
 					`Verba: Recording started (${template.name})...`
 				);
 			} catch (err: unknown) {
-				statusBar.setIdle();
+				statusBar.setIdle(selectedTemplate?.name);
 				console.error('[Verba] Start recording failed:', err);
 				const message = err instanceof Error ? err.message : String(err);
 
@@ -208,10 +226,27 @@ export function activate(context: vscode.ExtensionContext) {
 
 	const selectDeviceCommand = vscode.commands.registerCommand('dictation.selectAudioDevice', () => pickAudioDevice(false));
 
+	const selectTemplateCommand = vscode.commands.registerCommand('dictation.selectTemplate', async () => {
+		const templates = loadTemplates();
+		const lastUsedName = context.workspaceState.get<string>('verba.lastTemplateName');
+		const template = await selectTemplate(
+			templates,
+			lastUsedName,
+			(items, options) => vscode.window.showQuickPick(items, options) as any,
+		);
+		if (!template) {
+			return;
+		}
+		await context.workspaceState.update('verba.lastTemplateName', template.name);
+		selectedTemplate = template;
+		statusBar.setIdle(template.name);
+		vscode.window.showInformationMessage(`Verba: Template set to "${template.name}"`);
+	});
+
 	const editorCommand = vscode.commands.registerCommand('dictation.start', () => handleDictation(false));
 	const terminalCommand = vscode.commands.registerCommand('dictation.startFromTerminal', () => handleDictation(true));
 
-	context.subscriptions.push(editorCommand, terminalCommand, selectDeviceCommand, { dispose: () => recorder.dispose() }, statusBar);
+	context.subscriptions.push(editorCommand, terminalCommand, selectDeviceCommand, selectTemplateCommand, { dispose: () => recorder.dispose() }, statusBar);
 }
 
 export function deactivate() {}

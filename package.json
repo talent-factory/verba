@@ -2,7 +2,7 @@
   "name": "verba",
   "displayName": "Verba",
   "description": "The Developer's Dictation Extension – Voice dictation with AI-powered post-processing for VS Code",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "publisher": "talent-factory",
   "repository": {
     "type": "git",
@@ -114,6 +114,9 @@
     "compile": "tsc -p ./",
     "bundle": "esbuild src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node --minify",
     "watch": "tsc -watch -p ./",
+    "dev": "npm run compile && code --extensionDevelopmentPath=.",
+    "package:vsix": "npx @vscode/vsce package --allow-missing-repository",
+    "install:local": "npm run package:vsix && code --install-extension verba-*.vsix",
     "test:unit": "npm run compile && mocha",
     "test:integration": "npm run compile && node out/test/runIntegrationTests.js",
     "test": "npm run compile && npm run test:unit && npm run test:integration"

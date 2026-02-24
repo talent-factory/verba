@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
+import * as path from 'path';
 import { FfmpegRecorder } from './recorder';
 import { StatusBarManager } from './statusBarManager';
 import { DictationPipeline, PipelineContext } from './pipeline';
@@ -7,6 +8,10 @@ import { TranscriptionService } from './transcriptionService';
 import { CleanupService } from './cleanupService';
 import { insertText } from './insertText';
 import { selectTemplate, Template } from './templatePicker';
+import { ContextProvider } from './contextProvider';
+import { EmbeddingService } from './embeddingService';
+import { Indexer } from './indexer';
+import { GrepaiProvider } from './grepaiProvider';
 
 class VerbaTranscriptionService extends TranscriptionService {
 	protected async promptForApiKey(): Promise<string | undefined> {
@@ -43,9 +48,38 @@ function cleanupFile(filePath: string): void {
 export function activate(context: vscode.ExtensionContext) {
 	const recorder = new FfmpegRecorder();
 	const statusBar = new StatusBarManager();
+	const transcriptionService = new VerbaTranscriptionService(context.secrets);
+	const cleanupService = new VerbaCleanupService(context.secrets);
 	const pipeline = new DictationPipeline();
 	let selectedTemplate: Template | undefined;
 	let preferTerminal = false;
+
+	const embeddingService = new EmbeddingService(context.secrets);
+
+	function setupContextProvider(): ContextProvider {
+		const config = vscode.workspace.getConfiguration('verba.contextSearch');
+		const providerSetting = config.get<string>('provider', 'auto');
+		const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+
+		if (!workspaceRoot) {
+			return new ContextProvider({ type: 'none' });
+		}
+
+		const useGrepai = providerSetting === 'grepai'
+			|| (providerSetting === 'auto' && GrepaiProvider.isAvailable());
+
+		if (useGrepai) {
+			console.log('[Verba] Using grepai for context search');
+			return new ContextProvider({ type: 'grepai', grepai: new GrepaiProvider(workspaceRoot) });
+		}
+
+		const indexDir = path.join(workspaceRoot, '.verba');
+		const indexer = new Indexer(workspaceRoot, indexDir, embeddingService);
+		console.log('[Verba] Using OpenAI Embeddings for context search');
+		return new ContextProvider({ type: 'openai', embeddingService, indexer });
+	}
+
+	let contextProvider = setupContextProvider();
 
 	function loadTemplates(): Template[] {
 		const rawTemplates = vscode.workspace
@@ -64,8 +98,8 @@ export function activate(context: vscode.ExtensionContext) {
 		statusBar.setIdle(initialTemplateName);
 	}
 
-	pipeline.addStage(new VerbaTranscriptionService(context.secrets));
-	pipeline.addStage(new VerbaCleanupService(context.secrets));
+	pipeline.addStage(transcriptionService);
+	pipeline.addStage(cleanupService);
 
 	recorder.onUnexpectedStop = (error) => {
 		selectedTemplate = undefined;
@@ -81,14 +115,30 @@ export function activate(context: vscode.ExtensionContext) {
 				filePath = await recorder.stop();
 				statusBar.setTranscribing();
 
-				const pipelineContext: PipelineContext | undefined = selectedTemplate
-					? { templatePrompt: selectedTemplate.prompt }
-					: undefined;
-
 				const fileStats = fs.statSync(filePath);
 				console.log(`[Verba] WAV file: ${filePath} (${fileStats.size} bytes)`);
 
-				const transcript = await pipeline.run(filePath, pipelineContext);
+				// Step 1: Transcribe via Whisper
+				const rawTranscript = await transcriptionService.process(filePath);
+				console.log(`[Verba] Whisper transcript (${rawTranscript.length} chars): ${rawTranscript.substring(0, 200)}`);
+
+				// Step 2: Context retrieval (only for context-aware templates)
+				let contextSnippets: string[] | undefined;
+				if (selectedTemplate?.contextAware && contextProvider.isAvailable()) {
+					const maxResults = vscode.workspace.getConfiguration('verba.contextSearch').get<number>('maxResults', 5);
+					try {
+						contextSnippets = await contextProvider.search(rawTranscript, maxResults);
+						console.log(`[Verba] Retrieved ${contextSnippets.length} context snippets`);
+					} catch (err: unknown) {
+						console.warn('[Verba] Context search failed, proceeding without context:', err);
+					}
+				}
+
+				// Step 3: Claude post-processing
+				const pipelineContext: PipelineContext | undefined = selectedTemplate
+					? { templatePrompt: selectedTemplate.prompt, contextSnippets }
+					: undefined;
+				const transcript = await cleanupService.process(rawTranscript, pipelineContext);
 				console.log(`[Verba] Final text (${transcript.length} chars): ${transcript.substring(0, 200)}`);
 
 				const executeCommand = vscode.workspace.getConfiguration('verba.terminal').get<boolean>('executeCommand', false);
@@ -224,6 +274,68 @@ export function activate(context: vscode.ExtensionContext) {
 		return picked.label;
 	}
 
+	// Index Project command
+	const indexProjectCommand = vscode.commands.registerCommand('dictation.indexProject', async () => {
+		const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+		if (!workspaceRoot) {
+			vscode.window.showWarningMessage('Verba: Open a workspace to index.');
+			return;
+		}
+
+		contextProvider = setupContextProvider();
+
+		if (contextProvider.providerType === 'grepai') {
+			vscode.window.showInformationMessage('Verba: grepai is active — use "grepai init && grepai watch" to manage the index.');
+			return;
+		}
+
+		const indexDir = path.join(workspaceRoot, '.verba');
+		const indexer = new Indexer(workspaceRoot, indexDir, embeddingService);
+
+		await vscode.window.withProgress({
+			location: vscode.ProgressLocation.Notification,
+			title: 'Verba: Indexing project...',
+			cancellable: false,
+		}, async (progress) => {
+			const files = await vscode.workspace.findFiles(
+				'**/*.{ts,js,py,java,go,rs,cpp,c,h,cs,rb,php,swift,kt,scala,md}',
+				'{**/node_modules/**,**/dist/**,**/out/**,**/.git/**,**/.verba/**}',
+			);
+			const relativePaths = files.map(f => vscode.workspace.asRelativePath(f));
+
+			const totalChunks = await indexer.indexAll(relativePaths, (done, total) => {
+				progress.report({ increment: (1 / total) * 100, message: `${done}/${total} files` });
+			});
+
+			vscode.window.showInformationMessage(`Verba: Indexed ${relativePaths.length} files (${totalChunks} chunks).`);
+		});
+	});
+
+	// Incremental indexing on file save
+	const saveWatcher = vscode.workspace.onDidSaveTextDocument(async (doc) => {
+		if (!contextProvider.isAvailable() || contextProvider.providerType === 'grepai') {
+			return;
+		}
+
+		const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+		if (!workspaceRoot) { return; }
+
+		const relativePath = vscode.workspace.asRelativePath(doc.uri);
+		if (relativePath.startsWith('.verba/') || relativePath.includes('node_modules')) { return; }
+
+		try {
+			const indexDir = path.join(workspaceRoot, '.verba');
+			const indexer = new Indexer(workspaceRoot, indexDir, embeddingService);
+			const count = await indexer.indexFile(relativePath);
+			if (count > 0) {
+				indexer.save();
+				console.log(`[Verba] Re-indexed ${relativePath} (${count} chunks)`);
+			}
+		} catch (err: unknown) {
+			console.warn(`[Verba] Incremental indexing failed for ${relativePath}:`, err);
+		}
+	});
+
 	const selectDeviceCommand = vscode.commands.registerCommand('dictation.selectAudioDevice', () => pickAudioDevice(false));
 
 	const selectTemplateCommand = vscode.commands.registerCommand('dictation.selectTemplate', async () => {
@@ -246,7 +358,11 @@ export function activate(context: vscode.ExtensionContext) {
 	const editorCommand = vscode.commands.registerCommand('dictation.start', () => handleDictation(false));
 	const terminalCommand = vscode.commands.registerCommand('dictation.startFromTerminal', () => handleDictation(true));
 
-	context.subscriptions.push(editorCommand, terminalCommand, selectDeviceCommand, selectTemplateCommand, { dispose: () => recorder.dispose() }, statusBar);
+	context.subscriptions.push(
+		editorCommand, terminalCommand, selectDeviceCommand, selectTemplateCommand,
+		indexProjectCommand, saveWatcher,
+		{ dispose: () => recorder.dispose() }, statusBar,
+	);
 }
 
 export function deactivate() {}

@@ -54,6 +54,11 @@
         "command": "dictation.selectTemplate",
         "title": "Select Template",
         "category": "Verba"
+      },
+      {
+        "command": "dictation.indexProject",
+        "title": "Index Project",
+        "category": "Verba"
       }
     ],
     "keybindings": [
@@ -105,6 +110,11 @@
               "prompt": {
                 "type": "string",
                 "description": "System prompt sent to Claude for post-processing the transcript."
+              },
+              "contextAware": {
+                "type": "boolean",
+                "default": false,
+                "description": "If true, this template triggers semantic code search and includes relevant code snippets as context for Claude."
               }
             }
           },
@@ -128,8 +138,31 @@
             {
               "name": "E-Mail",
               "prompt": "Convert this transcript into a professional email with appropriate greeting and closing. Maintain the original language and intended tone (formal or informal). Return only the email text without explanation."
+            },
+            {
+              "name": "Code Comment",
+              "prompt": "Generate a precise code comment based on the transcript and the provided code context. Choose the appropriate format (inline comment, JSDoc, Docstring) based on the programming language. Return ONLY the comment.",
+              "contextAware": true
+            },
+            {
+              "name": "Explain Code",
+              "prompt": "Explain the code based on the question in the transcript and the provided code context. Answer concisely and technically in the language of the transcript. Return ONLY the explanation.",
+              "contextAware": true
             }
           ]
+        },
+        "verba.contextSearch.maxResults": {
+          "type": "number",
+          "default": 5,
+          "minimum": 1,
+          "maximum": 20,
+          "description": "Number of context snippets retrieved per dictation (for context-aware templates)."
+        },
+        "verba.contextSearch.provider": {
+          "type": "string",
+          "default": "auto",
+          "enum": ["auto", "grepai", "openai"],
+          "description": "Context search provider: 'auto' uses grepai if installed, otherwise OpenAI Embeddings. 'grepai' or 'openai' forces a specific provider."
         }
       }
     }

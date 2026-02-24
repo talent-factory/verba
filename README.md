@@ -60,11 +60,11 @@ choco install ffmpeg
 |----------|--------------|---------------------|
 | macOS | AVFoundation | Default microphone |
 | Linux | PulseAudio | Default microphone |
-| Windows | DirectShow | Auto-detected |
+| Windows | DirectShow | Configurable via `verba.audioDevice` or Quick Pick |
 
 **Linux:** PulseAudio must be running (default on Ubuntu, Fedora, and most desktop distributions).
 
-**Windows:** The first detected audio input device is used automatically.
+**Windows:** On first use, a Quick Pick dialog lets you select the microphone. You can change it anytime with the command `Verba: Select Audio Device` or by setting `verba.audioDevice` in Settings. Verba detects devices via ffmpeg (v7 and v8+ formats) with a PowerShell fallback.
 
 ## Installation
 
@@ -117,6 +117,7 @@ Each template consists of `name` (displayed in Quick Pick) and `prompt` (instruc
 
 | Setting | Type | Default | Description |
 |---------|------|---------|-------------|
+| `verba.audioDevice` | String | `""` | Audio input device name (Windows). Leave empty for auto-detection. |
 | `verba.templates` | Array | 5 built-in templates | Prompt templates for post-processing |
 | `verba.terminal.executeCommand` | Boolean | `false` | Submit text in terminal with Enter |
 

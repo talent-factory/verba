@@ -67,7 +67,13 @@ export function activate(context: vscode.ExtensionContext) {
 				const pipelineContext: PipelineContext | undefined = selectedTemplate
 					? { templatePrompt: selectedTemplate.prompt }
 					: undefined;
+
+				const fileStats = fs.statSync(filePath);
+				console.log(`[Verba] WAV file: ${filePath} (${fileStats.size} bytes)`);
+
 				const transcript = await pipeline.run(filePath, pipelineContext);
+				console.log(`[Verba] Final text (${transcript.length} chars): ${transcript.substring(0, 200)}`);
+
 				const executeCommand = vscode.workspace.getConfiguration('verba.terminal').get<boolean>('executeCommand', false);
 				await insertText(
 					transcript,
@@ -116,7 +122,14 @@ export function activate(context: vscode.ExtensionContext) {
 				selectedTemplate = template;
 				await context.workspaceState.update('verba.lastTemplateName', template.name);
 
-				await recorder.start();
+				let audioDevice = vscode.workspace.getConfiguration('verba').get<string>('audioDevice', '').trim() || undefined;
+				if (!audioDevice && process.platform === 'win32') {
+					audioDevice = await pickAudioDevice(true);
+					if (!audioDevice) {
+						return;
+					}
+				}
+				await recorder.start(audioDevice);
 				statusBar.setRecording();
 				vscode.window.showInformationMessage(
 					`Verba: Recording started (${template.name})...`
@@ -146,10 +159,59 @@ export function activate(context: vscode.ExtensionContext) {
 		}
 	};
 
+	async function pickAudioDevice(firstRun: boolean): Promise<string | undefined> {
+		const devices = recorder.listAudioDevices();
+		if (devices.length === 0) {
+			vscode.window.showWarningMessage('Verba: No audio devices found. Is ffmpeg installed?');
+			return undefined;
+		}
+
+		const currentDevice = vscode.workspace.getConfiguration('verba').get<string>('audioDevice', '');
+		const items = devices.map(name => ({
+			label: name,
+			description: name === currentDevice ? '(current)' : undefined,
+		}));
+
+		const picked = await vscode.window.showQuickPick(items, {
+			placeHolder: firstRun
+				? 'Which microphone should Verba use for dictation?'
+				: 'Select microphone for dictation',
+			title: 'Verba: Audio Device',
+		});
+		if (!picked) {
+			return undefined;
+		}
+
+		if (firstRun) {
+			await vscode.workspace.getConfiguration('verba').update(
+				'audioDevice', picked.label, vscode.ConfigurationTarget.Global,
+			);
+		} else {
+			const target = await vscode.window.showQuickPick(
+				[
+					{ label: 'User Settings', description: 'Applies globally', target: vscode.ConfigurationTarget.Global },
+					{ label: 'Workspace Settings', description: 'Applies to this project only', target: vscode.ConfigurationTarget.Workspace },
+				],
+				{ placeHolder: 'Where should this setting be saved?' },
+			);
+			if (!target) {
+				return undefined;
+			}
+			await vscode.workspace.getConfiguration('verba').update(
+				'audioDevice', picked.label, target.target,
+			);
+		}
+
+		vscode.window.showInformationMessage(`Verba: Audio device set to "${picked.label}"`);
+		return picked.label;
+	}
+
+	const selectDeviceCommand = vscode.commands.registerCommand('dictation.selectAudioDevice', () => pickAudioDevice(false));
+
 	const editorCommand = vscode.commands.registerCommand('dictation.start', () => handleDictation(false));
 	const terminalCommand = vscode.commands.registerCommand('dictation.startFromTerminal', () => handleDictation(true));
 
-	context.subscriptions.push(editorCommand, terminalCommand, { dispose: () => recorder.dispose() }, statusBar);
+	context.subscriptions.push(editorCommand, terminalCommand, selectDeviceCommand, { dispose: () => recorder.dispose() }, statusBar);
 }
 
 export function deactivate() {}

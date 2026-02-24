@@ -16,4 +16,5 @@ CLAUDE.md
 .releaserc.json
 CHANGELOG.md
 Makefile
+.claude/**
 images/.gitkeep

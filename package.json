@@ -39,6 +39,16 @@
         "command": "dictation.start",
         "title": "Toggle Dictation",
         "category": "Verba"
+      },
+      {
+        "command": "dictation.startFromTerminal",
+        "title": "Toggle Dictation (Terminal)",
+        "category": "Verba"
+      },
+      {
+        "command": "dictation.selectAudioDevice",
+        "title": "Select Audio Device",
+        "category": "Verba"
       }
     ],
     "keybindings": [
@@ -58,6 +68,11 @@
     "configuration": {
       "title": "Verba",
       "properties": {
+        "verba.audioDevice": {
+          "type": "string",
+          "default": "",
+          "description": "Name of the audio input device for recording (e.g. 'Mikrofon (USB MICROPHONE)'). Leave empty for auto-detection. On Windows, run 'ffmpeg -list_devices true -f dshow -i dummy' to see available devices."
+        },
         "verba.terminal.executeCommand": {
           "type": "boolean",
           "default": false,
@@ -116,7 +131,7 @@
     "watch": "tsc -watch -p ./",
     "dev": "npm run compile && code --extensionDevelopmentPath=.",
     "package:vsix": "npx @vscode/vsce package --allow-missing-repository",
-    "install:local": "npm run package:vsix && code --install-extension verba-*.vsix",
+    "install:local": "npm run package:vsix && node -e \"var p=require('./package.json');require('child_process').execSync('code --install-extension '+p.name+'-'+p.version+'.vsix',{stdio:'inherit'})\"",
     "test:unit": "npm run compile && mocha",
     "test:integration": "npm run compile && node out/test/runIntegrationTests.js",
     "test": "npm run compile && npm run test:unit && npm run test:integration"

@@ -76,6 +76,8 @@ export class CleanupService implements ProcessingStage {
 			? response.content[0].text
 			: '';
 
+		console.log(`[Verba] Claude response (${(text || '').length} chars): ${(text || '').substring(0, 200)}`);
+
 		if (!text || text.trim() === '') {
 			console.warn('[Verba] Claude returned empty response; skipping cleanup and using raw transcript.');
 			return input;

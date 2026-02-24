@@ -7,6 +7,7 @@
 
 <p align="center">
   <a href="https://marketplace.visualstudio.com/items?itemName=talent-factory.verba"><img src="https://img.shields.io/visual-studio-marketplace/v/talent-factory.verba" alt="Visual Studio Marketplace"></a>
+  <a href="https://marketplace.visualstudio.com/items?itemName=talent-factory.verba"><img src="https://img.shields.io/visual-studio-marketplace/i/talent-factory.verba" alt="Installs"></a>
   <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
   <a href="https://github.com/talent-factory/verba"><img src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-blue" alt="Platform"></a>
 </p>
@@ -18,6 +19,10 @@
 ---
 
 ## Features
+
+<p align="center">
+  <img src="images/screenshots/dictation-workflow.gif" alt="Verba Dictation Workflow" width="800">
+</p>
 
 - **Dictation in Editor and Terminal** -- `Cmd+Shift+D` (Mac) / `Ctrl+Shift+D` (Windows/Linux) starts and stops recording. Text is inserted contextually in the editor or terminal.
 - **Prompt Templates** -- Choose a template before each recording: Free Text, Commit Message, JavaDoc, Markdown, or Email. The template controls how Claude post-processes the transcript.
@@ -68,6 +73,10 @@ On all platforms, you can select the microphone anytime with the command `Verba:
 
 **Windows:** On first use, a Quick Pick dialog lets you select the microphone. Verba detects devices via ffmpeg (v7 and v8+ formats) with a PowerShell fallback.
 
+<p align="center">
+  <img src="images/screenshots/audio-device-selection.png" alt="Audio Device Selection" width="600">
+</p>
+
 ## Installation
 
 Install from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=talent-factory.verba):
@@ -81,6 +90,11 @@ Or search for "Verba" in the VS Code Extensions sidebar.
 ## Quick Start
 
 1. `Cmd+Shift+D` -- Quick Pick with template selection appears
+
+<p align="center">
+  <img src="images/screenshots/template-picker.png" alt="Template Quick Pick" width="600">
+</p>
+
 2. Choose a template (e.g., "Free Text") -- recording starts
 3. Speak
 4. `Cmd+Shift+D` -- recording stops, text is transcribed and processed
@@ -91,6 +105,10 @@ On first use, you will be prompted for your API keys, which are stored securely.
 ### Terminal Mode
 
 When the integrated terminal is focused, dictated text is inserted there instead. With `verba.terminal.executeCommand: true`, the text is additionally submitted with Enter.
+
+<p align="center">
+  <img src="images/screenshots/terminal-mode.png" alt="Terminal Mode" width="600">
+</p>
 
 ## Configuration
 

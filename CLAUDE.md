@@ -52,7 +52,7 @@ Alle Phasen sind Sub-Issues von TF-243 (Projektuebersicht). Alle Kernphasen sind
 - Hauptcommand: `dictation.start` (`Cmd+Shift+D` / `Ctrl+Shift+D`)
 - Terminal-Command: `dictation.startFromTerminal` (gleiche Tastenkuerzel, wenn Terminal fokussiert)
 - Audio-Device-Command: `dictation.selectAudioDevice` (Mikrofon-Auswahl via Quick Pick)
-- Template-Command: `dictation.selectTemplate` (`Cmd+Shift+T` / `Ctrl+Shift+T`) — Template-Wechsel ohne Aufnahme
+- Template-Command: `dictation.selectTemplate` (`Cmd+Alt+T` / `Ctrl+Alt+T`) — Template-Wechsel ohne Aufnahme
 - API Keys werden ausschliesslich ueber `vscode.SecretStorage` gespeichert (nie im Klartext)
 - TypeScript strict mode
 - VS Code Extension Best Practices befolgen

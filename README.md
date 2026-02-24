@@ -25,7 +25,7 @@
 </p>
 
 - **Dictation in Editor and Terminal** -- `Cmd+Shift+D` (Mac) / `Ctrl+Shift+D` (Windows/Linux) starts and stops recording. Text is inserted contextually in the editor or terminal.
-- **Prompt Templates** -- Choose a template on first use; it is automatically reused for subsequent recordings. Switch anytime with `Cmd+Shift+T`. Templates include Free Text, Commit Message, JavaDoc, Markdown, and Email. The template controls how Claude post-processes the transcript.
+- **Prompt Templates** -- Choose a template on first use; it is automatically reused for subsequent recordings. Switch anytime with `Cmd+Alt+T`. Templates include Free Text, Commit Message, JavaDoc, Markdown, and Email. The template controls how Claude post-processes the transcript.
 - **Fully Configurable** -- Templates are defined in `settings.json` and freely extensible. Add custom templates with any prompt.
 - **Bring Your Own Key** -- Use your own OpenAI and Anthropic API keys. No subscription costs, full data control. Keys are stored securely in VS Code's SecretStorage.
 
@@ -100,7 +100,7 @@ Or search for "Verba" in the VS Code Extensions sidebar.
 4. `Cmd+Shift+D` -- recording stops, text is transcribed and processed
 5. Result appears at your cursor position
 
-From now on, your last template is reused automatically -- just press `Cmd+Shift+D` to start recording immediately. To switch templates, press `Cmd+Shift+T` (Mac) / `Ctrl+Shift+T` (Windows/Linux) or use the command `Verba: Select Template`. The status bar shows the active template.
+From now on, your last template is reused automatically -- just press `Cmd+Shift+D` to start recording immediately. To switch templates, press `Cmd+Alt+T` (Mac) / `Ctrl+Alt+T` (Windows/Linux) or use the command `Verba: Select Template`. The status bar shows the active template.
 
 On first use, you will be prompted for your API keys, which are stored securely.
 

@@ -71,8 +71,8 @@
       },
       {
         "command": "dictation.selectTemplate",
-        "key": "ctrl+shift+t",
-        "mac": "cmd+shift+t"
+        "key": "ctrl+alt+t",
+        "mac": "cmd+alt+t"
       }
     ],
     "configuration": {

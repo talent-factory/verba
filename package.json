@@ -49,6 +49,11 @@
         "command": "dictation.selectAudioDevice",
         "title": "Select Audio Device",
         "category": "Verba"
+      },
+      {
+        "command": "dictation.selectTemplate",
+        "title": "Select Template",
+        "category": "Verba"
       }
     ],
     "keybindings": [
@@ -63,6 +68,11 @@
         "key": "ctrl+shift+d",
         "mac": "cmd+shift+d",
         "when": "!terminalFocus"
+      },
+      {
+        "command": "dictation.selectTemplate",
+        "key": "ctrl+shift+t",
+        "mac": "cmd+shift+t"
       }
     ],
     "configuration": {

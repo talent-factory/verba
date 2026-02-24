@@ -6,7 +6,9 @@ on:
 
 jobs:
   release:
+    name: Release
     runs-on: ubuntu-latest
+    if: "!startsWith(github.event.head_commit.message, 'chore(release):')"
     permissions:
       contents: write
       issues: write
@@ -20,6 +22,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: npm
 
       - run: npm ci
 
@@ -30,5 +33,4 @@ jobs:
       - name: Semantic Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VSCE_PAT: ${{ secrets.VSCE_PAT }}
         run: npx semantic-release

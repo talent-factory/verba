@@ -112,6 +112,40 @@ When the integrated terminal is focused, dictated text is inserted there instead
   <img src="images/screenshots/terminal-mode.png" alt="Terminal Mode" width="600">
 </p>
 
+### Claude Code Integration
+
+Use the **Claude Code Prompt** template to dictate tasks for Claude Code. Verba transcribes your voice, enriches it with codebase context, and generates an optimized prompt — ready to confirm in your terminal.
+
+**Setup:**
+1. Select the "Claude Code Prompt" template (`Cmd+Alt+T`)
+2. Ensure `verba.terminal.executeCommand` is `false` (default) — text is pasted without submitting
+
+**Workflow:**
+
+```
+1. Focus your terminal running Claude Code
+2. Cmd+Shift+D → recording starts
+3. Speak your task naturally, e.g.:
+   "I want the pipeline to support streaming so that transcribed
+    text appears incrementally during post-processing"
+4. Cmd+Shift+D → recording stops
+5. Verba:
+   a) Transcribes via Whisper
+   b) Searches codebase context (pipeline.ts, cleanupService.ts, ...)
+   c) Claude generates an optimized prompt:
+
+      "Implement streaming support in the processing pipeline.
+       Modify CleanupService.process() in src/cleanupService.ts
+       to use Claude's streaming API. Add a callback parameter
+       so that insertText.ts can display text incrementally
+       as chunks arrive from the API."
+
+6. Prompt appears in your terminal — review, edit if needed, press Enter
+7. Claude Code executes the task
+```
+
+The template automatically references specific files and symbols from your codebase via semantic search (grepai or OpenAI Embeddings), making the generated prompt precise and actionable.
+
 ## Configuration
 
 ### Custom Templates
@@ -140,7 +174,7 @@ Each template consists of `name` (displayed in Quick Pick) and `prompt` (instruc
 | Setting | Type | Default | Description |
 |---------|------|---------|-------------|
 | `verba.audioDevice` | String | `""` | Audio input device name. Leave empty for system default. |
-| `verba.templates` | Array | 5 built-in templates | Prompt templates for post-processing |
+| `verba.templates` | Array | 8 built-in templates | Prompt templates for post-processing |
 | `verba.terminal.executeCommand` | Boolean | `false` | Submit text in terminal with Enter |
 
 ## Architecture

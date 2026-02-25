@@ -1,5 +1,6 @@
 export interface PipelineContext {
 	templatePrompt?: string;
+	contextSnippets?: string[];
 }
 
 export interface ProcessingStage {

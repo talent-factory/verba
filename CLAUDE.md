@@ -33,7 +33,7 @@ Alle Phasen sind Sub-Issues von TF-243 (Projektuebersicht). Alle Kernphasen sind
 - **TF-245: Mikrofon-Aufnahme** - Done. ffmpeg-Kindprozess fuer Audioaufnahme, Statusbar-Feedback, Cross-Platform (macOS/Linux/Windows).
 - **TF-246: Whisper API Transkription** - Done. OpenAI Whisper Integration, API Key via SecretStorage.
 - **TF-247: Claude Post-Processing** - Done. Anthropic Claude Integration, Fuellwoerter-Entfernung, Pipeline-Architektur.
-- **TF-248: Konfigurierbare Prompt-Templates** - Done. Quick-Pick-Menue, 5 Standard-Templates, frei erweiterbar via `settings.json`.
+- **TF-248: Konfigurierbare Prompt-Templates** - Done. Quick-Pick-Menue, 8 Standard-Templates (inkl. 3 context-aware: Code Comment, Explain Code, Claude Code Prompt), frei erweiterbar via `settings.json`.
 - **TF-249: Marktanalyse** - Done. Konkurrenzanalyse (Wispr Flow, Superwhisper, Willow Voice, VoiceInk, etc.).
 - **TF-250: Terminal-Unterstuetzung** - Done. Diktat in Terminal einfuegen, `verba.terminal.executeCommand` Setting.
 - **Cross-Platform Audio-Aufnahme** - Done. macOS (AVFoundation), Linux (PulseAudio), Windows (DirectShow) mit konfigurierbarer Geraeteauswahl auf allen Plattformen (Quick Pick + `verba.audioDevice` Setting). Geraete-Listing via avfoundation (macOS), pactl (Linux), dshow (Windows). ffmpeg v7 und v8+ Format-Erkennung, PowerShell-Fallback auf Windows.

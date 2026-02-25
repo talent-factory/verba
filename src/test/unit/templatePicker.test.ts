@@ -57,4 +57,18 @@ suite('selectTemplate', () => {
 		);
 		assert.ok(showQuickPick.notCalled);
 	});
+
+	test('context-aware templates show magnifying glass icon prefix', async () => {
+		const templates: Template[] = [
+			{ name: 'Freitext', prompt: 'Clean up.' },
+			{ name: 'Code Comment', prompt: 'Generate comment.', contextAware: true },
+		];
+		const showQuickPick = sinon.stub().resolves({ label: '$(search) Code Comment', template: templates[1] });
+
+		await selectTemplate(templates, undefined, showQuickPick);
+
+		const items = showQuickPick.firstCall.args[0];
+		assert.strictEqual(items[0].label, 'Freitext');
+		assert.strictEqual(items[1].label, '$(search) Code Comment');
+	});
 });

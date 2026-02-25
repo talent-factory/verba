@@ -25,7 +25,7 @@
 </p>
 
 - **Dictation in Editor and Terminal** -- `Cmd+Shift+D` (Mac) / `Ctrl+Shift+D` (Windows/Linux) starts and stops recording. Text is inserted contextually in the editor or terminal.
-- **Prompt Templates** -- Choose a template on first use; it is automatically reused for subsequent recordings. Switch anytime with `Cmd+Alt+T`. Templates include Free Text, Commit Message, JavaDoc, Markdown, and Email. The template controls how Claude post-processes the transcript.
+- **Prompt Templates** -- Choose a template on first use; it is automatically reused for subsequent recordings. Switch anytime with `Cmd+Alt+T`. 8 built-in templates: Freitext, Commit Message, JavaDoc, Markdown, E-Mail, and 3 context-aware templates (Code Comment, Explain Code, Claude Code Prompt). The template controls how Claude post-processes the transcript.
 - **Fully Configurable** -- Templates are defined in `settings.json` and freely extensible. Add custom templates with any prompt.
 - **Bring Your Own Key** -- Use your own OpenAI and Anthropic API keys. No subscription costs, full data control. Keys are stored securely in VS Code's SecretStorage.
 
@@ -112,6 +112,43 @@ When the integrated terminal is focused, dictated text is inserted there instead
   <img src="images/screenshots/terminal-mode.png" alt="Terminal Mode" width="600">
 </p>
 
+### Claude Code Integration
+
+Use the **Claude Code Prompt** template to dictate tasks for Claude Code. Verba transcribes your voice, enriches it with codebase context, and generates an optimized prompt — ready to confirm in your terminal.
+
+**Setup:**
+1. Select the "Claude Code Prompt" template (`Cmd+Alt+T`)
+2. Set up a context provider for codebase-aware prompts:
+   - **Option A (recommended):** Install [grepai](https://grepai.dev) and run `grepai init` in your project
+   - **Option B:** Run command `Verba: Index Project` to build the OpenAI Embeddings index
+3. Ensure `verba.terminal.executeCommand` is `false` (default) — text is pasted without submitting
+
+**Workflow:**
+
+```
+1. Focus your terminal running Claude Code
+2. Cmd+Shift+D → recording starts
+3. Speak your task naturally, e.g.:
+   "I want the pipeline to support streaming so that transcribed
+    text appears incrementally during post-processing"
+4. Cmd+Shift+D → recording stops
+5. Verba:
+   a) Transcribes via Whisper
+   b) Searches codebase context (pipeline.ts, cleanupService.ts, ...)
+   c) Claude generates an optimized prompt:
+
+      "Implement streaming support in the processing pipeline.
+       Modify CleanupService.process() in src/cleanupService.ts
+       to use Claude's streaming API. Add a callback parameter
+       so that insertText.ts can display text incrementally
+       as chunks arrive from the API."
+
+6. Prompt appears in your terminal — review, edit if needed, press Enter
+7. Claude Code executes the task
+```
+
+The template references files and symbols from your codebase via semantic search (grepai or OpenAI Embeddings). The specificity of the generated prompt depends on the context provider's search results -- for best results, mention the area of code you want to modify.
+
 ## Configuration
 
 ### Custom Templates
@@ -127,21 +164,24 @@ Define custom templates in `settings.json`:
     },
     {
       "name": "Code Review",
-      "prompt": "Convert this transcript into structured code review feedback with bullet points for issues found and suggestions. Keep the original language."
+      "prompt": "Convert this transcript into structured code review feedback with bullet points for issues found and suggestions. Keep the original language.",
+      "contextAware": true
     }
   ]
 }
 ```
 
-Each template consists of `name` (displayed in Quick Pick) and `prompt` (instruction sent to Claude for post-processing).
+Each template consists of `name` (displayed in Quick Pick), `prompt` (instruction sent to Claude for post-processing), and optionally `contextAware` (if `true`, enables semantic code search and includes relevant code snippets as context for Claude).
 
 ### Settings
 
 | Setting | Type | Default | Description |
 |---------|------|---------|-------------|
 | `verba.audioDevice` | String | `""` | Audio input device name. Leave empty for system default. |
-| `verba.templates` | Array | 5 built-in templates | Prompt templates for post-processing |
+| `verba.templates` | Array | 8 built-in templates | Prompt templates for post-processing |
 | `verba.terminal.executeCommand` | Boolean | `false` | Submit text in terminal with Enter |
+| `verba.contextSearch.provider` | String | `"auto"` | Context search provider: `auto` uses grepai if available, otherwise OpenAI Embeddings |
+| `verba.contextSearch.maxResults` | Number | `5` | Number of context snippets per dictation (1--20) |
 
 ## Architecture
 

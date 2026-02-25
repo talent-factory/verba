@@ -2,7 +2,7 @@
   "name": "verba",
   "displayName": "Verba",
   "description": "The Developer's Dictation Extension – Voice dictation with AI-powered post-processing for VS Code",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "publisher": "talent-factory",
   "repository": {
     "type": "git",
@@ -147,6 +147,11 @@
             {
               "name": "Explain Code",
               "prompt": "Explain the code based on the question in the transcript and the provided code context. Answer concisely and technically in the language of the transcript. Return ONLY the explanation.",
+              "contextAware": true
+            },
+            {
+              "name": "Claude Code Prompt",
+              "prompt": "Convert this transcript into a precise, well-structured prompt for a Claude Code agent. Use the provided code context to reference specific files, classes, and functions by name. Structure the prompt as a clear task description: what to do, where in the codebase, and any constraints. Keep the original language. Return ONLY the prompt text, ready to paste into a terminal.",
               "contextAware": true
             }
           ]

@@ -21,7 +21,7 @@
     "speech-to-text",
     "ai"
   ],
-  "homepage": "https://github.com/talent-factory/verba",
+  "homepage": "https://talent-factory.xyz",
   "bugs": {
     "url": "https://github.com/talent-factory/verba/issues"
   },
@@ -185,18 +185,13 @@
     "test": "npm run compile && npm run test:unit && npm run test:integration"
   },
   "devDependencies": {
-    "@semantic-release/changelog": "^6.0.3",
-    "@semantic-release/git": "^10.0.1",
     "@types/mocha": "^10.0.10",
     "@types/node": "^20.11.0",
     "@types/sinon": "^21.0.0",
     "@types/vscode": "^1.85.0",
     "@vscode/test-electron": "^2.5.2",
-    "conventional-changelog-conventionalcommits": "^9.1.0",
     "esbuild": "^0.27.3",
     "mocha": "^11.7.5",
-    "semantic-release": "^25.0.3",
-    "semantic-release-vsce": "^6.0.24",
     "sinon": "^21.0.1",
     "typescript": "^5.3.0"
   },

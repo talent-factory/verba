@@ -1,0 +1,124 @@
+name: Changelog Preview
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+jobs:
+  preview:
+    name: Changelog Preview
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate changelog preview
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { execSync } = require('child_process');
+
+            // Get commits between main and this PR branch (exclude merge commits)
+            const log = execSync('git log origin/main..HEAD --pretty=format:"%s" --no-merges', { encoding: 'utf-8' }).trim();
+
+            if (!log) {
+              core.info('No commits found between main and HEAD');
+              return;
+            }
+
+            const commits = log.split('\n');
+
+            const categories = {
+              features: { title: 'Added', items: [] },
+              fixes: { title: 'Fixed', items: [] },
+              chores: { title: 'Changed', items: [] },
+              docs: { title: 'Documentation', items: [] },
+              other: { title: 'Other', items: [] },
+            };
+
+            for (const raw of commits) {
+              // Strip emoji prefix (e.g. "✨ feat:" -> "feat:")
+              const clean = raw.replace(/^[^\w]*/, '');
+              const match = clean.match(/^(\w+)(?:\([^)]*\))?!?:\s*(.+)$/);
+
+              if (!match) {
+                categories.other.items.push(raw);
+                continue;
+              }
+
+              const [, type, description] = match;
+
+              switch (type.toLowerCase()) {
+                case 'feat':
+                  categories.features.items.push(description);
+                  break;
+                case 'fix':
+                  categories.fixes.items.push(description);
+                  break;
+                case 'docs':
+                  categories.docs.items.push(description);
+                  break;
+                case 'chore':
+                case 'ci':
+                case 'refactor':
+                case 'style':
+                case 'perf':
+                case 'build':
+                  categories.chores.items.push(description);
+                  break;
+                default:
+                  categories.other.items.push(description);
+              }
+            }
+
+            // Build markdown body
+            let body = '## Changelog Preview\n\n';
+            body += `*Preview of changes that will be included in the next release (${commits.length} commits).*\n\n`;
+
+            for (const cat of Object.values(categories)) {
+              if (cat.items.length > 0) {
+                body += `### ${cat.title}\n\n`;
+                for (const item of cat.items) {
+                  body += `- ${item}\n`;
+                }
+                body += '\n';
+              }
+            }
+
+            body += '---\n';
+            body += '*Generated automatically from conventional commit messages. ';
+            body += 'The final changelog will be created by [semantic-release](https://github.com/semantic-release/semantic-release) on merge.*\n';
+
+            // Find existing changelog preview comment or create a new one
+            const marker = '## Changelog Preview';
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const existing = comments.find(c =>
+              c.user.type === 'Bot' && c.body.includes(marker)
+            );
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+              core.info('Updated existing changelog preview comment');
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+              core.info('Created changelog preview comment');
+            }

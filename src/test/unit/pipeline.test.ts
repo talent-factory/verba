@@ -101,4 +101,21 @@ suite('DictationPipeline', () => {
 		const result = await pipeline.run('hello');
 		assert.strictEqual(result, 'HELLO');
 	});
+
+	test('passes contextSnippets through to stages', async () => {
+		let capturedContext: PipelineContext | undefined;
+		pipeline.addStage({
+			name: 'capture',
+			process: async (input: string, context?: PipelineContext) => {
+				capturedContext = context;
+				return input;
+			},
+		});
+		const ctx: PipelineContext = {
+			templatePrompt: 'test',
+			contextSnippets: ['function foo() { return 1; }'],
+		};
+		await pipeline.run('hello', ctx);
+		assert.deepStrictEqual(capturedContext?.contextSnippets, ['function foo() { return 1; }']);
+	});
 });

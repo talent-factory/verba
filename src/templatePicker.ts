@@ -1,6 +1,7 @@
 export interface Template {
 	name: string;
 	prompt: string;
+	contextAware?: boolean;
 }
 
 interface QuickPickItem {
@@ -23,7 +24,7 @@ export async function selectTemplate(
 	}
 
 	const items: QuickPickItem[] = templates.map((t) => ({
-		label: t.name,
+		label: t.contextAware ? `$(search) ${t.name}` : t.name,
 		template: t,
 	}));
 

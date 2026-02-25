@@ -14,7 +14,7 @@ CLAUDE.md
 *.vsix
 .github/**
 .releaserc.json
-CHANGELOG.md
 Makefile
 .claude/**
 images/.gitkeep
+**/*.mp4

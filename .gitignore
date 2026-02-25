@@ -4,5 +4,8 @@ node_modules/
 .vscode-test/
 *.vsix
 .grepai/
+.verba/
+
+docs/plans/
 
 .claude/settings.local.json

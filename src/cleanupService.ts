@@ -42,13 +42,18 @@ export class CleanupService implements ProcessingStage {
 		const apiKey = await this.getApiKey();
 		const client = this.getClient(apiKey);
 
+		const contextBlock = context?.contextSnippets?.length
+			? `<context>\n${context.contextSnippets.join('\n\n')}\n</context>\n\n`
+			: '';
+		const userMessage = `${contextBlock}<transcript>\n${input}\n</transcript>`;
+
 		let response;
 		try {
 			response = await client.messages.create({
 				model: 'claude-haiku-4-5-20251001',
 				max_tokens: 4096,
 				system: systemPrompt,
-				messages: [{ role: 'user', content: `<transcript>\n${input}\n</transcript>` }],
+				messages: [{ role: 'user', content: userMessage }],
 			});
 		} catch (err: unknown) {
 			console.error('[Verba] Claude API call failed:', err);

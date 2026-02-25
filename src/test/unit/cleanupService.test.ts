@@ -221,5 +221,60 @@ suite('CleanupService', () => {
 			assert.ok(callArgs.system.includes('Füllwörter'), 'should use default filler word prompt');
 		});
 
+
+		test('includes context snippets before transcript when provided', async () => {
+			secretStorage.get.resolves('sk-ant-test-key');
+			fakeClient.messages.create.resolves({
+				content: [{ type: 'text', text: 'commented code' }],
+			});
+
+			const context: PipelineContext = {
+				templatePrompt: 'Generate a code comment.',
+				contextSnippets: [
+					'// file: src/auth.ts\nfunction login(user: string) { return true; }',
+					'// file: src/session.ts\nclass Session { start() {} }',
+				],
+			};
+			await service.process('add a comment for the login function', context);
+
+			const callArgs = fakeClient.messages.create.firstCall.args[0];
+			const userContent = callArgs.messages[0].content;
+			assert.ok(userContent.includes('<context>'), 'should contain context tags');
+			assert.ok(userContent.includes('src/auth.ts'), 'should contain first snippet');
+			assert.ok(userContent.includes('src/session.ts'), 'should contain second snippet');
+			assert.ok(userContent.indexOf('<context>') < userContent.indexOf('<transcript>'),
+				'context should appear before transcript');
+		});
+
+		test('omits context block when contextSnippets is empty', async () => {
+			secretStorage.get.resolves('sk-ant-test-key');
+			fakeClient.messages.create.resolves({
+				content: [{ type: 'text', text: 'cleaned' }],
+			});
+
+			const context: PipelineContext = {
+				templatePrompt: 'Clean up.',
+				contextSnippets: [],
+			};
+			await service.process('test input', context);
+
+			const userContent = fakeClient.messages.create.firstCall.args[0].messages[0].content;
+			assert.ok(!userContent.includes('<context>'), 'should not contain context tags when empty');
+		});
+
+		test('omits context block when contextSnippets is undefined', async () => {
+			secretStorage.get.resolves('sk-ant-test-key');
+			fakeClient.messages.create.resolves({
+				content: [{ type: 'text', text: 'cleaned' }],
+			});
+
+			const context: PipelineContext = { templatePrompt: 'Clean up.' };
+			await service.process('test input', context);
+
+			const userContent = fakeClient.messages.create.firstCall.args[0].messages[0].content;
+			assert.ok(!userContent.includes('<context>'), 'should not contain context tags when undefined');
+		});
+
+
 	});
 });

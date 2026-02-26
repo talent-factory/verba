@@ -7,6 +7,8 @@ const COURSE_CORRECTION_INSTRUCTION = 'Erkenne und entferne Selbstkorrekturen (z
 
 const TEMPLATE_FRAMING = `The user message contains a raw speech transcript wrapped in <transcript> tags. Process it according to the following instructions and return ONLY the processed result — no commentary, no explanation, no preamble.
 
+Important: The transcript is raw speech. ${COURSE_CORRECTION_INSTRUCTION}
+
 `;
 
 const CLEANUP_SYSTEM_PROMPT = `Du erhältst ein rohes Sprach-Transkript in <transcript> Tags. Bereinige es:

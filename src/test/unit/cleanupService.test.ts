@@ -223,6 +223,22 @@ suite('CleanupService', () => {
 			assert.ok(callArgs.system.includes('<transcript>'), 'should reference transcript tags in framing');
 		});
 
+		test('template system prompt includes course correction instruction', async () => {
+			secretStorage.get.resolves('sk-ant-test-key');
+			fakeClient.messages.create.resolves({
+				content: [{ type: 'text', text: 'commit: fix login bug' }],
+			});
+
+			const context: PipelineContext = {
+				templatePrompt: 'Convert to a commit message.',
+			};
+			await service.process('test input', context);
+
+			const callArgs = fakeClient.messages.create.firstCall.args[0];
+			assert.ok(callArgs.system.includes('Selbstkorrektur'),
+				'template prompt should include course correction instruction');
+		});
+
 		test('uses default system prompt when no context is provided', async () => {
 			secretStorage.get.resolves('sk-ant-test-key');
 			fakeClient.messages.create.resolves({

@@ -45,6 +45,9 @@ markdown_extensions:
   - attr_list
   - md_in_html
 
+exclude_docs: |
+  plans/
+
 nav:
   - Home: index.md
   - Getting Started:

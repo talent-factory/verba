@@ -39,6 +39,7 @@ Alle Phasen sind Sub-Issues von TF-243 (Projektuebersicht). Alle Kernphasen sind
 - **Cross-Platform Audio-Aufnahme** - Done. macOS (AVFoundation), Linux (PulseAudio), Windows (DirectShow) mit konfigurierbarer Geraeteauswahl auf allen Plattformen (Quick Pick + `verba.audioDevice` Setting). Geraete-Listing via avfoundation (macOS), pactl (Linux), dshow (Windows). ffmpeg v7 und v8+ Format-Erkennung, PowerShell-Fallback auf Windows.
 - **Streaming Post-Processing** - Done. `processStreaming()` mit Echtzeit-Fortschrittsanzeige in der Statusbar (Zeichenzaehler), AbortController-Unterstuetzung zum Abbrechen, robustes Error-Handling (401/429).
 - **Course Correction** - Done. Erkennung und Entfernung von Selbstkorrekturen im Diktat ("nein warte, doch X" → nur X). Geteilte `COURSE_CORRECTION_INSTRUCTION` in Default-Cleanup und Template-Framing.
+- **Voice Commands** - Done. Sprachgesteuerte Formatierungsbefehle ("Neuer Absatz", "Punkt", "Aufzaehlung") per Prompt-Engineering. Sprachunabhaengig, immer aktiv. Geteilte `VOICE_COMMANDS_INSTRUCTION` in Default-Cleanup und Template-Framing.
 
 ## Git-Workflow
 

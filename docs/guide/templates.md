@@ -29,7 +29,7 @@ Templates with `contextAware: true` trigger a semantic code search before sendin
 
 This requires a context provider:
 
-- **grepai** (recommended) — Install [grepai](https://grepai.dev) and run `grepai init` in your project.
+- **grepai** (recommended) — Install [grepai](https://yoanbernabeu.github.io/grepai/) and run `grepai init` in your project.
 - **OpenAI Embeddings** — Run the command **Verba: Index Project** to build a local index.
 
 Configure the provider in Settings:

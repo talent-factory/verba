@@ -22,6 +22,7 @@ function createFakeAnthropicClient() {
 	return {
 		messages: {
 			create: sinon.stub(),
+			stream: sinon.stub(),
 		},
 	};
 }
@@ -276,5 +277,129 @@ suite('CleanupService', () => {
 		});
 
 
+	});
+
+	suite('processStreaming()', () => {
+		test('streams tokens and calls onChunk with accumulated text', async () => {
+			secretStorage.get.resolves('sk-ant-test-key');
+
+			// Simulate streaming: fake stream object with async iterator
+			const chunks = ['Hello', ' world', '!'];
+			const fakeStream = {
+				[Symbol.asyncIterator]: async function* () {
+					for (const chunk of chunks) {
+						yield { type: 'content_block_delta', delta: { type: 'text_delta', text: chunk } };
+					}
+				},
+				finalMessage: async () => ({
+					content: [{ type: 'text', text: 'Hello world!' }],
+				}),
+				abort: sinon.stub(),
+			};
+			(fakeClient as any).messages.stream = sinon.stub().returns(fakeStream);
+
+			const onChunk = sinon.stub();
+			const result = await service.processStreaming('raw input', undefined, onChunk);
+
+			assert.strictEqual(result, 'Hello world!');
+			assert.strictEqual(onChunk.callCount, 3);
+			assert.deepStrictEqual(onChunk.firstCall.args, ['Hello', 5]);
+			assert.deepStrictEqual(onChunk.secondCall.args, ['Hello world', 11]);
+			assert.deepStrictEqual(onChunk.thirdCall.args, ['Hello world!', 12]);
+		});
+
+		test('uses same system prompt and message format as process()', async () => {
+			secretStorage.get.resolves('sk-ant-test-key');
+
+			const fakeStream = {
+				[Symbol.asyncIterator]: async function* () {
+					yield { type: 'content_block_delta', delta: { type: 'text_delta', text: 'cleaned' } };
+				},
+				finalMessage: async () => ({
+					content: [{ type: 'text', text: 'cleaned' }],
+				}),
+				abort: sinon.stub(),
+			};
+			(fakeClient as any).messages.stream = sinon.stub().returns(fakeStream);
+
+			const context: PipelineContext = {
+				templatePrompt: 'Convert to commit message.',
+				contextSnippets: ['// file: src/auth.ts\nfunction login() {}'],
+			};
+			await service.processStreaming('test input', context, sinon.stub());
+
+			const callArgs = (fakeClient as any).messages.stream.firstCall.args[0];
+			assert.strictEqual(callArgs.model, 'claude-haiku-4-5-20251001');
+			assert.ok(callArgs.system.includes('Convert to commit message.'));
+			assert.ok(callArgs.messages[0].content.includes('<context>'));
+			assert.ok(callArgs.messages[0].content.includes('<transcript>'));
+		});
+
+		test('returns raw input when stream produces empty text', async () => {
+			secretStorage.get.resolves('sk-ant-test-key');
+
+			const fakeStream = {
+				[Symbol.asyncIterator]: async function* () {},
+				finalMessage: async () => ({
+					content: [{ type: 'text', text: '' }],
+				}),
+				abort: sinon.stub(),
+			};
+			(fakeClient as any).messages.stream = sinon.stub().returns(fakeStream);
+
+			const result = await service.processStreaming('raw input', undefined, sinon.stub());
+			assert.strictEqual(result, 'raw input');
+		});
+
+		test('aborts stream and throws when signal is aborted', async () => {
+			secretStorage.get.resolves('sk-ant-test-key');
+
+			const abortController = new AbortController();
+			const fakeStream = {
+				[Symbol.asyncIterator]: async function* () {
+					yield { type: 'content_block_delta', delta: { type: 'text_delta', text: 'partial' } };
+					abortController.abort();
+					// Next iteration should detect abort
+					yield { type: 'content_block_delta', delta: { type: 'text_delta', text: ' more' } };
+				},
+				finalMessage: async () => ({
+					content: [{ type: 'text', text: 'partial more' }],
+				}),
+				abort: sinon.stub(),
+			};
+			(fakeClient as any).messages.stream = sinon.stub().returns(fakeStream);
+
+			await assert.rejects(
+				() => service.processStreaming('test', undefined, sinon.stub(), abortController.signal),
+				(err: Error) => err.name === 'AbortError',
+			);
+			assert.ok(fakeStream.abort.calledOnce);
+		});
+
+		test('throws on 401 error and clears key', async () => {
+			secretStorage.get.resolves('sk-ant-bad-key');
+			const authError = new Error('Invalid API key');
+			(authError as any).status = 401;
+			(fakeClient as any).messages.stream = sinon.stub().throws(authError);
+
+			await assert.rejects(
+				() => service.processStreaming('test', undefined, sinon.stub()),
+				/Invalid Anthropic API key/,
+			);
+			assert.ok(secretStorage.delete.calledWith('anthropic-api-key'));
+			assert.strictEqual((service as any)._client, null);
+		});
+
+		test('throws rate limit error on 429', async () => {
+			secretStorage.get.resolves('sk-ant-test-key');
+			const rateLimitError = new Error('Rate limit exceeded');
+			(rateLimitError as any).status = 429;
+			(fakeClient as any).messages.stream = sinon.stub().throws(rateLimitError);
+
+			await assert.rejects(
+				() => service.processStreaming('test', undefined, sinon.stub()),
+				/rate limit reached/,
+			);
+		});
 	});
 });

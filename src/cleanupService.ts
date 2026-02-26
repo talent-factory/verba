@@ -91,6 +91,90 @@ export class CleanupService implements ProcessingStage {
 		return text;
 	}
 
+	async processStreaming(
+		input: string,
+		context: PipelineContext | undefined,
+		onChunk: (accumulated: string, charCount: number) => void,
+		signal?: AbortSignal,
+	): Promise<string> {
+		const systemPrompt = context?.templatePrompt
+			? TEMPLATE_FRAMING + context.templatePrompt
+			: CLEANUP_SYSTEM_PROMPT;
+		const apiKey = await this.getApiKey();
+		const client = this.getClient(apiKey);
+
+		const contextBlock = context?.contextSnippets?.length
+			? `<context>\n${context.contextSnippets.join('\n\n')}\n</context>\n\n`
+			: '';
+		const userMessage = `${contextBlock}<transcript>\n${input}\n</transcript>`;
+
+		let stream;
+		try {
+			stream = client.messages.stream({
+				model: 'claude-haiku-4-5-20251001',
+				max_tokens: 4096,
+				system: systemPrompt,
+				messages: [{ role: 'user', content: userMessage }],
+			});
+		} catch (err: unknown) {
+			console.error('[Verba] Claude API stream creation failed:', err);
+			if (err instanceof Error && (err as any).status === 401) {
+				this._client = null;
+				try {
+					await this.secretStorage.delete(API_KEY_STORAGE_KEY);
+				} catch (deleteErr: unknown) {
+					console.error('[Verba] Failed to remove invalid Anthropic API key from storage:', deleteErr);
+				}
+				throw new Error(
+					'Invalid Anthropic API key. It has been removed — you will be prompted again on next use.'
+				);
+			}
+			if (err instanceof Error && (err as any).status === 429) {
+				throw new Error(
+					'Anthropic rate limit reached. Please wait a moment and try again.'
+				);
+			}
+			const detail = err instanceof Error ? err.message : String(err);
+			throw new Error(`Post-processing failed: ${detail}`);
+		}
+
+		let accumulated = '';
+		try {
+			for await (const event of stream) {
+				if (signal?.aborted) {
+					stream.abort();
+					const abortError = new Error('Dictation cancelled');
+					abortError.name = 'AbortError';
+					throw abortError;
+				}
+				if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
+					accumulated += event.delta.text;
+					onChunk(accumulated, accumulated.length);
+				}
+			}
+		} catch (err: unknown) {
+			if (err instanceof Error && err.name === 'AbortError') {
+				throw err;
+			}
+			const detail = err instanceof Error ? err.message : String(err);
+			throw new Error(`Post-processing failed: ${detail}`);
+		}
+
+		const finalMessage = await stream.finalMessage();
+		const text = finalMessage.content[0]?.type === 'text'
+			? finalMessage.content[0].text
+			: '';
+
+		console.log(`[Verba] Claude streaming response (${(text || '').length} chars): ${(text || '').substring(0, 200)}`);
+
+		if (!text || text.trim() === '') {
+			console.warn('[Verba] Claude returned empty response; skipping cleanup and using raw transcript.');
+			return input;
+		}
+
+		return text;
+	}
+
 	private async getApiKey(): Promise<string> {
 		const stored = await this.secretStorage.get(API_KEY_STORAGE_KEY);
 		if (stored) {

@@ -21,7 +21,7 @@ Microphone → ffmpeg (WAV) → Whisper API → Claude API → Editor/Terminal
 | `extension.ts` | Extension entry point, command registration, activation |
 | `recorder.ts` | ffmpeg child process for audio recording (macOS/Linux/Windows) |
 | `transcriptionService.ts` | OpenAI Whisper API integration with hallucination detection |
-| `cleanupService.ts` | Anthropic Claude API integration for post-processing (streaming with real-time progress, course correction for self-correction removal) |
+| `cleanupService.ts` | Anthropic Claude API integration for post-processing (streaming with real-time progress, course correction for self-correction removal, voice commands for formatting) |
 | `pipeline.ts` | Orchestration of recording → transcription → cleanup → insertion |
 | `templatePicker.ts` | Quick Pick menu for template selection with auto-reuse |
 | `insertText.ts` | Context-aware text insertion (editor vs terminal) |

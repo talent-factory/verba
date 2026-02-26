@@ -94,4 +94,39 @@ suite('Indexer', () => {
 		const hashes = indexer.getFileHashes();
 		assert.ok(hashes.has('tracked.ts'));
 	});
+
+	test('indexAll indexes multiple files and calls progress callback', async () => {
+		fs.writeFileSync(path.join(tmpDir, 'a.ts'), 'const a = 1;');
+		fs.writeFileSync(path.join(tmpDir, 'b.ts'), 'const b = 2;');
+		embedStub.resolves([[0.1, 0.2, 0.3]]);
+
+		const progressCalls: [number, number][] = [];
+		const totalChunks = await indexer.indexAll(['a.ts', 'b.ts'], (done, total) => {
+			progressCalls.push([done, total]);
+		});
+
+		assert.ok(totalChunks > 0);
+		assert.deepStrictEqual(progressCalls, [[1, 2], [2, 2]]);
+	});
+
+	test('indexFile returns 0 for empty file without calling embedBatch', async () => {
+		fs.writeFileSync(path.join(tmpDir, 'empty.ts'), '');
+
+		const count = await indexer.indexFile('empty.ts');
+
+		assert.strictEqual(count, 0);
+		assert.ok(embedStub.notCalled);
+		assert.ok(indexer.getFileHashes().has('empty.ts'), 'should still track the hash');
+	});
+
+	test('search delegates to internal vector store', async () => {
+		fs.writeFileSync(path.join(tmpDir, 'hello.ts'), 'export function hello() {}');
+		embedStub.resolves([[1, 0, 0]]);
+		await indexer.indexFile('hello.ts');
+
+		const results = indexer.search([1, 0, 0], 5);
+
+		assert.ok(results.length > 0);
+		assert.ok(results[0].content.includes('hello'));
+	});
 });

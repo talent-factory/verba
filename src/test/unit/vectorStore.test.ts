@@ -86,4 +86,32 @@ suite('VectorStore', () => {
 		store.load();
 		assert.strictEqual(store.size, 0);
 	});
+
+	test('search returns all chunks when topK exceeds store size', () => {
+		store.upsert([
+			{ file: 'a.ts', range: '1-10', hash: 'a', content: 'first', vector: [1, 0, 0] },
+			{ file: 'b.ts', range: '1-10', hash: 'b', content: 'second', vector: [0, 1, 0] },
+		]);
+		const results = store.search([1, 0, 0], 100);
+		assert.strictEqual(results.length, 2);
+	});
+
+	test('search handles zero vectors gracefully (returns 0 similarity)', () => {
+		store.upsert([
+			{ file: 'a.ts', range: '1-10', hash: 'a', content: 'zero', vector: [0, 0, 0] },
+			{ file: 'b.ts', range: '1-10', hash: 'b', content: 'nonzero', vector: [1, 0, 0] },
+		]);
+		const results = store.search([1, 0, 0], 2);
+		assert.strictEqual(results[0].content, 'nonzero', 'nonzero vector should rank higher');
+	});
+
+	test('load throws on corrupted JSON', () => {
+		fs.mkdirSync(tmpDir, { recursive: true });
+		fs.writeFileSync(path.join(tmpDir, 'index.json'), 'not valid json!!!', 'utf-8');
+
+		assert.throws(
+			() => store.load(),
+			/Unexpected token/
+		);
+	});
 });

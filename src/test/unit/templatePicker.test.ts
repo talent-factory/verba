@@ -71,4 +71,17 @@ suite('selectTemplate', () => {
 		assert.strictEqual(items[0].label, 'Freitext');
 		assert.strictEqual(items[1].label, '$(search) Code Comment');
 	});
+
+	test('does not preselect context-aware template when lastUsedName lacks icon prefix', async () => {
+		const templates: Template[] = [
+			{ name: 'Code Comment', prompt: 'Generate comment.', contextAware: true },
+		];
+		const showQuickPick = sinon.stub().resolves({ label: '$(search) Code Comment', template: templates[0] });
+
+		await selectTemplate(templates, 'Code Comment', showQuickPick);
+
+		const options = showQuickPick.firstCall.args[1];
+		assert.strictEqual(options?.activeItems, undefined,
+			'lastUsedName "Code Comment" should not match label "$(search) Code Comment"');
+	});
 });

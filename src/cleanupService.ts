@@ -36,6 +36,83 @@ export class CleanupService implements ProcessingStage {
 	}
 
 	async process(input: string, context?: PipelineContext): Promise<string> {
+		const { client, systemPrompt, userMessage } = await this.prepareRequest(context, input);
+
+		let response;
+		try {
+			response = await client.messages.create({
+				model: 'claude-haiku-4-5-20251001',
+				max_tokens: 4096,
+				system: systemPrompt,
+				messages: [{ role: 'user', content: userMessage }],
+			});
+		} catch (err: unknown) {
+			this.handleApiError(err, '[Verba] Claude API call failed:');
+		}
+
+		const text = response.content[0]?.type === 'text'
+			? response.content[0].text
+			: '';
+
+		console.log(`[Verba] Claude response (${(text || '').length} chars): ${(text || '').substring(0, 200)}`);
+
+		return this.fallbackIfEmpty(text, input);
+	}
+
+	async processStreaming(
+		input: string,
+		context: PipelineContext | undefined,
+		onChunk: (charCount: number) => void,
+		signal?: AbortSignal,
+	): Promise<string> {
+		const { client, systemPrompt, userMessage } = await this.prepareRequest(context, input);
+
+		const stream = client.messages.stream({
+			model: 'claude-haiku-4-5-20251001',
+			max_tokens: 4096,
+			system: systemPrompt,
+			messages: [{ role: 'user', content: userMessage }],
+		});
+
+		const abortHandler = () => { stream.abort(); };
+		if (signal) {
+			signal.addEventListener('abort', abortHandler, { once: true });
+		}
+
+		let accumulated = '';
+		try {
+			for await (const event of stream) {
+				if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
+					accumulated += event.delta.text;
+					try {
+						onChunk(accumulated.length);
+					} catch (callbackErr) {
+						console.warn('[Verba] onChunk callback failed (non-fatal):', callbackErr);
+					}
+				}
+			}
+		} catch (err: unknown) {
+			if (signal?.aborted) {
+				const abortError = new Error('Dictation cancelled');
+				abortError.name = 'AbortError';
+				throw abortError;
+			}
+			this.handleApiError(err, '[Verba] Claude API streaming failed:');
+		} finally {
+			if (signal) {
+				signal.removeEventListener('abort', abortHandler);
+			}
+		}
+
+		console.log(`[Verba] Claude streaming response (${accumulated.length} chars): ${accumulated.substring(0, 200)}`);
+
+		return this.fallbackIfEmpty(accumulated, input);
+	}
+
+	private async prepareRequest(
+		context: PipelineContext | undefined,
+		input: string,
+	): Promise<{ client: Anthropic; systemPrompt: string; userMessage: string }> {
 		const systemPrompt = context?.templatePrompt
 			? TEMPLATE_FRAMING + context.templatePrompt
 			: CLEANUP_SYSTEM_PROMPT;
@@ -47,47 +124,34 @@ export class CleanupService implements ProcessingStage {
 			: '';
 		const userMessage = `${contextBlock}<transcript>\n${input}\n</transcript>`;
 
-		let response;
-		try {
-			response = await client.messages.create({
-				model: 'claude-haiku-4-5-20251001',
-				max_tokens: 4096,
-				system: systemPrompt,
-				messages: [{ role: 'user', content: userMessage }],
+		return { client, systemPrompt, userMessage };
+	}
+
+	private handleApiError(err: unknown, logPrefix: string): never {
+		console.error(logPrefix, err);
+		if (err instanceof Error && (err as any).status === 401) {
+			this._client = null;
+			Promise.resolve(this.secretStorage.delete(API_KEY_STORAGE_KEY)).catch((deleteErr: unknown) => {
+				console.error('[Verba] Failed to remove invalid Anthropic API key from storage:', deleteErr);
 			});
-		} catch (err: unknown) {
-			console.error('[Verba] Claude API call failed:', err);
-			if (err instanceof Error && (err as any).status === 401) {
-				this._client = null;
-				try {
-					await this.secretStorage.delete(API_KEY_STORAGE_KEY);
-				} catch (deleteErr: unknown) {
-					console.error('[Verba] Failed to remove invalid Anthropic API key from storage:', deleteErr);
-				}
-				throw new Error(
-					'Invalid Anthropic API key. It has been removed — you will be prompted again on next use.'
-				);
-			}
-			if (err instanceof Error && (err as any).status === 429) {
-				throw new Error(
-					'Anthropic rate limit reached. Please wait a moment and try again.'
-				);
-			}
-			const detail = err instanceof Error ? err.message : String(err);
-			throw new Error(`Post-processing failed: ${detail}`);
+			throw new Error(
+				'Invalid Anthropic API key. It has been removed — you will be prompted again on next use.'
+			);
 		}
+		if (err instanceof Error && (err as any).status === 429) {
+			throw new Error(
+				'Anthropic rate limit reached. Please wait a moment and try again.'
+			);
+		}
+		const detail = err instanceof Error ? err.message : String(err);
+		throw new Error(`Post-processing failed: ${detail}`);
+	}
 
-		const text = response.content[0]?.type === 'text'
-			? response.content[0].text
-			: '';
-
-		console.log(`[Verba] Claude response (${(text || '').length} chars): ${(text || '').substring(0, 200)}`);
-
+	private fallbackIfEmpty(text: string, rawInput: string): string {
 		if (!text || text.trim() === '') {
 			console.warn('[Verba] Claude returned empty response; skipping cleanup and using raw transcript.');
-			return input;
+			return rawInput;
 		}
-
 		return text;
 	}
 

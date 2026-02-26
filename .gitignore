@@ -5,6 +5,7 @@ node_modules/
 *.vsix
 .grepai/
 .verba/
+.serena/
 
 docs/plans/
 site/

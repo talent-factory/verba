@@ -53,6 +53,7 @@ export function activate(context: vscode.ExtensionContext) {
 	const pipeline = new DictationPipeline();
 	let selectedTemplate: Template | undefined;
 	let preferTerminal = false;
+	let processingAbortController: AbortController | null = null;
 
 	const embeddingService = new EmbeddingService(context.secrets);
 
@@ -109,6 +110,13 @@ export function activate(context: vscode.ExtensionContext) {
 	};
 
 	const handleDictation = async (forTerminal: boolean) => {
+		// Cancel ongoing processing if user triggers shortcut during streaming
+		if (processingAbortController) {
+			processingAbortController.abort();
+			processingAbortController = null;
+			return;
+		}
+
 		if (recorder.isRecording) {
 			let filePath: string | undefined;
 			try {
@@ -138,7 +146,28 @@ export function activate(context: vscode.ExtensionContext) {
 				const pipelineContext: PipelineContext | undefined = selectedTemplate
 					? { templatePrompt: selectedTemplate.prompt, contextSnippets }
 					: undefined;
-				const transcript = await cleanupService.process(rawTranscript, pipelineContext);
+				statusBar.setProcessing();
+				const abortController = new AbortController();
+				processingAbortController = abortController;
+
+				let transcript: string;
+				try {
+					transcript = await cleanupService.processStreaming(
+						rawTranscript,
+						pipelineContext,
+						(_, charCount) => statusBar.setProcessing(charCount),
+						abortController.signal,
+					);
+				} catch (err: unknown) {
+					if (err instanceof Error && err.name === 'AbortError') {
+						statusBar.setIdle(selectedTemplate?.name);
+						vscode.window.showInformationMessage('Verba: Dictation cancelled.');
+						return;
+					}
+					throw err;
+				} finally {
+					processingAbortController = null;
+				}
 				console.log(`[Verba] Final text (${transcript.length} chars): ${transcript.substring(0, 200)}`);
 
 				const executeCommand = vscode.workspace.getConfiguration('verba.terminal').get<boolean>('executeCommand', false);

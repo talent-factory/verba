@@ -47,7 +47,7 @@ Define terms (product names, technical jargon, abbreviations) that must be prese
 ["Verba", "CleanupService", "TranscriptionService", "ffmpeg"]
 ```
 
-Both sources are merged automatically. The combined glossary is limited to ~80 terms (~224 Whisper prompt tokens). If the limit is exceeded, a warning is shown.
+Both sources are merged automatically. For best results, keep the combined glossary under ~80 terms (~224 Whisper prompt tokens). If this limit is exceeded, a warning is shown and excess terms may be ignored by Whisper.
 
 !!! tip
     Place `.verba-glossary.json` under version control so that all team members share the same glossary. Changes to the file are picked up automatically.

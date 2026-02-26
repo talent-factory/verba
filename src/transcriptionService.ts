@@ -11,7 +11,8 @@ interface SecretStorage {
 
 /**
  * Sends a WAV audio file to OpenAI Whisper API and returns the transcript.
- * Input is a file path, output is transcript text.
+ * Input is a file path, output is transcript text. An optional glossary of terms
+ * can be provided to bias Whisper transcription via the prompt parameter.
  * API key is stored in VS Code SecretStorage; prompts user on first use.
  */
 export class TranscriptionService {

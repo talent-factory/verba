@@ -53,12 +53,18 @@ export function activate(context: vscode.ExtensionContext) {
 	let selectedTemplate: Template | undefined;
 	let preferTerminal = false;
 	let processingAbortController: AbortController | null = null;
+	let currentGlossary: string[] = [];
 
 	function applyGlossary(): void {
-		const terms = loadGlossary();
-		cleanupService.setGlossary(terms);
-		if (terms.length > 0) {
-			console.log(`[Verba] Glossary loaded: ${terms.length} terms`);
+		currentGlossary = loadGlossary();
+		cleanupService.setGlossary(currentGlossary);
+		if (currentGlossary.length > 0) {
+			console.log(`[Verba] Glossary loaded: ${currentGlossary.length} terms`);
+		}
+		if (currentGlossary.length > 80) {
+			vscode.window.showWarningMessage(
+				`Verba: Glossary has ${currentGlossary.length} terms (recommended limit: ~80). Excess terms may be ignored by Whisper.`
+			);
 		}
 	}
 	applyGlossary();
@@ -102,9 +108,11 @@ export function activate(context: vscode.ExtensionContext) {
 	}
 
 	function loadGlossary(): string[] {
-		const globalTerms = vscode.workspace
+		const rawGlobalTerms = vscode.workspace
 			.getConfiguration('verba')
-			.get<string[]>('glossary', []);
+			.get<unknown[]>('glossary', []);
+		const globalTerms = (Array.isArray(rawGlobalTerms) ? rawGlobalTerms : [])
+			.filter((t): t is string => typeof t === 'string' && t.trim() !== '');
 
 		const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
 		let workspaceTerms: string[] = [];
@@ -115,17 +123,30 @@ export function activate(context: vscode.ExtensionContext) {
 				const parsed = JSON.parse(content);
 				if (Array.isArray(parsed)) {
 					workspaceTerms = parsed.filter((t): t is string => typeof t === 'string' && t.trim() !== '');
+				} else {
+					console.warn('[Verba] .verba-glossary.json is not an array, ignoring');
+					vscode.window.showWarningMessage(
+						'Verba: .verba-glossary.json must be a JSON array of strings (e.g. ["term1", "term2"]). Workspace glossary ignored.'
+					);
 				}
 			} catch (err: unknown) {
-				if (err instanceof Error && (err as NodeJS.ErrnoException).code !== 'ENOENT') {
+				if (err instanceof Error && (err as NodeJS.ErrnoException).code === 'ENOENT') {
+					// File doesn't exist — normal state, no workspace glossary
+				} else {
+					const detail = err instanceof SyntaxError
+						? 'Invalid JSON syntax'
+						: (err instanceof Error ? err.message : String(err));
 					console.warn('[Verba] Failed to read .verba-glossary.json:', err);
+					vscode.window.showWarningMessage(
+						`Verba: Could not load .verba-glossary.json (${detail}). Workspace glossary terms will not be applied.`
+					);
 				}
 			}
 		}
 
-		// Workspace terms take priority (listed first), deduplicate
-		const merged = [...new Set([...workspaceTerms, ...globalTerms])];
-		return merged;
+		// Merge workspace and global terms, deduplicating. Workspace terms listed first
+		// so they are retained by Set deduplication when duplicates exist.
+		return [...new Set([...workspaceTerms, ...globalTerms])];
 	}
 
 	// Show active template in status bar on startup
@@ -158,9 +179,8 @@ export function activate(context: vscode.ExtensionContext) {
 				const fileStats = fs.statSync(filePath);
 				console.log(`[Verba] WAV file: ${filePath} (${fileStats.size} bytes)`);
 
-				// Step 1: Transcribe via Whisper
-				const glossary = loadGlossary();
-				const rawTranscript = await transcriptionService.process(filePath, glossary);
+				// Step 1: Transcribe via Whisper (uses cached glossary from applyGlossary)
+				const rawTranscript = await transcriptionService.process(filePath, currentGlossary);
 				console.log(`[Verba] Whisper transcript (${rawTranscript.length} chars): ${rawTranscript.substring(0, 200)}`);
 
 				// Step 2: Context retrieval (only for context-aware templates)
@@ -402,9 +422,14 @@ export function activate(context: vscode.ExtensionContext) {
 	if (workspaceRoot) {
 		const glossaryPattern = new vscode.RelativePattern(workspaceRoot, '.verba-glossary.json');
 		const glossaryWatcher = vscode.workspace.createFileSystemWatcher(glossaryPattern);
-		glossaryWatcher.onDidChange(() => applyGlossary());
-		glossaryWatcher.onDidCreate(() => applyGlossary());
-		glossaryWatcher.onDidDelete(() => applyGlossary());
+		const safeApplyGlossary = () => {
+			try { applyGlossary(); } catch (err) {
+				console.error('[Verba] Failed to reload glossary:', err);
+			}
+		};
+		glossaryWatcher.onDidChange(safeApplyGlossary);
+		glossaryWatcher.onDidCreate(safeApplyGlossary);
+		glossaryWatcher.onDidDelete(safeApplyGlossary);
 		context.subscriptions.push(glossaryWatcher);
 	}
 

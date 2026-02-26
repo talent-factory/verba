@@ -185,7 +185,7 @@ Each template consists of `name` (displayed in Quick Pick), `prompt` (instructio
 | `verba.templates` | Array | 8 built-in templates | Prompt templates for post-processing |
 | `verba.terminal.executeCommand` | Boolean | `false` | Submit text in terminal with Enter |
 | `verba.contextSearch.provider` | String | `"auto"` | Context search provider: `auto` uses grepai if available, otherwise OpenAI Embeddings |
-| `verba.glossary` | Array | `[]` | Terms preserved during transcription and cleanup (limit: ~80 terms) |
+| `verba.glossary` | Array | `[]` | Terms preserved during transcription and cleanup (recommended limit: ~80 terms) |
 | `verba.contextSearch.maxResults` | Number | `5` | Number of context snippets per dictation (1--20) |
 
 ## Architecture

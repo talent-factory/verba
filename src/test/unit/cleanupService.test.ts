@@ -381,6 +381,110 @@ suite('CleanupService', () => {
 				'template prompt should include glossary term');
 		});
 
+		test('setGlossary replaces previous glossary completely', async () => {
+			service.setGlossary(['OldTerm']);
+			service.setGlossary(['NewTerm']);
+			secretStorage.get.resolves('sk-ant-test-key');
+			fakeClient.messages.create.resolves({
+				content: [{ type: 'text', text: 'cleaned' }],
+			});
+
+			await service.process('test input');
+
+			const callArgs = fakeClient.messages.create.firstCall.args[0];
+			assert.ok(callArgs.system.includes('NewTerm'),
+				'system prompt should include new glossary term');
+			assert.ok(!callArgs.system.includes('OldTerm'),
+				'system prompt should not include old glossary term');
+		});
+
+		test('glossary instruction contains key preservation phrases', async () => {
+			service.setGlossary(['TestTerm']);
+			secretStorage.get.resolves('sk-ant-test-key');
+			fakeClient.messages.create.resolves({
+				content: [{ type: 'text', text: 'cleaned' }],
+			});
+
+			await service.process('test input');
+
+			const callArgs = fakeClient.messages.create.firstCall.args[0];
+			assert.ok(callArgs.system.includes('exakt bei'),
+				'instruction should contain "exakt bei"');
+			assert.ok(callArgs.system.includes('nicht uebersetzen'),
+				'instruction should contain "nicht uebersetzen"');
+			assert.ok(callArgs.system.includes('nicht aendern'),
+				'instruction should contain "nicht aendern"');
+		});
+
+		test('glossary terms with commas are included correctly', async () => {
+			service.setGlossary(['Acme, Inc.', 'Kubernetes']);
+			secretStorage.get.resolves('sk-ant-test-key');
+			fakeClient.messages.create.resolves({
+				content: [{ type: 'text', text: 'cleaned' }],
+			});
+
+			await service.process('test input');
+
+			const callArgs = fakeClient.messages.create.firstCall.args[0];
+			assert.ok(callArgs.system.includes('Acme, Inc.'),
+				'system prompt should include term with comma');
+			assert.ok(callArgs.system.includes('Kubernetes'),
+				'system prompt should include other term');
+		});
+
+		test('glossary instruction appears on new line in default prompt', async () => {
+			service.setGlossary(['TestTerm']);
+			secretStorage.get.resolves('sk-ant-test-key');
+			fakeClient.messages.create.resolves({
+				content: [{ type: 'text', text: 'cleaned' }],
+			});
+
+			await service.process('test input');
+
+			const callArgs = fakeClient.messages.create.firstCall.args[0];
+			assert.ok(callArgs.system.includes('\nBehalte folgende Begriffe'),
+				'glossary instruction should start on new line');
+		});
+
+		test('glossary instruction appears between framing and template prompt', async () => {
+			service.setGlossary(['TestTerm']);
+			secretStorage.get.resolves('sk-ant-test-key');
+			fakeClient.messages.create.resolves({
+				content: [{ type: 'text', text: 'cleaned' }],
+			});
+
+			const context: PipelineContext = {
+				templatePrompt: 'Convert to a commit message.',
+			};
+			await service.process('test input', context);
+
+			const callArgs = fakeClient.messages.create.firstCall.args[0];
+			const glossaryIdx = callArgs.system.indexOf('Behalte folgende Begriffe');
+			const templateIdx = callArgs.system.indexOf('Convert to a commit message.');
+			assert.ok(glossaryIdx > 0, 'glossary instruction should be present');
+			assert.ok(templateIdx > glossaryIdx,
+				'template prompt should appear after glossary instruction');
+		});
+
+		test('setGlossary makes a defensive copy of the array', async () => {
+			const terms = ['OriginalTerm'];
+			service.setGlossary(terms);
+			terms.push('MutatedTerm');
+
+			secretStorage.get.resolves('sk-ant-test-key');
+			fakeClient.messages.create.resolves({
+				content: [{ type: 'text', text: 'cleaned' }],
+			});
+
+			await service.process('test input');
+
+			const callArgs = fakeClient.messages.create.firstCall.args[0];
+			assert.ok(callArgs.system.includes('OriginalTerm'),
+				'system prompt should include original term');
+			assert.ok(!callArgs.system.includes('MutatedTerm'),
+				'system prompt should not include mutated term');
+		});
+
 	});
 
 	suite('processStreaming()', () => {

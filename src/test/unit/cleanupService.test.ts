@@ -84,6 +84,19 @@ suite('CleanupService', () => {
 			assert.ok(callArgs.system.includes('<transcript>'), 'system prompt should reference transcript tags');
 		});
 
+		test('default system prompt includes course correction instruction', async () => {
+			secretStorage.get.resolves('sk-ant-test-key');
+			fakeClient.messages.create.resolves({
+				content: [{ type: 'text', text: 'cleaned' }],
+			});
+
+			await service.process('test input');
+
+			const callArgs = fakeClient.messages.create.firstCall.args[0];
+			assert.ok(callArgs.system.includes('Selbstkorrektur'),
+				'system prompt should mention self-correction');
+		});
+
 		test('prompts for API key when none is stored', async () => {
 			secretStorage.get.resolves(undefined);
 			promptApiKeyStub.resolves('sk-ant-new-key');
@@ -210,6 +223,22 @@ suite('CleanupService', () => {
 			assert.ok(callArgs.system.includes('<transcript>'), 'should reference transcript tags in framing');
 		});
 
+		test('template system prompt includes course correction instruction', async () => {
+			secretStorage.get.resolves('sk-ant-test-key');
+			fakeClient.messages.create.resolves({
+				content: [{ type: 'text', text: 'commit: fix login bug' }],
+			});
+
+			const context: PipelineContext = {
+				templatePrompt: 'Convert to a commit message.',
+			};
+			await service.process('test input', context);
+
+			const callArgs = fakeClient.messages.create.firstCall.args[0];
+			assert.ok(callArgs.system.includes('Selbstkorrektur'),
+				'template prompt should include course correction instruction');
+		});
+
 		test('uses default system prompt when no context is provided', async () => {
 			secretStorage.get.resolves('sk-ant-test-key');
 			fakeClient.messages.create.resolves({
@@ -324,6 +353,31 @@ suite('CleanupService', () => {
 			assert.ok(callArgs.system.includes('Convert to commit message.'));
 			assert.ok(callArgs.messages[0].content.includes('<context>'));
 			assert.ok(callArgs.messages[0].content.includes('<transcript>'));
+		});
+
+		test('streaming uses course correction in default prompt', async () => {
+			secretStorage.get.resolves('sk-ant-test-key');
+			fakeClient.messages.stream.returns(createFakeStream(['cleaned']));
+
+			await service.processStreaming('test input', undefined, sinon.stub());
+
+			const callArgs = fakeClient.messages.stream.firstCall.args[0];
+			assert.ok(callArgs.system.includes('Selbstkorrektur'),
+				'streaming default prompt should include course correction');
+		});
+
+		test('streaming uses course correction in template prompt', async () => {
+			secretStorage.get.resolves('sk-ant-test-key');
+			fakeClient.messages.stream.returns(createFakeStream(['cleaned']));
+
+			const context: PipelineContext = {
+				templatePrompt: 'Convert to markdown.',
+			};
+			await service.processStreaming('test input', context, sinon.stub());
+
+			const callArgs = fakeClient.messages.stream.firstCall.args[0];
+			assert.ok(callArgs.system.includes('Selbstkorrektur'),
+				'streaming template prompt should include course correction');
 		});
 
 		test('returns raw input when stream produces empty text', async () => {

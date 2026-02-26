@@ -75,3 +75,9 @@ Define custom templates in `settings.json`:
     - Be specific about the desired output format
     - Tell Claude to "keep the original language" if you dictate in different languages
     - End with "Return only the [result]" to avoid explanatory text in the output
+
+## Course Correction
+
+Verba automatically detects and removes self-corrections in your speech. If you say "let's meet tomorrow, no wait, on Friday at ten", only "let's meet on Friday at ten" is kept. This works in all templates — both the default cleanup and custom templates.
+
+Common correction phrases that are recognized: "no wait", "I meant", "actually rather", "correction", and similar patterns in German and English.

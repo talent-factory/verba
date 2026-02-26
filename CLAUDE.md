@@ -37,6 +37,8 @@ Alle Phasen sind Sub-Issues von TF-243 (Projektuebersicht). Alle Kernphasen sind
 - **TF-249: Marktanalyse** - Done. Konkurrenzanalyse (Wispr Flow, Superwhisper, Willow Voice, VoiceInk, etc.).
 - **TF-250: Terminal-Unterstuetzung** - Done. Diktat in Terminal einfuegen, `verba.terminal.executeCommand` Setting.
 - **Cross-Platform Audio-Aufnahme** - Done. macOS (AVFoundation), Linux (PulseAudio), Windows (DirectShow) mit konfigurierbarer Geraeteauswahl auf allen Plattformen (Quick Pick + `verba.audioDevice` Setting). Geraete-Listing via avfoundation (macOS), pactl (Linux), dshow (Windows). ffmpeg v7 und v8+ Format-Erkennung, PowerShell-Fallback auf Windows.
+- **Streaming Post-Processing** - Done. `processStreaming()` mit Echtzeit-Fortschrittsanzeige in der Statusbar (Zeichenzaehler), AbortController-Unterstuetzung zum Abbrechen, robustes Error-Handling (401/429).
+- **Course Correction** - Done. Erkennung und Entfernung von Selbstkorrekturen im Diktat ("nein warte, doch X" → nur X). Geteilte `COURSE_CORRECTION_INSTRUCTION` in Default-Cleanup und Template-Framing.
 
 ## Git-Workflow
 
@@ -68,8 +70,8 @@ Mikrofon --> ffmpeg (WAV) --> Whisper API --> Claude API --> Editor/Terminal
 |-------|---------|
 | `recorder.ts` | ffmpeg-Kindprozess fuer Audioaufnahme (macOS/Linux/Windows) |
 | `transcriptionService.ts` | OpenAI Whisper API Integration |
-| `cleanupService.ts` | Anthropic Claude API Integration |
+| `cleanupService.ts` | Anthropic Claude API Integration (Streaming + Course Correction) |
 | `pipeline.ts` | Verkettung der Verarbeitungsstufen |
 | `templatePicker.ts` | Quick-Pick-Menue fuer Template-Auswahl |
 | `insertText.ts` | Texteinfuegung in Editor oder Terminal |
-| `statusBarManager.ts` | Statusbar-Anzeige (Idle/Recording/Transcribing) |
+| `statusBarManager.ts` | Statusbar-Anzeige (Idle/Recording/Transcribing/Processing mit Zeichenzaehler) |

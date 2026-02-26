@@ -6,14 +6,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-02-26
+
 ### Added
 
+- **Offline-Transkription (TF-257):** Lokale Transkription via whisper.cpp CLI als Alternative zur OpenAI Whisper API. Audio verlässt nie den Rechner. Strategy-Pattern auf `TranscriptionService` mit `setProvider('openai'|'local')`.
+- **Model-Download:** GGML-Modelle von Hugging Face via `dictation.downloadModel` Command mit Fortschrittsanzeige und Abbruchmoeglichkeit. Modellauswahl: tiny, base, small, medium, large.
+- **Provider-Anzeige in Statuszeile:** Tooltip zeigt aktiven Provider (OpenAI Whisper / Local whisper.cpp), Transcribing-State zeigt Provider explizit an.
 - **Streaming Post-Processing:** Claude-Antworten werden per Streaming empfangen mit Echtzeit-Fortschrittsanzeige in der Statusbar (z.B. "Processing... 182 chars"). Diktat kann waehrend der Verarbeitung per erneutem Tastendruck abgebrochen werden.
 - **Course Correction:** Selbstkorrekturen im Diktat werden automatisch erkannt und entfernt (z.B. "nein warte, doch Freitag" → "Freitag"). Aktiv in allen Modi (Freitext und Templates).
 - **Voice Commands:** Gesprochene Formatierungsbefehle werden erkannt und umgesetzt (z.B. "Neuer Absatz", "Punkt", "Aufzaehlung"). Funktioniert sprachunabhaengig in allen Modi.
-- **Glossar/Dictionary:** Begriffe (Produktnamen, Fachbegriffe, Abkuerzungen) werden bei Transkription und Bereinigung exakt beibehalten. Globale Begriffe via `verba.glossary` Setting, projektspezifische via `.verba-glossary.json`. Begriffe werden als Hints an Whisper und als Schutzinstruktionen an Claude gesendet. Empfohlenes Limit: ~80 Begriffe (~224 Whisper-Prompt-Tokens), bei Ueberschreitung wird eine Warnung angezeigt.
+- **Glossar/Dictionary:** Begriffe (Produktnamen, Fachbegriffe, Abkuerzungen) werden bei Transkription und Bereinigung exakt beibehalten. Globale Begriffe via `verba.glossary` Setting, projektspezifische via `.verba-glossary.json`.
+- **JSDoc-Dokumentation:** Alle oeffentlichen APIs ueber 13 Source-Dateien dokumentiert.
 
 ### Fixed
+
+- SIGKILL-Eskalation bei haengenden whisper-cli Prozessen
+- Provider-Validierung mit Fallback bei ungueltigem Setting
+- Minimale Dateigroesse-Pruefung nach Model-Download
 
 ### Changed
 

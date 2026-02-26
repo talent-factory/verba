@@ -37,6 +37,14 @@ export class StatusBarManager {
 		this.item.tooltip = 'Transcribing audio...';
 	}
 
+	setProcessing(charCount?: number): void {
+		this.item.text = charCount !== undefined
+			? `$(loading~spin) Processing... ${charCount} chars`
+			: '$(loading~spin) Processing...';
+		this.item.backgroundColor = undefined;
+		this.item.tooltip = 'Processing dictation...';
+	}
+
 	dispose(): void {
 		this.item.dispose();
 	}

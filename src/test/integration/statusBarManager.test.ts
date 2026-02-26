@@ -58,4 +58,20 @@ suite('StatusBarManager', () => {
 		assert.strictEqual(item.backgroundColor, undefined);
 		assert.strictEqual(item.tooltip, 'Click to start dictation');
 	});
+
+	test('switches to processing state without char count', () => {
+		manager.setProcessing();
+		const item = spy.firstCall.returnValue;
+		assert.strictEqual(item.text, '$(loading~spin) Processing...');
+		assert.strictEqual(item.backgroundColor, undefined);
+		assert.strictEqual(item.tooltip, 'Processing dictation...');
+	});
+
+	test('switches to processing state with char count', () => {
+		manager.setProcessing(182);
+		const item = spy.firstCall.returnValue;
+		assert.strictEqual(item.text, '$(loading~spin) Processing... 182 chars');
+		assert.strictEqual(item.backgroundColor, undefined);
+		assert.strictEqual(item.tooltip, 'Processing dictation...');
+	});
 });

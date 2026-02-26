@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { FfmpegRecorder } from './recorder';
 import { StatusBarManager } from './statusBarManager';
-import { DictationPipeline, PipelineContext } from './pipeline';
+import { PipelineContext } from './pipeline';
 import { TranscriptionService } from './transcriptionService';
 import { CleanupService } from './cleanupService';
 import { insertText } from './insertText';
@@ -50,7 +50,6 @@ export function activate(context: vscode.ExtensionContext) {
 	const statusBar = new StatusBarManager();
 	const transcriptionService = new VerbaTranscriptionService(context.secrets);
 	const cleanupService = new VerbaCleanupService(context.secrets);
-	const pipeline = new DictationPipeline();
 	let selectedTemplate: Template | undefined;
 	let preferTerminal = false;
 	let processingAbortController: AbortController | null = null;
@@ -98,9 +97,6 @@ export function activate(context: vscode.ExtensionContext) {
 	if (initialTemplateName) {
 		statusBar.setIdle(initialTemplateName);
 	}
-
-	pipeline.addStage(transcriptionService);
-	pipeline.addStage(cleanupService);
 
 	recorder.onUnexpectedStop = (error) => {
 		selectedTemplate = undefined;

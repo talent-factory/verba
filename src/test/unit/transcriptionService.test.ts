@@ -175,5 +175,38 @@ suite('TranscriptionService', () => {
 				/Transcription failed: raw string error/
 			);
 		});
+
+		test('passes glossary terms as prompt parameter to Whisper', async () => {
+			secretStorage.get.resolves('sk-test-key');
+			fakeClient.audio.transcriptions.create.resolves({ text: 'Visual Studio Code is great' });
+			sinon.stub(fs, 'createReadStream').returns('fake-stream' as any);
+
+			await service.process('/tmp/test.wav', ['Visual Studio Code', 'Kubernetes']);
+
+			const callArgs = fakeClient.audio.transcriptions.create.firstCall.args[0];
+			assert.strictEqual(callArgs.prompt, 'Visual Studio Code, Kubernetes');
+		});
+
+		test('omits prompt parameter when glossary is empty', async () => {
+			secretStorage.get.resolves('sk-test-key');
+			fakeClient.audio.transcriptions.create.resolves({ text: 'Hello world' });
+			sinon.stub(fs, 'createReadStream').returns('fake-stream' as any);
+
+			await service.process('/tmp/test.wav', []);
+
+			const callArgs = fakeClient.audio.transcriptions.create.firstCall.args[0];
+			assert.strictEqual(callArgs.prompt, undefined);
+		});
+
+		test('omits prompt parameter when glossary is undefined', async () => {
+			secretStorage.get.resolves('sk-test-key');
+			fakeClient.audio.transcriptions.create.resolves({ text: 'Hello world' });
+			sinon.stub(fs, 'createReadStream').returns('fake-stream' as any);
+
+			await service.process('/tmp/test.wav');
+
+			const callArgs = fakeClient.audio.transcriptions.create.firstCall.args[0];
+			assert.strictEqual(callArgs.prompt, undefined);
+		});
 	});
 });

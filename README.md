@@ -203,7 +203,7 @@ Microphone --> ffmpeg (WAV) --> Whisper API --> Claude API --> Editor/Terminal
 | `pipeline.ts` | Processing stage orchestration |
 | `templatePicker.ts` | Quick Pick menu for template selection |
 | `insertText.ts` | Text insertion into editor or terminal |
-| `statusBarManager.ts` | Status bar display (Idle/Recording/Transcribing) |
+| `statusBarManager.ts` | Status bar display (Idle/Recording/Transcribing/Processing with character counter) |
 
 ## Development
 

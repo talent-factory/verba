@@ -252,6 +252,22 @@ suite('CleanupService', () => {
 				'template prompt should include course correction instruction');
 		});
 
+		test('template system prompt includes voice commands instruction', async () => {
+			secretStorage.get.resolves('sk-ant-test-key');
+			fakeClient.messages.create.resolves({
+				content: [{ type: 'text', text: 'commit: fix login bug' }],
+			});
+
+			const context: PipelineContext = {
+				templatePrompt: 'Convert to a commit message.',
+			};
+			await service.process('test input', context);
+
+			const callArgs = fakeClient.messages.create.firstCall.args[0];
+			assert.ok(callArgs.system.includes('Sprachbefehl'),
+				'template prompt should include voice commands instruction');
+		});
+
 		test('uses default system prompt when no context is provided', async () => {
 			secretStorage.get.resolves('sk-ant-test-key');
 			fakeClient.messages.create.resolves({

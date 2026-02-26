@@ -90,8 +90,7 @@ jobs:
             }
 
             body += '---\n';
-            body += '*Generated automatically from conventional commit messages. ';
-            body += 'The final changelog will be created by [semantic-release](https://github.com/semantic-release/semantic-release) on merge.*\n';
+            body += '*Generated automatically from conventional commit messages.*\n';
 
             // Find existing changelog preview comment or create a new one
             const marker = '## Changelog Preview';

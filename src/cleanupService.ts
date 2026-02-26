@@ -54,11 +54,6 @@ export class CleanupService implements ProcessingStage {
 	async process(input: string, context?: PipelineContext): Promise<string> {
 		const { client, systemPrompt, userMessage } = await this.prepareRequest(context, input);
 
-		const contextBlock = context?.contextSnippets?.length
-			? `<context>\n${context.contextSnippets.join('\n\n')}\n</context>\n\n`
-			: '';
-		const userMessage = `${contextBlock}<transcript>\n${input}\n</transcript>`;
-
 		let response;
 		try {
 			response = await client.messages.create({

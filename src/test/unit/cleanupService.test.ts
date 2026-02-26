@@ -406,6 +406,27 @@ suite('CleanupService', () => {
 			assert.strictEqual(onChunk.callCount, 2, 'onChunk should still be called for both chunks');
 		});
 
+		test('ignores non-text_delta events in the stream', async () => {
+			secretStorage.get.resolves('sk-ant-test-key');
+			const fakeStream = {
+				[Symbol.asyncIterator]: async function* () {
+					yield { type: 'message_start', message: {} };
+					yield { type: 'content_block_start', index: 0, content_block: { type: 'text' } };
+					yield { type: 'content_block_delta', delta: { type: 'text_delta', text: 'Hello' } };
+					yield { type: 'content_block_delta', delta: { type: 'input_json_delta', partial_json: '{}' } };
+					yield { type: 'content_block_stop', index: 0 };
+				},
+				abort: sinon.stub(),
+			};
+			fakeClient.messages.stream.returns(fakeStream);
+
+			const onChunk = sinon.stub();
+			const result = await service.processStreaming('test', undefined, onChunk);
+
+			assert.strictEqual(result, 'Hello');
+			assert.strictEqual(onChunk.callCount, 1);
+		});
+
 		test('cleans up abort event listener after completion', async () => {
 			secretStorage.get.resolves('sk-ant-test-key');
 			fakeClient.messages.stream.returns(createFakeStream(['done']));

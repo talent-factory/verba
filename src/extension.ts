@@ -1,10 +1,11 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as https from 'https';
 import { FfmpegRecorder } from './recorder';
 import { StatusBarManager } from './statusBarManager';
 import { PipelineContext } from './pipeline';
-import { TranscriptionService } from './transcriptionService';
+import { TranscriptionService, TranscriptionProvider } from './transcriptionService';
 import { CleanupService } from './cleanupService';
 import { insertText } from './insertText';
 import { selectTemplate, Template } from './templatePicker';
@@ -12,6 +13,16 @@ import { ContextProvider } from './contextProvider';
 import { EmbeddingService } from './embeddingService';
 import { Indexer } from './indexer';
 import { GrepaiProvider } from './grepaiProvider';
+
+const WHISPER_MODELS: { name: string; file: string; size: string }[] = [
+	{ name: 'tiny', file: 'ggml-tiny.bin', size: '~75 MB' },
+	{ name: 'base', file: 'ggml-base.bin', size: '~148 MB' },
+	{ name: 'small', file: 'ggml-small.bin', size: '~488 MB' },
+	{ name: 'medium', file: 'ggml-medium.bin', size: '~1.5 GB' },
+	{ name: 'large-v3-turbo', file: 'ggml-large-v3-turbo.bin', size: '~1.6 GB' },
+];
+
+const WHISPER_MODEL_BASE_URL = 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main';
 
 class VerbaTranscriptionService extends TranscriptionService {
 	protected async promptForApiKey(): Promise<string | undefined> {
@@ -45,6 +56,7 @@ function cleanupFile(filePath: string): void {
 	}
 }
 
+/** Activates the Verba extension: registers commands, wires up services, and initializes the status bar. */
 export function activate(context: vscode.ExtensionContext) {
 	const recorder = new FfmpegRecorder();
 	const statusBar = new StatusBarManager();
@@ -54,6 +66,44 @@ export function activate(context: vscode.ExtensionContext) {
 	let preferTerminal = false;
 	let processingAbortController: AbortController | null = null;
 	let currentGlossary: string[] = [];
+
+	function applyTranscriptionProvider(): void {
+		const config = vscode.workspace.getConfiguration('verba.transcription');
+		const provider = config.get<string>('provider', 'openai');
+		const modelName = config.get<string>('localModel', 'base');
+
+		if (provider !== 'openai' && provider !== 'local') {
+			vscode.window.showErrorMessage(
+				`Verba: Unknown transcription provider "${provider}". Valid values: "openai", "local". Falling back to OpenAI.`
+			);
+			transcriptionService.setProvider('openai');
+			statusBar.setProvider('openai');
+			return;
+		}
+
+		if (provider === 'local') {
+			const modelInfo = WHISPER_MODELS.find(m => m.name === modelName);
+			if (!modelInfo) {
+				const validNames = WHISPER_MODELS.map(m => m.name).join(', ');
+				vscode.window.showErrorMessage(
+					`Verba: Unknown model "${modelName}". Valid models: ${validNames}. Falling back to OpenAI provider.`
+				);
+				transcriptionService.setProvider('openai');
+				return;
+			}
+			transcriptionService.setProvider(provider);
+			statusBar.setProvider(provider);
+			const modelsDir = path.join(context.globalStorageUri.fsPath, 'models');
+			const modelPath = path.join(modelsDir, modelInfo.file);
+			transcriptionService.setModelPath(modelPath);
+			console.log(`[Verba] Transcription provider: local (model: ${modelName})`);
+		} else {
+			transcriptionService.setProvider(provider);
+			statusBar.setProvider(provider);
+			console.log('[Verba] Transcription provider: openai');
+		}
+	}
+	applyTranscriptionProvider();
 
 	function applyGlossary(): void {
 		currentGlossary = loadGlossary();
@@ -437,6 +487,10 @@ export function activate(context: vscode.ExtensionContext) {
 		if (e.affectsConfiguration('verba.glossary')) {
 			applyGlossary();
 		}
+		if (e.affectsConfiguration('verba.transcription')) {
+			applyTranscriptionProvider();
+			statusBar.setIdle(selectedTemplate?.name);
+		}
 	});
 	context.subscriptions.push(settingsWatcher);
 
@@ -459,14 +513,195 @@ export function activate(context: vscode.ExtensionContext) {
 		vscode.window.showInformationMessage(`Verba: Template set to "${template.name}"`);
 	});
 
+	const downloadModelCommand = vscode.commands.registerCommand('dictation.downloadModel', async () => {
+		const items = WHISPER_MODELS.map(m => ({
+			label: m.name,
+			description: m.size,
+			detail: m.name === 'base' ? 'Recommended — good balance of speed and accuracy' : undefined,
+			model: m,
+		}));
+
+		const picked = await vscode.window.showQuickPick(items, {
+			placeHolder: 'Select Whisper model to download',
+			title: 'Verba: Download Whisper Model',
+		});
+		if (!picked) {
+			return;
+		}
+
+		try {
+			const modelsDir = path.join(context.globalStorageUri.fsPath, 'models');
+			fs.mkdirSync(modelsDir, { recursive: true });
+
+			const destPath = path.join(modelsDir, picked.model.file);
+			if (fs.existsSync(destPath)) {
+				const overwrite = await vscode.window.showWarningMessage(
+					`Model "${picked.model.name}" already exists. Download again?`,
+					'Yes', 'No',
+				);
+				if (overwrite !== 'Yes') {
+					return;
+				}
+			}
+
+			const url = `${WHISPER_MODEL_BASE_URL}/${picked.model.file}?download=true`;
+			const MAX_REDIRECTS = 5;
+
+			await vscode.window.withProgress({
+				location: vscode.ProgressLocation.Notification,
+				title: `Verba: Downloading ${picked.model.name} model (${picked.model.size})...`,
+				cancellable: true,
+			}, (progress, token) => {
+				return new Promise<void>((resolve, reject) => {
+					const fileStream = fs.createWriteStream(destPath);
+					let aborted = false;
+					let settled = false;
+					let activeRequest: ReturnType<typeof https.get> | null = null;
+
+					const cleanupPartialFile = () => {
+						try {
+							fs.unlinkSync(destPath);
+						} catch (cleanupErr: unknown) {
+							if (cleanupErr instanceof Error && (cleanupErr as NodeJS.ErrnoException).code !== 'ENOENT') {
+								console.warn('[Verba] Failed to remove partial download:', cleanupErr);
+							}
+						}
+					};
+
+					const cleanup = () => {
+						if (activeRequest) {
+							activeRequest.destroy();
+							activeRequest = null;
+						}
+						fileStream.destroy();
+						cleanupPartialFile();
+					};
+
+					const safeReject = (err: Error) => {
+						if (settled) { return; }
+						settled = true;
+						cleanup();
+						reject(err);
+					};
+
+					const safeResolve = () => {
+						if (settled) { return; }
+						settled = true;
+						resolve();
+					};
+
+					token.onCancellationRequested(() => {
+						aborted = true;
+						const cancelError = new Error('Download cancelled');
+						cancelError.name = 'CancelError';
+						safeReject(cancelError);
+					});
+
+					const doRequest = (requestUrl: string, redirectCount: number) => {
+						if (redirectCount > MAX_REDIRECTS) {
+							safeReject(new Error('Download failed: too many redirects'));
+							return;
+						}
+
+						if (!requestUrl.startsWith('https://')) {
+							safeReject(new Error('Download failed: only HTTPS URLs are allowed'));
+							return;
+						}
+
+						activeRequest = https.get(requestUrl, (res) => {
+							if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+								res.resume();
+								doRequest(res.headers.location, redirectCount + 1);
+								return;
+							}
+
+							if (res.statusCode !== 200) {
+								res.resume();
+								safeReject(new Error(`Download failed: HTTP ${res.statusCode}`));
+								return;
+							}
+
+							const totalBytes = parseInt(res.headers['content-length'] || '0', 10);
+							let downloadedBytes = 0;
+							let lastReportedPercent = 0;
+
+							res.on('data', (chunk: Buffer) => {
+								if (aborted) { return; }
+								downloadedBytes += chunk.length;
+								if (totalBytes > 0) {
+									const percent = Math.floor((downloadedBytes / totalBytes) * 100);
+									if (percent > lastReportedPercent) {
+										progress.report({ increment: percent - lastReportedPercent });
+										lastReportedPercent = percent;
+									}
+								}
+							});
+
+							res.pipe(fileStream);
+
+							fileStream.on('finish', () => {
+								if (aborted) { return; }
+								activeRequest = null;
+								if (totalBytes > 0 && downloadedBytes !== totalBytes) {
+									safeReject(new Error(
+										`Download incomplete: received ${downloadedBytes} of ${totalBytes} bytes. Please try again.`
+									));
+									return;
+								}
+								// Sanity check: GGML models are always > 1 MB
+								try {
+									const stats = fs.statSync(destPath);
+									if (stats.size < 1_000_000) {
+										safeReject(new Error(
+											`Downloaded file is suspiciously small (${stats.size} bytes). `
+											+ 'The model may be corrupt. Please try downloading again.'
+										));
+										return;
+									}
+								} catch (statErr: unknown) {
+									const detail = statErr instanceof Error ? statErr.message : String(statErr);
+									safeReject(new Error(`Cannot verify downloaded model: ${detail}`));
+									return;
+								}
+								vscode.window.showInformationMessage(
+									`Verba: Model "${picked.model.name}" downloaded successfully.`
+								);
+								safeResolve();
+							});
+
+							fileStream.on('error', (err) => {
+								if (aborted) { return; }
+								safeReject(new Error(`Download failed: ${err.message}`));
+							});
+						}).on('error', (err) => {
+							if (aborted) { return; }
+							safeReject(new Error(`Download failed: ${err.message}`));
+						});
+					};
+
+					doRequest(url, 0);
+				});
+			});
+		} catch (err: unknown) {
+			if (err instanceof Error && err.name === 'CancelError') {
+				vscode.window.showInformationMessage('Verba: Model download cancelled.');
+				return;
+			}
+			const message = err instanceof Error ? err.message : String(err);
+			console.error('[Verba] Model download failed:', err);
+			vscode.window.showErrorMessage(`Verba: ${message}`);
+		}
+	});
+
 	const editorCommand = vscode.commands.registerCommand('dictation.start', () => handleDictation(false));
 	const terminalCommand = vscode.commands.registerCommand('dictation.startFromTerminal', () => handleDictation(true));
 
 	context.subscriptions.push(
 		editorCommand, terminalCommand, selectDeviceCommand, selectTemplateCommand,
-		indexProjectCommand, saveWatcher,
+		indexProjectCommand, downloadModelCommand, saveWatcher,
 		{ dispose: () => recorder.dispose() }, statusBar,
 	);
 }
 
+/** Called by VS Code when the extension is deactivated. Cleanup is handled via `context.subscriptions`. */
 export function deactivate() {}

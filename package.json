@@ -59,6 +59,11 @@
         "command": "dictation.indexProject",
         "title": "Index Project",
         "category": "Verba"
+      },
+      {
+        "command": "dictation.downloadModel",
+        "title": "Download Whisper Model",
+        "category": "Verba"
       }
     ],
     "keybindings": [
@@ -163,6 +168,18 @@
             "type": "string"
           },
           "description": "Terms that must be preserved exactly during transcription and cleanup (e.g. product names, technical terms). These terms are sent as hints to Whisper and as protection instructions to Claude. Recommended limit: ~80 terms (~224 Whisper prompt tokens)."
+        },
+        "verba.transcription.provider": {
+          "type": "string",
+          "default": "openai",
+          "enum": ["openai", "local"],
+          "description": "Transcription provider: 'openai' uses the Whisper API (requires API key), 'local' uses whisper.cpp CLI for offline transcription (requires whisper-cpp installed)."
+        },
+        "verba.transcription.localModel": {
+          "type": "string",
+          "default": "base",
+          "enum": ["tiny", "base", "small", "medium", "large-v3-turbo"],
+          "description": "Whisper model to use for local transcription. Larger models are more accurate but slower. Run 'Verba: Download Whisper Model' to download a model."
         },
         "verba.contextSearch.maxResults": {
           "type": "number",

@@ -41,6 +41,7 @@ All phases are sub-issues of TF-243 (project overview). All core phases are comp
 - **Course Correction** - Done. Detection and removal of self-corrections in dictation ("no wait, actually X" → only X). Shared `COURSE_CORRECTION_INSTRUCTION` in default cleanup and template framing.
 - **Voice Commands** - Done. Voice-driven formatting commands ("New paragraph", "Period", "Bullet point") via prompt engineering. Language-independent, always active. Shared `VOICE_COMMANDS_INSTRUCTION` in default cleanup and template framing.
 - **Glossary/Dictionary** - Done. Protected terms during transcription (Whisper `prompt` parameter) and cleanup (Claude prompt instruction). Global terms via `verba.glossary` setting, project-specific via `.verba-glossary.json`. `setGlossary()` on CleanupService, `glossary` parameter on TranscriptionService.
+- **TF-257: Offline Transcription** - Done. Local transcription via whisper.cpp CLI as alternative to Whisper API. Strategy pattern on `TranscriptionService` with `setProvider('openai'|'local')`. Model download via `dictation.downloadModel` command (Hugging Face). Settings: `verba.transcription.provider`, `verba.transcription.localModel`. macOS support (Linux/Windows planned).
 
 ## Git Workflow
 
@@ -64,14 +65,14 @@ All phases are sub-issues of TF-243 (project overview). All core phases are comp
 ## Architecture
 
 ```
-Microphone --> ffmpeg (WAV) --> Whisper API --> Claude API --> Editor/Terminal
-                                                (Template)
+Microphone --> ffmpeg (WAV) --> Whisper API     --> Claude API --> Editor/Terminal
+                            \-> whisper.cpp CLI /   (Template)
 ```
 
 | Module | Purpose |
 |--------|---------|
 | `recorder.ts` | ffmpeg child process for audio recording (macOS/Linux/Windows) |
-| `transcriptionService.ts` | OpenAI Whisper API integration (glossary hints) |
+| `transcriptionService.ts` | Transcription via OpenAI Whisper API or local whisper.cpp CLI (glossary hints) |
 | `cleanupService.ts` | Anthropic Claude API integration (streaming, course correction, voice commands, glossary) |
 | `pipeline.ts` | Processing stage orchestration |
 | `templatePicker.ts` | Quick Pick menu for template selection |

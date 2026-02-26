@@ -7,6 +7,10 @@ type ProviderConfig =
 	| { type: 'openai'; embeddingService: EmbeddingService; indexer: Indexer }
 	| { type: 'none' };
 
+/**
+ * Unified facade for semantic code search. Delegates to either grepai CLI
+ * or an OpenAI Embeddings index depending on configuration.
+ */
 export class ContextProvider {
 	private config: ProviderConfig;
 
@@ -14,14 +18,17 @@ export class ContextProvider {
 		this.config = config;
 	}
 
+	/** Returns the active provider type: `'grepai'`, `'openai'`, or `'none'`. */
 	get providerType(): string {
 		return this.config.type;
 	}
 
+	/** Returns true if a context search provider is configured and usable. */
 	isAvailable(): boolean {
 		return this.config.type !== 'none';
 	}
 
+	/** Searches the codebase for snippets relevant to the given query. */
 	async search(query: string, topK: number): Promise<string[]> {
 		switch (this.config.type) {
 			case 'grepai': {

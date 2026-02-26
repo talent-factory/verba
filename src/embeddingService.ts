@@ -11,6 +11,11 @@ interface SecretStorage {
 	delete(key: string): Thenable<void>;
 }
 
+/**
+ * Generates text embeddings via the OpenAI `text-embedding-3-small` model.
+ * Used by the {@link Indexer} to build and query the local vector index.
+ * API key is shared with the Whisper transcription service (stored in SecretStorage).
+ */
 export class EmbeddingService {
 	private _client: OpenAI | null = null;
 	private secretStorage: SecretStorage;
@@ -19,11 +24,13 @@ export class EmbeddingService {
 		this.secretStorage = secretStorage;
 	}
 
+	/** Embeds a single text string and returns its vector. */
 	async embed(text: string): Promise<number[]> {
 		const vectors = await this.embedBatch([text]);
 		return vectors[0];
 	}
 
+	/** Embeds multiple texts in a single API call. Truncates inputs exceeding 8000 characters. */
 	async embedBatch(texts: string[]): Promise<number[][]> {
 		if (texts.length === 0) {
 			return [];

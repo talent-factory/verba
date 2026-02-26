@@ -1,11 +1,17 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+/** A chunk of source code with its embedding vector, stored in the local index. */
 export interface IndexChunk {
+	/** Relative file path within the workspace. */
 	file: string;
+	/** Line range within the file (e.g. `"1-50"`). */
 	range: string;
+	/** SHA-256 hash of the full file content at indexing time. */
 	hash: string;
+	/** The raw source code of this chunk. */
 	content: string;
+	/** The embedding vector produced by the OpenAI embedding model. */
 	vector: number[];
 }
 
@@ -14,6 +20,10 @@ interface IndexFile {
 	chunks: IndexChunk[];
 }
 
+/**
+ * In-memory vector store backed by a JSON file on disk.
+ * Supports upsert, removal, and cosine-similarity search over {@link IndexChunk}s.
+ */
 export class VectorStore {
 	private chunks: IndexChunk[] = [];
 	private indexDir: string;
@@ -22,10 +32,12 @@ export class VectorStore {
 		this.indexDir = indexDir;
 	}
 
+	/** Returns the number of chunks currently stored. */
 	get size(): number {
 		return this.chunks.length;
 	}
 
+	/** Inserts new chunks or replaces existing ones with the same file:range key. */
 	upsert(newChunks: IndexChunk[]): void {
 		for (const chunk of newChunks) {
 			const key = `${chunk.file}:${chunk.range}`;
@@ -38,10 +50,12 @@ export class VectorStore {
 		}
 	}
 
+	/** Removes all chunks belonging to the given file. */
 	removeByFile(file: string): void {
 		this.chunks = this.chunks.filter(c => c.file !== file);
 	}
 
+	/** Returns the top-K chunks most similar to the query vector (cosine similarity). */
 	search(queryVector: number[], topK: number): IndexChunk[] {
 		if (this.chunks.length === 0) {
 			return [];
@@ -54,6 +68,7 @@ export class VectorStore {
 		return scored.slice(0, topK).map(s => s.chunk);
 	}
 
+	/** Persists the index to `index.json` inside the index directory. */
 	save(): void {
 		fs.mkdirSync(this.indexDir, { recursive: true });
 		const data: IndexFile = { version: 1, chunks: this.chunks };
@@ -64,6 +79,7 @@ export class VectorStore {
 		);
 	}
 
+	/** Loads the index from disk. No-op if the index file does not exist yet. */
 	load(): void {
 		const filePath = path.join(this.indexDir, 'index.json');
 		if (!fs.existsSync(filePath)) {

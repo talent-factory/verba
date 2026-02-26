@@ -10,6 +10,8 @@ All Verba settings are configured in VS Code's `settings.json`.
 | `verba.templates` | Array | 8 built-in templates | Prompt templates for post-processing. See [Templates](templates.md). |
 | `verba.terminal.executeCommand` | Boolean | `false` | If `true`, sends Enter after inserting text into the terminal. |
 | `verba.glossary` | Array | `[]` | Terms preserved during transcription and cleanup (limit: ~80 terms). |
+| `verba.transcription.provider` | String | `"openai"` | Transcription provider: `openai` (API) or `local` (whisper.cpp). |
+| `verba.transcription.localModel` | String | `"base"` | Whisper model for local transcription: `tiny`, `base`, `small`, `medium`, `large-v3-turbo`. |
 | `verba.contextSearch.provider` | String | `"auto"` | Context search provider: `auto`, `grepai`, or `openai`. |
 | `verba.contextSearch.maxResults` | Number | `5` | Number of context snippets per dictation (1-20). |
 
@@ -51,6 +53,41 @@ Both sources are merged automatically. For best results, keep the combined gloss
 
 !!! tip
     Place `.verba-glossary.json` under version control so that all team members share the same glossary. Changes to the file are picked up automatically.
+
+## Offline Transcription (whisper.cpp)
+
+By default, Verba uses the OpenAI Whisper API for transcription. You can switch to local, offline transcription via [whisper.cpp](https://github.com/ggml-org/whisper.cpp) for full privacy and zero API costs.
+
+### Setup
+
+1. Install whisper.cpp: `brew install whisper-cpp`
+2. Download a model: Run **Verba: Download Whisper Model** command
+3. Switch the provider:
+
+```json
+{
+  "verba.transcription.provider": "local",
+  "verba.transcription.localModel": "base"
+}
+```
+
+### Available Models
+
+| Model | Size | Speed | Quality |
+|-------|------|-------|---------|
+| `tiny` | ~75 MB | Fastest | Lower accuracy |
+| `base` | ~148 MB | Fast | Good balance |
+| `small` | ~488 MB | Moderate | Better accuracy |
+| `medium` | ~1.5 GB | Slow | High accuracy |
+| `large-v3-turbo` | ~1.6 GB | Slowest | Best accuracy |
+
+Models are downloaded to VS Code's global storage and shared across all workspaces.
+
+!!! tip
+    Start with the `base` model. If accuracy is insufficient, upgrade to `small` or `medium`. The `large-v3-turbo` model provides the best quality but requires significant disk space and processing time.
+
+!!! note
+    Offline transcription currently supports macOS. Linux and Windows support is planned for a future release.
 
 ## Context Search Provider
 

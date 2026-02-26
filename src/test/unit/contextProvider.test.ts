@@ -74,4 +74,32 @@ suite('ContextProvider', () => {
 		const provider = new ContextProvider({ type: 'none' });
 		assert.strictEqual(provider.providerType, 'none');
 	});
+
+	test('search propagates error when grepai search throws', async () => {
+		const fakeGrepai = {
+			search: sinon.stub().throws(new Error('grepai crashed')),
+		};
+		const provider = new ContextProvider({ type: 'grepai', grepai: fakeGrepai as any });
+
+		await assert.rejects(
+			() => provider.search('test', 5),
+			/grepai crashed/
+		);
+	});
+
+	test('search propagates error when embedding service rejects', async () => {
+		const fakeEmbedding = { embed: sinon.stub().rejects(new Error('API quota exceeded')) };
+		const fakeIndexer = { search: sinon.stub() };
+		const provider = new ContextProvider({
+			type: 'openai',
+			embeddingService: fakeEmbedding as any,
+			indexer: fakeIndexer as any,
+		});
+
+		await assert.rejects(
+			() => provider.search('test', 5),
+			/API quota exceeded/
+		);
+		assert.ok(fakeIndexer.search.notCalled, 'should not call indexer when embedding fails');
+	});
 });

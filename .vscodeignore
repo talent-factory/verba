@@ -13,7 +13,8 @@ CLAUDE.md
 .mocharc.yml
 *.vsix
 .github/**
-.releaserc.json
+mkdocs.yml
+site/**
 Makefile
 .claude/**
 images/.gitkeep

@@ -2,7 +2,7 @@
   "name": "verba",
   "displayName": "Verba",
   "description": "The Developer's Dictation Extension – Voice dictation with AI-powered post-processing for VS Code",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "publisher": "talent-factory",
   "repository": {
     "type": "git",
@@ -21,7 +21,7 @@
     "speech-to-text",
     "ai"
   ],
-  "homepage": "https://github.com/talent-factory/verba",
+  "homepage": "https://talent-factory.xyz",
   "bugs": {
     "url": "https://github.com/talent-factory/verba/issues"
   },
@@ -58,6 +58,11 @@
       {
         "command": "dictation.indexProject",
         "title": "Index Project",
+        "category": "Verba"
+      },
+      {
+        "command": "dictation.downloadModel",
+        "title": "Download Whisper Model",
         "category": "Verba"
       }
     ],
@@ -156,6 +161,26 @@
             }
           ]
         },
+        "verba.glossary": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "description": "Terms that must be preserved exactly during transcription and cleanup (e.g. product names, technical terms). These terms are sent as hints to Whisper and as protection instructions to Claude. Recommended limit: ~80 terms (~224 Whisper prompt tokens)."
+        },
+        "verba.transcription.provider": {
+          "type": "string",
+          "default": "openai",
+          "enum": ["openai", "local"],
+          "description": "Transcription provider: 'openai' uses the Whisper API (requires API key), 'local' uses whisper.cpp CLI for offline transcription (requires whisper-cpp installed)."
+        },
+        "verba.transcription.localModel": {
+          "type": "string",
+          "default": "base",
+          "enum": ["tiny", "base", "small", "medium", "large-v3-turbo"],
+          "description": "Whisper model to use for local transcription. Larger models are more accurate but slower. Run 'Verba: Download Whisper Model' to download a model."
+        },
         "verba.contextSearch.maxResults": {
           "type": "number",
           "default": 5,
@@ -185,18 +210,13 @@
     "test": "npm run compile && npm run test:unit && npm run test:integration"
   },
   "devDependencies": {
-    "@semantic-release/changelog": "^6.0.3",
-    "@semantic-release/git": "^10.0.1",
     "@types/mocha": "^10.0.10",
     "@types/node": "^20.11.0",
     "@types/sinon": "^21.0.0",
     "@types/vscode": "^1.85.0",
     "@vscode/test-electron": "^2.5.2",
-    "conventional-changelog-conventionalcommits": "^9.1.0",
     "esbuild": "^0.27.3",
     "mocha": "^11.7.5",
-    "semantic-release": "^25.0.3",
-    "semantic-release-vsce": "^6.0.24",
     "sinon": "^21.0.1",
     "typescript": "^5.3.0"
   },

@@ -7,6 +7,15 @@ interface Terminal {
 	sendText(text: string, addNewline?: boolean): void;
 }
 
+/**
+ * Inserts transcribed text into the active editor or terminal.
+ *
+ * Priority: if {@link preferTerminal} is true and a terminal exists, sends text there;
+ * otherwise inserts at the editor cursor position; falls back to terminal if no editor is open.
+ *
+ * @param executeCommand - When inserting into a terminal, also submit with Enter.
+ * @param preferTerminal - If true, prefer terminal over editor (used for terminal-initiated dictation).
+ */
 export async function insertText(
 	text: string,
 	editor: TextEditor | undefined,

@@ -91,4 +91,26 @@ suite('EmbeddingService', () => {
 		);
 		assert.strictEqual((service as any)._client, null);
 	});
+
+	test('truncates texts longer than MAX_EMBEDDING_CHARS', async () => {
+		fakeClient.embeddings.create.resolves({
+			data: [{ embedding: [0.1, 0.2] }],
+		});
+
+		const longText = 'a'.repeat(10000);
+		await service.embed(longText);
+
+		const callArgs = fakeClient.embeddings.create.firstCall.args[0];
+		assert.strictEqual(callArgs.input[0].length, 8000);
+	});
+
+	test('throws when no API key is stored', async () => {
+		secretStorage.get.resolves(undefined);
+		const freshService = new EmbeddingService(secretStorage as any);
+
+		await assert.rejects(
+			() => freshService.embed('test'),
+			/OpenAI API key required for embeddings/
+		);
+	});
 });

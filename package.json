@@ -156,6 +156,14 @@
             }
           ]
         },
+        "verba.glossary": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "description": "Terms that must be preserved exactly during transcription and cleanup (e.g. product names, technical terms). These terms are sent as hints to Whisper and as protection instructions to Claude. Limit: ~80 terms (224 Whisper prompt tokens)."
+        },
         "verba.contextSearch.maxResults": {
           "type": "number",
           "default": 5,

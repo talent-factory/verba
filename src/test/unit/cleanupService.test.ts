@@ -280,47 +280,38 @@ suite('CleanupService', () => {
 	});
 
 	suite('processStreaming()', () => {
-		test('streams tokens and calls onChunk with accumulated text', async () => {
-			secretStorage.get.resolves('sk-ant-test-key');
-
-			// Simulate streaming: fake stream object with async iterator
-			const chunks = ['Hello', ' world', '!'];
-			const fakeStream = {
+		function createFakeStream(chunks: string[], options?: { throwDuring?: Error }) {
+			return {
 				[Symbol.asyncIterator]: async function* () {
 					for (const chunk of chunks) {
 						yield { type: 'content_block_delta', delta: { type: 'text_delta', text: chunk } };
 					}
+					if (options?.throwDuring) {
+						throw options.throwDuring;
+					}
 				},
-				finalMessage: async () => ({
-					content: [{ type: 'text', text: 'Hello world!' }],
-				}),
 				abort: sinon.stub(),
 			};
-			(fakeClient as any).messages.stream = sinon.stub().returns(fakeStream);
+		}
+
+		test('streams tokens and calls onChunk with char count', async () => {
+			secretStorage.get.resolves('sk-ant-test-key');
+			const fakeStream = createFakeStream(['Hello', ' world', '!']);
+			fakeClient.messages.stream.returns(fakeStream);
 
 			const onChunk = sinon.stub();
 			const result = await service.processStreaming('raw input', undefined, onChunk);
 
 			assert.strictEqual(result, 'Hello world!');
 			assert.strictEqual(onChunk.callCount, 3);
-			assert.deepStrictEqual(onChunk.firstCall.args, ['Hello', 5]);
-			assert.deepStrictEqual(onChunk.secondCall.args, ['Hello world', 11]);
-			assert.deepStrictEqual(onChunk.thirdCall.args, ['Hello world!', 12]);
+			assert.deepStrictEqual(onChunk.firstCall.args, [5]);
+			assert.deepStrictEqual(onChunk.secondCall.args, [11]);
+			assert.deepStrictEqual(onChunk.thirdCall.args, [12]);
 		});
 
 		test('uses same system prompt and message format as process()', async () => {
 			secretStorage.get.resolves('sk-ant-test-key');
-
-			const fakeStream = {
-				[Symbol.asyncIterator]: async function* () {
-					yield { type: 'content_block_delta', delta: { type: 'text_delta', text: 'cleaned' } };
-				},
-				finalMessage: async () => ({
-					content: [{ type: 'text', text: 'cleaned' }],
-				}),
-				abort: sinon.stub(),
-			};
-			(fakeClient as any).messages.stream = sinon.stub().returns(fakeStream);
+			fakeClient.messages.stream.returns(createFakeStream(['cleaned']));
 
 			const context: PipelineContext = {
 				templatePrompt: 'Convert to commit message.',
@@ -328,7 +319,7 @@ suite('CleanupService', () => {
 			};
 			await service.processStreaming('test input', context, sinon.stub());
 
-			const callArgs = (fakeClient as any).messages.stream.firstCall.args[0];
+			const callArgs = fakeClient.messages.stream.firstCall.args[0];
 			assert.strictEqual(callArgs.model, 'claude-haiku-4-5-20251001');
 			assert.ok(callArgs.system.includes('Convert to commit message.'));
 			assert.ok(callArgs.messages[0].content.includes('<context>'));
@@ -337,50 +328,40 @@ suite('CleanupService', () => {
 
 		test('returns raw input when stream produces empty text', async () => {
 			secretStorage.get.resolves('sk-ant-test-key');
-
-			const fakeStream = {
-				[Symbol.asyncIterator]: async function* () {},
-				finalMessage: async () => ({
-					content: [{ type: 'text', text: '' }],
-				}),
-				abort: sinon.stub(),
-			};
-			(fakeClient as any).messages.stream = sinon.stub().returns(fakeStream);
+			fakeClient.messages.stream.returns(createFakeStream([]));
 
 			const result = await service.processStreaming('raw input', undefined, sinon.stub());
 			assert.strictEqual(result, 'raw input');
 		});
 
-		test('aborts stream and throws when signal is aborted', async () => {
+		test('aborts stream and throws AbortError when signal fires', async () => {
 			secretStorage.get.resolves('sk-ant-test-key');
 
 			const abortController = new AbortController();
+			// Stream that blocks until abort causes it to throw
 			const fakeStream = {
 				[Symbol.asyncIterator]: async function* () {
 					yield { type: 'content_block_delta', delta: { type: 'text_delta', text: 'partial' } };
+					// Simulate: abort fires → stream.abort() called → iterator throws
 					abortController.abort();
-					// Next iteration should detect abort
-					yield { type: 'content_block_delta', delta: { type: 'text_delta', text: ' more' } };
+					throw new Error('Request was aborted.');
 				},
-				finalMessage: async () => ({
-					content: [{ type: 'text', text: 'partial more' }],
-				}),
 				abort: sinon.stub(),
 			};
-			(fakeClient as any).messages.stream = sinon.stub().returns(fakeStream);
+			fakeClient.messages.stream.returns(fakeStream);
 
 			await assert.rejects(
 				() => service.processStreaming('test', undefined, sinon.stub(), abortController.signal),
 				(err: Error) => err.name === 'AbortError',
 			);
-			assert.ok(fakeStream.abort.calledOnce);
+			assert.ok(fakeStream.abort.calledOnce, 'stream.abort() should be called via event listener');
 		});
 
-		test('throws on 401 error and clears key', async () => {
+		test('throws on 401 error during iteration and clears key', async () => {
 			secretStorage.get.resolves('sk-ant-bad-key');
 			const authError = new Error('Invalid API key');
 			(authError as any).status = 401;
-			(fakeClient as any).messages.stream = sinon.stub().throws(authError);
+			fakeClient.messages.stream.returns(createFakeStream([], { throwDuring: authError }));
 
 			await assert.rejects(
 				() => service.processStreaming('test', undefined, sinon.stub()),
@@ -390,16 +371,51 @@ suite('CleanupService', () => {
 			assert.strictEqual((service as any)._client, null);
 		});
 
-		test('throws rate limit error on 429', async () => {
+		test('throws rate limit error on 429 during iteration', async () => {
 			secretStorage.get.resolves('sk-ant-test-key');
 			const rateLimitError = new Error('Rate limit exceeded');
 			(rateLimitError as any).status = 429;
-			(fakeClient as any).messages.stream = sinon.stub().throws(rateLimitError);
+			fakeClient.messages.stream.returns(createFakeStream([], { throwDuring: rateLimitError }));
 
 			await assert.rejects(
 				() => service.processStreaming('test', undefined, sinon.stub()),
 				/rate limit reached/,
 			);
+		});
+
+		test('wraps mid-stream network errors with descriptive message', async () => {
+			secretStorage.get.resolves('sk-ant-test-key');
+			fakeClient.messages.stream.returns(
+				createFakeStream(['partial'], { throwDuring: new Error('Connection reset') }),
+			);
+
+			await assert.rejects(
+				() => service.processStreaming('test', undefined, sinon.stub()),
+				/Post-processing failed: Connection reset/,
+			);
+		});
+
+		test('onChunk callback failure does not crash the stream', async () => {
+			secretStorage.get.resolves('sk-ant-test-key');
+			fakeClient.messages.stream.returns(createFakeStream(['Hello', ' world']));
+
+			const onChunk = sinon.stub().onFirstCall().throws(new Error('UI crashed'));
+			const result = await service.processStreaming('raw input', undefined, onChunk);
+
+			assert.strictEqual(result, 'Hello world');
+			assert.strictEqual(onChunk.callCount, 2, 'onChunk should still be called for both chunks');
+		});
+
+		test('cleans up abort event listener after completion', async () => {
+			secretStorage.get.resolves('sk-ant-test-key');
+			fakeClient.messages.stream.returns(createFakeStream(['done']));
+
+			const abortController = new AbortController();
+			const removeSpy = sinon.spy(abortController.signal, 'removeEventListener');
+
+			await service.processStreaming('test', undefined, sinon.stub(), abortController.signal);
+
+			assert.ok(removeSpy.calledOnce, 'removeEventListener should be called in finally block');
 		});
 	});
 });

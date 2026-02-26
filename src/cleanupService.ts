@@ -94,7 +94,7 @@ export class CleanupService implements ProcessingStage {
 	async processStreaming(
 		input: string,
 		context: PipelineContext | undefined,
-		onChunk: (accumulated: string, charCount: number) => void,
+		onChunk: (charCount: number) => void,
 		signal?: AbortSignal,
 	): Promise<string> {
 		const systemPrompt = context?.templatePrompt
@@ -108,16 +108,38 @@ export class CleanupService implements ProcessingStage {
 			: '';
 		const userMessage = `${contextBlock}<transcript>\n${input}\n</transcript>`;
 
-		let stream;
+		const stream = client.messages.stream({
+			model: 'claude-haiku-4-5-20251001',
+			max_tokens: 4096,
+			system: systemPrompt,
+			messages: [{ role: 'user', content: userMessage }],
+		});
+
+		// Wire abort signal to immediately cancel the stream
+		const abortHandler = () => { stream.abort(); };
+		if (signal) {
+			signal.addEventListener('abort', abortHandler, { once: true });
+		}
+
+		let accumulated = '';
 		try {
-			stream = client.messages.stream({
-				model: 'claude-haiku-4-5-20251001',
-				max_tokens: 4096,
-				system: systemPrompt,
-				messages: [{ role: 'user', content: userMessage }],
-			});
+			for await (const event of stream) {
+				if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
+					accumulated += event.delta.text;
+					try {
+						onChunk(accumulated.length);
+					} catch (callbackErr) {
+						console.warn('[Verba] onChunk callback failed (non-fatal):', callbackErr);
+					}
+				}
+			}
 		} catch (err: unknown) {
-			console.error('[Verba] Claude API stream creation failed:', err);
+			if (signal?.aborted) {
+				const abortError = new Error('Dictation cancelled');
+				abortError.name = 'AbortError';
+				throw abortError;
+			}
+			console.error('[Verba] Claude API streaming failed:', err);
 			if (err instanceof Error && (err as any).status === 401) {
 				this._client = null;
 				try {
@@ -136,43 +158,20 @@ export class CleanupService implements ProcessingStage {
 			}
 			const detail = err instanceof Error ? err.message : String(err);
 			throw new Error(`Post-processing failed: ${detail}`);
+		} finally {
+			if (signal) {
+				signal.removeEventListener('abort', abortHandler);
+			}
 		}
 
-		let accumulated = '';
-		try {
-			for await (const event of stream) {
-				if (signal?.aborted) {
-					stream.abort();
-					const abortError = new Error('Dictation cancelled');
-					abortError.name = 'AbortError';
-					throw abortError;
-				}
-				if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
-					accumulated += event.delta.text;
-					onChunk(accumulated, accumulated.length);
-				}
-			}
-		} catch (err: unknown) {
-			if (err instanceof Error && err.name === 'AbortError') {
-				throw err;
-			}
-			const detail = err instanceof Error ? err.message : String(err);
-			throw new Error(`Post-processing failed: ${detail}`);
-		}
+		console.log(`[Verba] Claude streaming response (${accumulated.length} chars): ${accumulated.substring(0, 200)}`);
 
-		const finalMessage = await stream.finalMessage();
-		const text = finalMessage.content[0]?.type === 'text'
-			? finalMessage.content[0].text
-			: '';
-
-		console.log(`[Verba] Claude streaming response (${(text || '').length} chars): ${(text || '').substring(0, 200)}`);
-
-		if (!text || text.trim() === '') {
+		if (!accumulated || accumulated.trim() === '') {
 			console.warn('[Verba] Claude returned empty response; skipping cleanup and using raw transcript.');
 			return input;
 		}
 
-		return text;
+		return accumulated;
 	}
 
 	private async getApiKey(): Promise<string> {

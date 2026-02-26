@@ -155,7 +155,7 @@ export function activate(context: vscode.ExtensionContext) {
 					transcript = await cleanupService.processStreaming(
 						rawTranscript,
 						pipelineContext,
-						(_, charCount) => statusBar.setProcessing(charCount),
+						(charCount) => statusBar.setProcessing(charCount),
 						abortController.signal,
 					);
 				} catch (err: unknown) {

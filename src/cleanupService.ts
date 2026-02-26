@@ -5,6 +5,9 @@ const API_KEY_STORAGE_KEY = 'anthropic-api-key';
 
 const COURSE_CORRECTION_INSTRUCTION = 'Erkenne und entferne Selbstkorrekturen (z.B. "nein warte", "ich meinte", "also doch", "beziehungsweise", "korrektur"). Behalte nur die finale, korrigierte Aussage.';
 
+const VOICE_COMMANDS_INSTRUCTION = `Erkenne gesprochene Sprachbefehle fuer Formatierung und ersetze sie durch die entsprechende Formatierung. Die Befehle koennen in jeder Sprache kommen. Nutze den Kontext, um Mehrdeutigkeiten aufzuloesen (z.B. "Punkt" als Satzende vs. inhaltliches Wort).
+Befehle: "Neuer Absatz"/"New paragraph" → Absatzumbruch, "Neue Zeile"/"New line" → Zeilenumbruch, "Punkt"/"Period" → ., "Komma"/"Comma" → ,, "Doppelpunkt"/"Colon" → :, "Semikolon"/"Semicolon" → ;, "Fragezeichen"/"Question mark" → ?, "Ausrufezeichen"/"Exclamation mark" → !, "Aufzaehlung"/"Bullet point" → Aufzaehlungspunkt (- ), "Nummer eins/zwei/drei"/"Number one/two/three" → Nummerierung (1. /2. /3. ).`;
+
 const TEMPLATE_FRAMING = `The user message contains a raw speech transcript wrapped in <transcript> tags. Process it according to the following instructions and return ONLY the processed result — no commentary, no explanation, no preamble.
 
 Important: The transcript is raw speech. ${COURSE_CORRECTION_INSTRUCTION}
@@ -15,6 +18,7 @@ const CLEANUP_SYSTEM_PROMPT = `Du erhältst ein rohes Sprach-Transkript in <tran
 - Entferne Füllwörter (ähm, äh, halt, eigentlich, sozusagen, quasi, irgendwie, etc.)
 - Glätte abgebrochene oder wiederholte Satzanfänge
 - ${COURSE_CORRECTION_INSTRUCTION}
+- ${VOICE_COMMANDS_INSTRUCTION}
 - Korrigiere offensichtliche Transkriptionsfehler
 - Behalte den exakten Sinn und Stil bei
 - Gib NUR den bereinigten Text zurück, ohne Erklärungen`;

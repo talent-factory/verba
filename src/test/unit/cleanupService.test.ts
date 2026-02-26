@@ -97,6 +97,19 @@ suite('CleanupService', () => {
 				'system prompt should mention self-correction');
 		});
 
+		test('default system prompt includes voice commands instruction', async () => {
+			secretStorage.get.resolves('sk-ant-test-key');
+			fakeClient.messages.create.resolves({
+				content: [{ type: 'text', text: 'cleaned' }],
+			});
+
+			await service.process('test input');
+
+			const callArgs = fakeClient.messages.create.firstCall.args[0];
+			assert.ok(callArgs.system.includes('Sprachbefehl'),
+				'system prompt should mention voice commands');
+		});
+
 		test('prompts for API key when none is stored', async () => {
 			secretStorage.get.resolves(undefined);
 			promptApiKeyStub.resolves('sk-ant-new-key');

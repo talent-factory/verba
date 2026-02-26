@@ -40,6 +40,7 @@ Alle Phasen sind Sub-Issues von TF-243 (Projektuebersicht). Alle Kernphasen sind
 - **Streaming Post-Processing** - Done. `processStreaming()` mit Echtzeit-Fortschrittsanzeige in der Statusbar (Zeichenzaehler), AbortController-Unterstuetzung zum Abbrechen, robustes Error-Handling (401/429).
 - **Course Correction** - Done. Erkennung und Entfernung von Selbstkorrekturen im Diktat ("nein warte, doch X" → nur X). Geteilte `COURSE_CORRECTION_INSTRUCTION` in Default-Cleanup und Template-Framing.
 - **Voice Commands** - Done. Sprachgesteuerte Formatierungsbefehle ("Neuer Absatz", "Punkt", "Aufzaehlung") per Prompt-Engineering. Sprachunabhaengig, immer aktiv. Geteilte `VOICE_COMMANDS_INSTRUCTION` in Default-Cleanup und Template-Framing.
+- **Glossar/Dictionary** - Done. Geschuetzte Begriffe bei Transkription (Whisper `prompt`-Parameter) und Bereinigung (Claude Prompt-Instruktion). Globale Begriffe via `verba.glossary` Setting, projektspezifische via `.verba-glossary.json`. `setGlossary()` auf CleanupService, `glossary`-Parameter auf TranscriptionService.
 
 ## Git-Workflow
 
@@ -70,8 +71,8 @@ Mikrofon --> ffmpeg (WAV) --> Whisper API --> Claude API --> Editor/Terminal
 | Modul | Aufgabe |
 |-------|---------|
 | `recorder.ts` | ffmpeg-Kindprozess fuer Audioaufnahme (macOS/Linux/Windows) |
-| `transcriptionService.ts` | OpenAI Whisper API Integration |
-| `cleanupService.ts` | Anthropic Claude API Integration (Streaming + Course Correction + Voice Commands) |
+| `transcriptionService.ts` | OpenAI Whisper API Integration (Glossar-Hints) |
+| `cleanupService.ts` | Anthropic Claude API Integration (Streaming + Course Correction + Voice Commands + Glossar) |
 | `pipeline.ts` | Verkettung der Verarbeitungsstufen |
 | `templatePicker.ts` | Quick-Pick-Menue fuer Template-Auswahl |
 | `insertText.ts` | Texteinfuegung in Editor oder Terminal |

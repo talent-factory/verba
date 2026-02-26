@@ -21,11 +21,11 @@ Microphone → ffmpeg (WAV) → Whisper API → Claude API → Editor/Terminal
 | `extension.ts` | Extension entry point, command registration, activation |
 | `recorder.ts` | ffmpeg child process for audio recording (macOS/Linux/Windows) |
 | `transcriptionService.ts` | OpenAI Whisper API integration with hallucination detection |
-| `cleanupService.ts` | Anthropic Claude API integration for post-processing |
+| `cleanupService.ts` | Anthropic Claude API integration for post-processing (streaming with real-time progress, course correction for self-correction removal) |
 | `pipeline.ts` | Orchestration of recording → transcription → cleanup → insertion |
 | `templatePicker.ts` | Quick Pick menu for template selection with auto-reuse |
 | `insertText.ts` | Context-aware text insertion (editor vs terminal) |
-| `statusBarManager.ts` | Status bar display (Idle/Recording/Transcribing + template name) |
+| `statusBarManager.ts` | Status bar display (Idle/Recording/Transcribing/Processing with character counter + template name) |
 | `contextProvider.ts` | Unified context search abstraction |
 | `grepaiProvider.ts` | grepai CLI wrapper for semantic code search |
 | `embeddingService.ts` | OpenAI text-embedding-3-small for local embeddings |

@@ -8,6 +8,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Added
 
+- **Streaming Post-Processing:** Claude-Antworten werden per Streaming empfangen mit Echtzeit-Fortschrittsanzeige in der Statusbar (z.B. "Processing... 182 chars"). Diktat kann waehrend der Verarbeitung per erneutem Tastendruck abgebrochen werden.
+- **Course Correction:** Selbstkorrekturen im Diktat werden automatisch erkannt und entfernt (z.B. "nein warte, doch Freitag" → "Freitag"). Aktiv in allen Modi (Freitext und Templates).
+
 ### Fixed
 
 ### Changed

@@ -10,6 +10,7 @@ interface RawChunk {
 	content: string;
 }
 
+/** Splits a file's content into fixed-size line chunks for embedding. */
 export function chunkFileContent(file: string, content: string, maxLines: number = 50): RawChunk[] {
 	if (!content.trim()) {
 		return [];
@@ -33,6 +34,11 @@ export function chunkFileContent(file: string, content: string, maxLines: number
 	return chunks;
 }
 
+/**
+ * Builds and queries a local embedding index for the workspace.
+ * Files are chunked, embedded via {@link EmbeddingService}, and stored in a {@link VectorStore}.
+ * Supports incremental re-indexing: unchanged files (by SHA-256 hash) are skipped.
+ */
 export class Indexer {
 	private workspaceRoot: string;
 	private store: VectorStore;
@@ -46,6 +52,7 @@ export class Indexer {
 		this.store.load();
 	}
 
+	/** Indexes a single file. Returns the number of new chunks added (0 if unchanged). */
 	async indexFile(relativePath: string): Promise<number> {
 		const absPath = path.join(this.workspaceRoot, relativePath);
 		const content = fs.readFileSync(absPath, 'utf-8');
@@ -79,6 +86,7 @@ export class Indexer {
 		return indexChunks.length;
 	}
 
+	/** Indexes all given files and persists the store. Returns total chunks added. */
 	async indexAll(files: string[], onProgress?: (done: number, total: number) => void): Promise<number> {
 		let totalChunks = 0;
 		for (let i = 0; i < files.length; i++) {
@@ -89,14 +97,17 @@ export class Indexer {
 		return totalChunks;
 	}
 
+	/** Finds the top-K chunks most similar to the query vector. */
 	search(queryVector: number[], topK: number): IndexChunk[] {
 		return this.store.search(queryVector, topK);
 	}
 
+	/** Persists the vector store to disk. */
 	save(): void {
 		this.store.save();
 	}
 
+	/** Returns a copy of the file-hash map used for incremental indexing. */
 	getFileHashes(): Map<string, string> {
 		return new Map(this.fileHashes);
 	}

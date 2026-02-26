@@ -24,14 +24,21 @@ export class FfmpegRecorder {
 	 */
 	onUnexpectedStop?: (error: Error) => void;
 
+	/** Whether a recording is currently in progress. */
 	get isRecording(): boolean {
 		return this._isRecording;
 	}
 
+	/** Absolute path to the current (or most recent) WAV recording file. */
 	get outputPath(): string {
 		return this._outputPath;
 	}
 
+	/**
+	 * Starts recording audio to a temporary WAV file.
+	 * @param preferredDevice - Platform-specific audio device name, or undefined for system default.
+	 * @throws If ffmpeg is not found, the device is unavailable, or a recording is already active.
+	 */
 	async start(preferredDevice?: string): Promise<void> {
 		if (this._isRecording) {
 			throw new Error('Recording already in progress');
@@ -119,6 +126,11 @@ export class FfmpegRecorder {
 		});
 	}
 
+	/**
+	 * Stops the active recording and returns the path to the WAV file.
+	 * Uses a three-stage shutdown: graceful `q` via stdin, SIGKILL after 3 s, hard timeout at 5 s.
+	 * @throws If no recording is in progress or the file is empty/missing.
+	 */
 	async stop(): Promise<string> {
 		if (!this._isRecording || !this.process) {
 			throw new Error('No recording in progress');
@@ -203,6 +215,7 @@ export class FfmpegRecorder {
 		});
 	}
 
+	/** Kills any active ffmpeg process and removes the temporary recording file. */
 	dispose(): void {
 		if (this.process) {
 			try {
@@ -268,6 +281,7 @@ export class FfmpegRecorder {
 		);
 	}
 
+	/** Lists available audio input devices for the current platform. */
 	listAudioDevices(): string[] {
 		const ffmpegPath = this.findFfmpeg();
 		if (!ffmpegPath) {

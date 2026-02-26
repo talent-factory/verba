@@ -2,11 +2,15 @@ import { spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 
+/** A code snippet returned by a context search provider. */
 export interface SearchResult {
+	/** Relative file path of the matched source file. */
 	file: string;
+	/** Concatenated matching lines from the file. */
 	content: string;
 }
 
+/** Parses grep-style `file:line: content` output into grouped {@link SearchResult}s. */
 export function parseGrepaiOutput(output: string): SearchResult[] {
 	const lines = output.split('\n').filter(l => l.trim());
 	const grouped = new Map<string, string[]>();
@@ -29,6 +33,10 @@ export function parseGrepaiOutput(output: string): SearchResult[] {
 	}));
 }
 
+/**
+ * Searches the codebase using the [grepai](https://yoanbernabeu.github.io/grepai/) CLI.
+ * Requires `grepai` to be installed and initialized (`grepai init`) in the workspace.
+ */
 export class GrepaiProvider {
 	private workspaceRoot: string;
 
@@ -36,6 +44,7 @@ export class GrepaiProvider {
 		this.workspaceRoot = workspaceRoot;
 	}
 
+	/** Checks whether grepai CLI is installed and the workspace is initialized (`.grepai/` exists). */
 	static isAvailable(workspaceRoot: string): boolean {
 		// grepai must be installed AND initialized for this workspace (.grepai/ must exist)
 		if (!fs.existsSync(path.join(workspaceRoot, '.grepai'))) {
@@ -50,6 +59,7 @@ export class GrepaiProvider {
 		return result.status === 0 && !result.error;
 	}
 
+	/** Runs a semantic search and returns the top-K matching code snippets. */
 	search(query: string, topK: number): SearchResult[] {
 		const result = spawnSync('grepai', ['search', query, '--limit', String(topK)], {
 			encoding: 'utf-8',

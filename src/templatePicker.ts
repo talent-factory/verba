@@ -1,6 +1,10 @@
+/** A prompt template for dictation post-processing. */
 export interface Template {
+	/** Display name shown in the Quick Pick menu (e.g. "Freitext", "Commit Message"). */
 	name: string;
+	/** The system prompt sent to Claude for post-processing the transcript. */
 	prompt: string;
+	/** If true, semantic code search provides context snippets alongside the transcript. */
 	contextAware?: boolean;
 }
 
@@ -14,6 +18,11 @@ type ShowQuickPickFn = (
 	options?: { placeHolder?: string; activeItems?: QuickPickItem[] },
 ) => Thenable<QuickPickItem | undefined>;
 
+/**
+ * Shows a Quick Pick menu for template selection.
+ * The last-used template is pre-selected; context-aware templates are marked with a search icon.
+ * @returns The selected template, or `undefined` if the user dismissed the picker.
+ */
 export async function selectTemplate(
 	templates: Template[],
 	lastUsedName: string | undefined,

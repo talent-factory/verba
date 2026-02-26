@@ -41,6 +41,7 @@ export class CleanupService implements ProcessingStage {
 	private secretStorage: SecretStorage;
 	private glossary: string[] = [];
 
+	/** Sets the glossary terms that must be preserved verbatim during cleanup. */
 	setGlossary(terms: string[]): void {
 		this.glossary = [...terms];
 	}
@@ -49,6 +50,7 @@ export class CleanupService implements ProcessingStage {
 		this.secretStorage = secretStorage;
 	}
 
+	/** Cleans up the transcript in a single (non-streaming) API call. */
 	async process(input: string, context?: PipelineContext): Promise<string> {
 		const { client, systemPrompt, userMessage } = await this.prepareRequest(context, input);
 
@@ -73,6 +75,11 @@ export class CleanupService implements ProcessingStage {
 		return this.fallbackIfEmpty(text, input);
 	}
 
+	/**
+	 * Cleans up the transcript using Claude's streaming API.
+	 * @param onChunk - Called with the accumulated character count as chunks arrive.
+	 * @param signal - Optional AbortSignal to cancel the stream mid-flight.
+	 */
 	async processStreaming(
 		input: string,
 		context: PipelineContext | undefined,

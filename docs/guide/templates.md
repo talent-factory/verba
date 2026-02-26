@@ -76,6 +76,10 @@ Define custom templates in `settings.json`:
     - Tell Claude to "keep the original language" if you dictate in different languages
     - End with "Return only the [result]" to avoid explanatory text in the output
 
+## Glossary Interaction
+
+If you have defined a [glossary](configuration.md#glossary--dictionary), the glossary terms are automatically included in every template's Claude prompt. This ensures that product names, technical jargon, and abbreviations are preserved exactly — regardless of which template you use. No additional template configuration is needed.
+
 ## Course Correction
 
 Verba automatically detects and removes self-corrections in your speech. If you say "let's meet tomorrow, no wait, on Friday at ten", only "let's meet on Friday at ten" is kept. This works in all templates — both the default cleanup and custom templates.

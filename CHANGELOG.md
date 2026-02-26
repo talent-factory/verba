@@ -11,6 +11,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - **Streaming Post-Processing:** Claude-Antworten werden per Streaming empfangen mit Echtzeit-Fortschrittsanzeige in der Statusbar (z.B. "Processing... 182 chars"). Diktat kann waehrend der Verarbeitung per erneutem Tastendruck abgebrochen werden.
 - **Course Correction:** Selbstkorrekturen im Diktat werden automatisch erkannt und entfernt (z.B. "nein warte, doch Freitag" → "Freitag"). Aktiv in allen Modi (Freitext und Templates).
 - **Voice Commands:** Gesprochene Formatierungsbefehle werden erkannt und umgesetzt (z.B. "Neuer Absatz", "Punkt", "Aufzaehlung"). Funktioniert sprachunabhaengig in allen Modi.
+- **Glossar/Dictionary:** Begriffe (Produktnamen, Fachbegriffe, Abkuerzungen) werden bei Transkription und Bereinigung exakt beibehalten. Globale Begriffe via `verba.glossary` Setting, projektspezifische via `.verba-glossary.json`. Begriffe werden als Hints an Whisper und als Schutzinstruktionen an Claude gesendet. Empfohlenes Limit: ~80 Begriffe (~224 Whisper-Prompt-Tokens), bei Ueberschreitung wird eine Warnung angezeigt.
 
 ### Fixed
 

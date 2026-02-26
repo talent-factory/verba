@@ -334,6 +334,156 @@ suite('CleanupService', () => {
 			assert.ok(!userContent.includes('<context>'), 'should not contain context tags when undefined');
 		});
 
+		test('default system prompt includes glossary instruction when glossary is set', async () => {
+			service.setGlossary(['Visual Studio Code', 'Kubernetes']);
+			secretStorage.get.resolves('sk-ant-test-key');
+			fakeClient.messages.create.resolves({
+				content: [{ type: 'text', text: 'cleaned' }],
+			});
+
+			await service.process('test input');
+
+			const callArgs = fakeClient.messages.create.firstCall.args[0];
+			assert.ok(callArgs.system.includes('Visual Studio Code'),
+				'system prompt should include glossary term');
+			assert.ok(callArgs.system.includes('Kubernetes'),
+				'system prompt should include glossary term');
+		});
+
+		test('default system prompt has no glossary instruction when glossary is empty', async () => {
+			service.setGlossary([]);
+			secretStorage.get.resolves('sk-ant-test-key');
+			fakeClient.messages.create.resolves({
+				content: [{ type: 'text', text: 'cleaned' }],
+			});
+
+			await service.process('test input');
+
+			const callArgs = fakeClient.messages.create.firstCall.args[0];
+			assert.ok(!callArgs.system.includes('exakt bei'),
+				'system prompt should not include glossary instruction when empty');
+		});
+
+		test('template system prompt includes glossary instruction when glossary is set', async () => {
+			service.setGlossary(['Spring Boot']);
+			secretStorage.get.resolves('sk-ant-test-key');
+			fakeClient.messages.create.resolves({
+				content: [{ type: 'text', text: 'cleaned' }],
+			});
+
+			const context: PipelineContext = {
+				templatePrompt: 'Convert to a commit message.',
+			};
+			await service.process('test input', context);
+
+			const callArgs = fakeClient.messages.create.firstCall.args[0];
+			assert.ok(callArgs.system.includes('Spring Boot'),
+				'template prompt should include glossary term');
+		});
+
+		test('setGlossary replaces previous glossary completely', async () => {
+			service.setGlossary(['OldTerm']);
+			service.setGlossary(['NewTerm']);
+			secretStorage.get.resolves('sk-ant-test-key');
+			fakeClient.messages.create.resolves({
+				content: [{ type: 'text', text: 'cleaned' }],
+			});
+
+			await service.process('test input');
+
+			const callArgs = fakeClient.messages.create.firstCall.args[0];
+			assert.ok(callArgs.system.includes('NewTerm'),
+				'system prompt should include new glossary term');
+			assert.ok(!callArgs.system.includes('OldTerm'),
+				'system prompt should not include old glossary term');
+		});
+
+		test('glossary instruction contains key preservation phrases', async () => {
+			service.setGlossary(['TestTerm']);
+			secretStorage.get.resolves('sk-ant-test-key');
+			fakeClient.messages.create.resolves({
+				content: [{ type: 'text', text: 'cleaned' }],
+			});
+
+			await service.process('test input');
+
+			const callArgs = fakeClient.messages.create.firstCall.args[0];
+			assert.ok(callArgs.system.includes('exakt bei'),
+				'instruction should contain "exakt bei"');
+			assert.ok(callArgs.system.includes('nicht uebersetzen'),
+				'instruction should contain "nicht uebersetzen"');
+			assert.ok(callArgs.system.includes('nicht aendern'),
+				'instruction should contain "nicht aendern"');
+		});
+
+		test('glossary terms with commas are included correctly', async () => {
+			service.setGlossary(['Acme, Inc.', 'Kubernetes']);
+			secretStorage.get.resolves('sk-ant-test-key');
+			fakeClient.messages.create.resolves({
+				content: [{ type: 'text', text: 'cleaned' }],
+			});
+
+			await service.process('test input');
+
+			const callArgs = fakeClient.messages.create.firstCall.args[0];
+			assert.ok(callArgs.system.includes('Acme, Inc.'),
+				'system prompt should include term with comma');
+			assert.ok(callArgs.system.includes('Kubernetes'),
+				'system prompt should include other term');
+		});
+
+		test('glossary instruction appears on new line in default prompt', async () => {
+			service.setGlossary(['TestTerm']);
+			secretStorage.get.resolves('sk-ant-test-key');
+			fakeClient.messages.create.resolves({
+				content: [{ type: 'text', text: 'cleaned' }],
+			});
+
+			await service.process('test input');
+
+			const callArgs = fakeClient.messages.create.firstCall.args[0];
+			assert.ok(callArgs.system.includes('\nBehalte folgende Begriffe'),
+				'glossary instruction should start on new line');
+		});
+
+		test('glossary instruction appears between framing and template prompt', async () => {
+			service.setGlossary(['TestTerm']);
+			secretStorage.get.resolves('sk-ant-test-key');
+			fakeClient.messages.create.resolves({
+				content: [{ type: 'text', text: 'cleaned' }],
+			});
+
+			const context: PipelineContext = {
+				templatePrompt: 'Convert to a commit message.',
+			};
+			await service.process('test input', context);
+
+			const callArgs = fakeClient.messages.create.firstCall.args[0];
+			const glossaryIdx = callArgs.system.indexOf('Behalte folgende Begriffe');
+			const templateIdx = callArgs.system.indexOf('Convert to a commit message.');
+			assert.ok(glossaryIdx > 0, 'glossary instruction should be present');
+			assert.ok(templateIdx > glossaryIdx,
+				'template prompt should appear after glossary instruction');
+		});
+
+		test('setGlossary makes a defensive copy of the array', async () => {
+			const terms = ['OriginalTerm'];
+			service.setGlossary(terms);
+			terms.push('MutatedTerm');
+
+			secretStorage.get.resolves('sk-ant-test-key');
+			fakeClient.messages.create.resolves({
+				content: [{ type: 'text', text: 'cleaned' }],
+			});
+
+			await service.process('test input');
+
+			const callArgs = fakeClient.messages.create.firstCall.args[0];
+			assert.ok(callArgs.system.includes('OriginalTerm'),
+				'system prompt should include original term');
+			assert.ok(!callArgs.system.includes('MutatedTerm'),
+				'system prompt should not include mutated term');
+		});
 
 	});
 
@@ -432,6 +582,33 @@ suite('CleanupService', () => {
 			const callArgs = fakeClient.messages.stream.firstCall.args[0];
 			assert.ok(callArgs.system.includes('Sprachbefehl'),
 				'streaming template prompt should include voice commands');
+		});
+
+		test('streaming uses glossary in default prompt', async () => {
+			service.setGlossary(['TypeScript']);
+			secretStorage.get.resolves('sk-ant-test-key');
+			fakeClient.messages.stream.returns(createFakeStream(['cleaned']));
+
+			await service.processStreaming('test input', undefined, sinon.stub());
+
+			const callArgs = fakeClient.messages.stream.firstCall.args[0];
+			assert.ok(callArgs.system.includes('TypeScript'),
+				'streaming default prompt should include glossary term');
+		});
+
+		test('streaming uses glossary in template prompt', async () => {
+			service.setGlossary(['Kubernetes']);
+			secretStorage.get.resolves('sk-ant-test-key');
+			fakeClient.messages.stream.returns(createFakeStream(['cleaned']));
+
+			const context: PipelineContext = {
+				templatePrompt: 'Convert to markdown.',
+			};
+			await service.processStreaming('test input', context, sinon.stub());
+
+			const callArgs = fakeClient.messages.stream.firstCall.args[0];
+			assert.ok(callArgs.system.includes('Kubernetes'),
+				'streaming template prompt should include glossary term');
 		});
 
 		test('returns raw input when stream produces empty text', async () => {

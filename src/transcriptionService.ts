@@ -1,6 +1,5 @@
 import * as fs from 'fs';
 import OpenAI from 'openai';
-import { ProcessingStage } from './pipeline';
 
 const API_KEY_STORAGE_KEY = 'openai-api-key';
 
@@ -12,10 +11,11 @@ interface SecretStorage {
 
 /**
  * Sends a WAV audio file to OpenAI Whisper API and returns the transcript.
- * Implements ProcessingStage: input is a file path, output is transcript text.
+ * Input is a file path, output is transcript text. An optional glossary of terms
+ * can be provided to bias Whisper transcription via the prompt parameter.
  * API key is stored in VS Code SecretStorage; prompts user on first use.
  */
-export class TranscriptionService implements ProcessingStage {
+export class TranscriptionService {
 	readonly name = 'Whisper Transcription';
 	private _client: OpenAI | null = null;
 	private secretStorage: SecretStorage;
@@ -24,15 +24,17 @@ export class TranscriptionService implements ProcessingStage {
 		this.secretStorage = secretStorage;
 	}
 
-	async process(input: string): Promise<string> {
+	async process(input: string, glossary?: string[]): Promise<string> {
 		const apiKey = await this.getApiKey();
 		const client = this.getClient(apiKey);
 
+		const prompt = glossary?.length ? glossary.join(', ') : undefined;
 		let transcription;
 		try {
 			transcription = await client.audio.transcriptions.create({
 				file: fs.createReadStream(input),
 				model: 'whisper-1',
+				...(prompt && { prompt }),
 			});
 		} catch (err: unknown) {
 			if (err instanceof Error && (err as any).status === 401) {

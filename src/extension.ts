@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { FfmpegRecorder } from './recorder';
 import { StatusBarManager } from './statusBarManager';
-import { DictationPipeline, PipelineContext } from './pipeline';
+import { PipelineContext } from './pipeline';
 import { TranscriptionService } from './transcriptionService';
 import { CleanupService } from './cleanupService';
 import { insertText } from './insertText';
@@ -50,10 +50,24 @@ export function activate(context: vscode.ExtensionContext) {
 	const statusBar = new StatusBarManager();
 	const transcriptionService = new VerbaTranscriptionService(context.secrets);
 	const cleanupService = new VerbaCleanupService(context.secrets);
-	const pipeline = new DictationPipeline();
 	let selectedTemplate: Template | undefined;
 	let preferTerminal = false;
 	let processingAbortController: AbortController | null = null;
+	let currentGlossary: string[] = [];
+
+	function applyGlossary(): void {
+		currentGlossary = loadGlossary();
+		cleanupService.setGlossary(currentGlossary);
+		if (currentGlossary.length > 0) {
+			console.log(`[Verba] Glossary loaded: ${currentGlossary.length} terms`);
+		}
+		if (currentGlossary.length > 80) {
+			vscode.window.showWarningMessage(
+				`Verba: Glossary has ${currentGlossary.length} terms (recommended limit: ~80). Excess terms may be ignored by Whisper.`
+			);
+		}
+	}
+	applyGlossary();
 
 	const embeddingService = new EmbeddingService(context.secrets);
 
@@ -93,14 +107,53 @@ export function activate(context: vscode.ExtensionContext) {
 		);
 	}
 
+	function loadGlossary(): string[] {
+		const rawGlobalTerms = vscode.workspace
+			.getConfiguration('verba')
+			.get<unknown[]>('glossary', []);
+		const globalTerms = (Array.isArray(rawGlobalTerms) ? rawGlobalTerms : [])
+			.filter((t): t is string => typeof t === 'string' && t.trim() !== '');
+
+		const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+		let workspaceTerms: string[] = [];
+		if (workspaceRoot) {
+			const glossaryPath = path.join(workspaceRoot, '.verba-glossary.json');
+			try {
+				const content = fs.readFileSync(glossaryPath, 'utf-8');
+				const parsed = JSON.parse(content);
+				if (Array.isArray(parsed)) {
+					workspaceTerms = parsed.filter((t): t is string => typeof t === 'string' && t.trim() !== '');
+				} else {
+					console.warn('[Verba] .verba-glossary.json is not an array, ignoring');
+					vscode.window.showWarningMessage(
+						'Verba: .verba-glossary.json must be a JSON array of strings (e.g. ["term1", "term2"]). Workspace glossary ignored.'
+					);
+				}
+			} catch (err: unknown) {
+				if (err instanceof Error && (err as NodeJS.ErrnoException).code === 'ENOENT') {
+					// File doesn't exist — normal state, no workspace glossary
+				} else {
+					const detail = err instanceof SyntaxError
+						? 'Invalid JSON syntax'
+						: (err instanceof Error ? err.message : String(err));
+					console.warn('[Verba] Failed to read .verba-glossary.json:', err);
+					vscode.window.showWarningMessage(
+						`Verba: Could not load .verba-glossary.json (${detail}). Workspace glossary terms will not be applied.`
+					);
+				}
+			}
+		}
+
+		// Merge workspace and global terms, deduplicating. Workspace terms listed first
+		// so they are retained by Set deduplication when duplicates exist.
+		return [...new Set([...workspaceTerms, ...globalTerms])];
+	}
+
 	// Show active template in status bar on startup
 	const initialTemplateName = context.workspaceState.get<string>('verba.lastTemplateName');
 	if (initialTemplateName) {
 		statusBar.setIdle(initialTemplateName);
 	}
-
-	pipeline.addStage(transcriptionService);
-	pipeline.addStage(cleanupService);
 
 	recorder.onUnexpectedStop = (error) => {
 		selectedTemplate = undefined;
@@ -126,8 +179,8 @@ export function activate(context: vscode.ExtensionContext) {
 				const fileStats = fs.statSync(filePath);
 				console.log(`[Verba] WAV file: ${filePath} (${fileStats.size} bytes)`);
 
-				// Step 1: Transcribe via Whisper
-				const rawTranscript = await transcriptionService.process(filePath);
+				// Step 1: Transcribe via Whisper (uses cached glossary from applyGlossary)
+				const rawTranscript = await transcriptionService.process(filePath, currentGlossary);
 				console.log(`[Verba] Whisper transcript (${rawTranscript.length} chars): ${rawTranscript.substring(0, 200)}`);
 
 				// Step 2: Context retrieval (only for context-aware templates)
@@ -364,6 +417,28 @@ export function activate(context: vscode.ExtensionContext) {
 			console.warn(`[Verba] Incremental indexing failed for ${relativePath}:`, err);
 		}
 	});
+
+	const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+	if (workspaceRoot) {
+		const glossaryPattern = new vscode.RelativePattern(workspaceRoot, '.verba-glossary.json');
+		const glossaryWatcher = vscode.workspace.createFileSystemWatcher(glossaryPattern);
+		const safeApplyGlossary = () => {
+			try { applyGlossary(); } catch (err) {
+				console.error('[Verba] Failed to reload glossary:', err);
+			}
+		};
+		glossaryWatcher.onDidChange(safeApplyGlossary);
+		glossaryWatcher.onDidCreate(safeApplyGlossary);
+		glossaryWatcher.onDidDelete(safeApplyGlossary);
+		context.subscriptions.push(glossaryWatcher);
+	}
+
+	const settingsWatcher = vscode.workspace.onDidChangeConfiguration((e) => {
+		if (e.affectsConfiguration('verba.glossary')) {
+			applyGlossary();
+		}
+	});
+	context.subscriptions.push(settingsWatcher);
 
 	const selectDeviceCommand = vscode.commands.registerCommand('dictation.selectAudioDevice', () => pickAudioDevice(false));
 

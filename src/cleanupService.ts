@@ -31,14 +31,19 @@ interface SecretStorage {
 
 /**
  * Cleans up a raw transcript using Claude API: removes filler words,
- * smooths sentences, corrects transcription errors.
- * Implements ProcessingStage: input is raw transcript, output is cleaned text.
+ * smooths sentences, corrects transcription errors, and preserves glossary terms.
+ * Supports both synchronous (process) and streaming (processStreaming) modes.
  * API key is managed via a SecretStorage abstraction; in production, backed by VS Code's secret store.
  */
 export class CleanupService implements ProcessingStage {
 	readonly name = 'Text Cleanup';
 	private _client: Anthropic | null = null;
 	private secretStorage: SecretStorage;
+	private glossary: string[] = [];
+
+	setGlossary(terms: string[]): void {
+		this.glossary = [...terms];
+	}
 
 	constructor(secretStorage: SecretStorage) {
 		this.secretStorage = secretStorage;
@@ -122,9 +127,12 @@ export class CleanupService implements ProcessingStage {
 		context: PipelineContext | undefined,
 		input: string,
 	): Promise<{ client: Anthropic; systemPrompt: string; userMessage: string }> {
+		const glossaryInstruction = this.glossary.length > 0
+			? `\nBehalte folgende Begriffe exakt bei (nicht uebersetzen, nicht kuerzen, nicht aendern): ${this.glossary.join(', ')}.`
+			: '';
 		const systemPrompt = context?.templatePrompt
-			? TEMPLATE_FRAMING + context.templatePrompt
-			: CLEANUP_SYSTEM_PROMPT;
+			? TEMPLATE_FRAMING + glossaryInstruction + '\n' + context.templatePrompt
+			: CLEANUP_SYSTEM_PROMPT + glossaryInstruction;
 		const apiKey = await this.getApiKey();
 		const client = this.getClient(apiKey);
 

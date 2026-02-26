@@ -28,6 +28,7 @@
 - **Streaming Post-Processing** -- Claude processes your transcript in real-time with a live character counter in the status bar. Cancel anytime by pressing the dictation shortcut again.
 - **Course Correction** -- Self-corrections in speech are automatically detected and removed. Say "let's meet tomorrow, no wait, on Friday at ten" and only "let's meet on Friday at ten" is kept. Works in all modes.
 - **Voice Commands** -- Speak formatting commands like "new paragraph", "comma", "bullet point" and they are converted to actual formatting. Works in any language.
+- **Glossary/Dictionary** -- Define terms that must be preserved exactly during transcription and cleanup (e.g. "Visual Studio Code", "Kubernetes"). Global terms in settings, project-specific terms in `.verba-glossary.json`.
 - **Prompt Templates** -- Choose a template on first use; it is automatically reused for subsequent recordings. Switch anytime with `Cmd+Alt+T`. 8 built-in templates: Freitext, Commit Message, JavaDoc, Markdown, E-Mail, and 3 context-aware templates (Code Comment, Explain Code, Claude Code Prompt). The template controls how Claude post-processes the transcript.
 - **Fully Configurable** -- Templates are defined in `settings.json` and freely extensible. Add custom templates with any prompt.
 - **Bring Your Own Key** -- Use your own OpenAI and Anthropic API keys. No subscription costs, full data control. Keys are stored securely in VS Code's SecretStorage.
@@ -184,6 +185,7 @@ Each template consists of `name` (displayed in Quick Pick), `prompt` (instructio
 | `verba.templates` | Array | 8 built-in templates | Prompt templates for post-processing |
 | `verba.terminal.executeCommand` | Boolean | `false` | Submit text in terminal with Enter |
 | `verba.contextSearch.provider` | String | `"auto"` | Context search provider: `auto` uses grepai if available, otherwise OpenAI Embeddings |
+| `verba.glossary` | Array | `[]` | Terms preserved during transcription and cleanup (recommended limit: ~80 terms) |
 | `verba.contextSearch.maxResults` | Number | `5` | Number of context snippets per dictation (1--20) |
 
 ## Architecture
@@ -196,12 +198,12 @@ Microphone --> ffmpeg (WAV) --> Whisper API --> Claude API --> Editor/Terminal
 | Module | Purpose |
 |--------|---------|
 | `recorder.ts` | ffmpeg child process for audio recording |
-| `transcriptionService.ts` | OpenAI Whisper API integration |
-| `cleanupService.ts` | Anthropic Claude API integration (streaming, course correction, voice commands) |
+| `transcriptionService.ts` | OpenAI Whisper API integration (glossary hints) |
+| `cleanupService.ts` | Anthropic Claude API integration (streaming, course correction, voice commands, glossary) |
 | `pipeline.ts` | Processing stage orchestration |
 | `templatePicker.ts` | Quick Pick menu for template selection |
 | `insertText.ts` | Text insertion into editor or terminal |
-| `statusBarManager.ts` | Status bar display (Idle/Recording/Transcribing) |
+| `statusBarManager.ts` | Status bar display (Idle/Recording/Transcribing/Processing with character counter) |
 
 ## Development
 

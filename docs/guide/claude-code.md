@@ -6,7 +6,7 @@ Use Verba's **Claude Code Prompt** template to dictate tasks for Claude Code. Ve
 
 1. Select the "Claude Code Prompt" template via `Cmd+Alt+T`
 2. Set up a context provider for codebase-aware prompts:
-    - **Option A (recommended):** Install [grepai](https://grepai.dev) and run `grepai init` in your project
+    - **Option A (recommended):** Install [grepai](https://yoanbernabeu.github.io/grepai/) and run `grepai init` in your project
     - **Option B:** Run command **Verba: Index Project** to build the OpenAI Embeddings index
 3. Ensure `verba.terminal.executeCommand` is `false` (default) — text is pasted without submitting
 

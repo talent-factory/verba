@@ -34,7 +34,7 @@ For [context-aware templates](templates.md#context-aware-templates), Verba needs
 
 | Provider | Setup | Speed |
 |----------|-------|-------|
-| `grepai` | Install [grepai](https://grepai.dev), run `grepai init` | Fast |
+| `grepai` | Install [grepai](https://yoanbernabeu.github.io/grepai/), run `grepai init` | Fast |
 | `openai` | Run **Verba: Index Project** command | Moderate |
 | `auto` (default) | Uses grepai if installed, otherwise OpenAI Embeddings | — |
 

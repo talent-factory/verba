@@ -29,7 +29,7 @@ Templates with `contextAware: true` trigger a semantic code search before sendin
 
 This requires a context provider:
 
-- **grepai** (recommended) — Install [grepai](https://grepai.dev) and run `grepai init` in your project.
+- **grepai** (recommended) — Install [grepai](https://yoanbernabeu.github.io/grepai/) and run `grepai init` in your project.
 - **OpenAI Embeddings** — Run the command **Verba: Index Project** to build a local index.
 
 Configure the provider in Settings:
@@ -81,3 +81,24 @@ Define custom templates in `settings.json`:
 Verba automatically detects and removes self-corrections in your speech. If you say "let's meet tomorrow, no wait, on Friday at ten", only "let's meet on Friday at ten" is kept. This works in all templates — both the default cleanup and custom templates.
 
 Common correction phrases that are recognized: "no wait", "I meant", "actually rather", "correction", and similar patterns in German and English.
+
+## Voice Commands
+
+Verba recognizes spoken formatting commands and converts them to actual formatting. Say "new paragraph" to insert a paragraph break, "comma" to insert a comma, or "bullet point" to start a list item.
+
+Supported commands:
+
+| Command | Result |
+|---------|--------|
+| "New paragraph" / "Neuer Absatz" | Paragraph break |
+| "New line" / "Neue Zeile" | Line break |
+| "Period" / "Punkt" | `.` |
+| "Comma" / "Komma" | `,` |
+| "Colon" / "Doppelpunkt" | `:` |
+| "Semicolon" / "Semikolon" | `;` |
+| "Question mark" / "Fragezeichen" | `?` |
+| "Exclamation mark" / "Ausrufezeichen" | `!` |
+| "Bullet point" / "Aufzaehlung" | `- ` (list item) |
+| "Number one/two/three" / "Nummer eins/zwei/drei" | `1. ` / `2. ` / `3. ` |
+
+Commands work in any language — speak naturally and Verba will interpret them.

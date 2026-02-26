@@ -27,6 +27,7 @@
 - **Dictation in Editor and Terminal** -- `Cmd+Shift+D` (Mac) / `Ctrl+Shift+D` (Windows/Linux) starts and stops recording. Text is inserted contextually in the editor or terminal.
 - **Streaming Post-Processing** -- Claude processes your transcript in real-time with a live character counter in the status bar. Cancel anytime by pressing the dictation shortcut again.
 - **Course Correction** -- Self-corrections in speech are automatically detected and removed. Say "let's meet tomorrow, no wait, on Friday at ten" and only "let's meet on Friday at ten" is kept. Works in all modes.
+- **Voice Commands** -- Speak formatting commands like "new paragraph", "comma", "bullet point" and they are converted to actual formatting. Works in any language.
 - **Prompt Templates** -- Choose a template on first use; it is automatically reused for subsequent recordings. Switch anytime with `Cmd+Alt+T`. 8 built-in templates: Freitext, Commit Message, JavaDoc, Markdown, E-Mail, and 3 context-aware templates (Code Comment, Explain Code, Claude Code Prompt). The template controls how Claude post-processes the transcript.
 - **Fully Configurable** -- Templates are defined in `settings.json` and freely extensible. Add custom templates with any prompt.
 - **Bring Your Own Key** -- Use your own OpenAI and Anthropic API keys. No subscription costs, full data control. Keys are stored securely in VS Code's SecretStorage.
@@ -121,7 +122,7 @@ Use the **Claude Code Prompt** template to dictate tasks for Claude Code. Verba 
 **Setup:**
 1. Select the "Claude Code Prompt" template (`Cmd+Alt+T`)
 2. Set up a context provider for codebase-aware prompts:
-   - **Option A (recommended):** Install [grepai](https://grepai.dev) and run `grepai init` in your project
+   - **Option A (recommended):** Install [grepai](https://yoanbernabeu.github.io/grepai/) and run `grepai init` in your project
    - **Option B:** Run command `Verba: Index Project` to build the OpenAI Embeddings index
 3. Ensure `verba.terminal.executeCommand` is `false` (default) — text is pasted without submitting
 
@@ -196,7 +197,7 @@ Microphone --> ffmpeg (WAV) --> Whisper API --> Claude API --> Editor/Terminal
 |--------|---------|
 | `recorder.ts` | ffmpeg child process for audio recording |
 | `transcriptionService.ts` | OpenAI Whisper API integration |
-| `cleanupService.ts` | Anthropic Claude API integration (streaming, course correction) |
+| `cleanupService.ts` | Anthropic Claude API integration (streaming, course correction, voice commands) |
 | `pipeline.ts` | Processing stage orchestration |
 | `templatePicker.ts` | Quick Pick menu for template selection |
 | `insertText.ts` | Text insertion into editor or terminal |

@@ -409,6 +409,31 @@ suite('CleanupService', () => {
 				'streaming template prompt should include course correction');
 		});
 
+		test('streaming uses voice commands in default prompt', async () => {
+			secretStorage.get.resolves('sk-ant-test-key');
+			fakeClient.messages.stream.returns(createFakeStream(['cleaned']));
+
+			await service.processStreaming('test input', undefined, sinon.stub());
+
+			const callArgs = fakeClient.messages.stream.firstCall.args[0];
+			assert.ok(callArgs.system.includes('Sprachbefehl'),
+				'streaming default prompt should include voice commands');
+		});
+
+		test('streaming uses voice commands in template prompt', async () => {
+			secretStorage.get.resolves('sk-ant-test-key');
+			fakeClient.messages.stream.returns(createFakeStream(['cleaned']));
+
+			const context: PipelineContext = {
+				templatePrompt: 'Convert to markdown.',
+			};
+			await service.processStreaming('test input', context, sinon.stub());
+
+			const callArgs = fakeClient.messages.stream.firstCall.args[0];
+			assert.ok(callArgs.system.includes('Sprachbefehl'),
+				'streaming template prompt should include voice commands');
+		});
+
 		test('returns raw input when stream produces empty text', async () => {
 			secretStorage.get.resolves('sk-ant-test-key');
 			fakeClient.messages.stream.returns(createFakeStream([]));

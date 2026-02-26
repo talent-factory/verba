@@ -23,6 +23,20 @@ src/session.ts:5: class Session {}`;
 		assert.strictEqual(parseGrepaiOutput('').length, 0);
 		assert.strictEqual(parseGrepaiOutput('\n').length, 0);
 	});
+
+	test('silently skips lines that do not match file:line: content format', () => {
+		const output = `Some header text
+src/auth.ts:10: function login() {}
+--- separator ---
+src/auth.ts:20: return true;`;
+
+		const results = parseGrepaiOutput(output);
+
+		assert.strictEqual(results.length, 1);
+		assert.strictEqual(results[0].file, 'src/auth.ts');
+		assert.ok(results[0].content.includes('function login'));
+		assert.ok(results[0].content.includes('return true'));
+	});
 });
 
 suite('GrepaiProvider', () => {
@@ -77,6 +91,15 @@ suite('GrepaiProvider', () => {
 	test('search returns empty array on grepai failure', () => {
 		const provider = new GrepaiProvider('/workspace');
 		spawnSyncStub.returns({ status: 1, stdout: '', stderr: 'error', error: undefined });
+
+		const results = provider.search('test', 5);
+
+		assert.strictEqual(results.length, 0);
+	});
+
+	test('search returns empty array when spawn throws an error', () => {
+		const provider = new GrepaiProvider('/workspace');
+		spawnSyncStub.returns({ status: null, stdout: '', stderr: '', error: new Error('ENOENT') });
 
 		const results = provider.search('test', 5);
 

@@ -139,5 +139,41 @@ suite('TranscriptionService', () => {
 				/Transcription failed: ECONNREFUSED/
 			);
 		});
+
+		test('throws silence error when transcript is only dots or ellipsis', async () => {
+			secretStorage.get.resolves('sk-test-key');
+			sinon.stub(fs, 'createReadStream').returns('fake-stream' as any);
+
+			for (const silenceText of ['...', '…', '. . .', '  ...  ', '.\n.']) {
+				fakeClient.audio.transcriptions.create.resolves({ text: silenceText });
+				await assert.rejects(
+					() => service.process('/tmp/test.wav'),
+					/No speech detected.*only silence/,
+					`should reject silence text: ${JSON.stringify(silenceText)}`,
+				);
+			}
+		});
+
+		test('throws on whitespace-only transcript', async () => {
+			secretStorage.get.resolves('sk-test-key');
+			fakeClient.audio.transcriptions.create.resolves({ text: '   \t  ' });
+			sinon.stub(fs, 'createReadStream').returns('fake-stream' as any);
+
+			await assert.rejects(
+				() => service.process('/tmp/test.wav'),
+				/No speech detected/
+			);
+		});
+
+		test('wraps non-Error thrown values in descriptive message', async () => {
+			secretStorage.get.resolves('sk-test-key');
+			fakeClient.audio.transcriptions.create.returns(Promise.reject('raw string error'));
+			sinon.stub(fs, 'createReadStream').returns('fake-stream' as any);
+
+			await assert.rejects(
+				() => service.process('/tmp/test.wav'),
+				/Transcription failed: raw string error/
+			);
+		});
 	});
 });

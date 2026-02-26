@@ -52,6 +52,7 @@ All phases are sub-issues of TF-243 (project overview). All core phases are comp
 
 ## Conventions
 
+- **CHANGELOG.md is always written in English** — all entries, descriptions, and examples must be in English
 - Extension name: `verba`
 - Command prefix: `dictation.`
 - Main command: `dictation.start` (`Cmd+Shift+D` / `Ctrl+Shift+D`)

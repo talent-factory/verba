@@ -10,20 +10,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Added
 
-- **Offline-Transkription (TF-257):** Lokale Transkription via whisper.cpp CLI als Alternative zur OpenAI Whisper API. Audio verlässt nie den Rechner. Strategy-Pattern auf `TranscriptionService` mit `setProvider('openai'|'local')`.
-- **Model-Download:** GGML-Modelle von Hugging Face via `dictation.downloadModel` Command mit Fortschrittsanzeige und Abbruchmoeglichkeit. Modellauswahl: tiny, base, small, medium, large.
-- **Provider-Anzeige in Statuszeile:** Tooltip zeigt aktiven Provider (OpenAI Whisper / Local whisper.cpp), Transcribing-State zeigt Provider explizit an.
-- **Streaming Post-Processing:** Claude-Antworten werden per Streaming empfangen mit Echtzeit-Fortschrittsanzeige in der Statusbar (z.B. "Processing... 182 chars"). Diktat kann waehrend der Verarbeitung per erneutem Tastendruck abgebrochen werden.
-- **Course Correction:** Selbstkorrekturen im Diktat werden automatisch erkannt und entfernt (z.B. "nein warte, doch Freitag" → "Freitag"). Aktiv in allen Modi (Freitext und Templates).
-- **Voice Commands:** Gesprochene Formatierungsbefehle werden erkannt und umgesetzt (z.B. "Neuer Absatz", "Punkt", "Aufzaehlung"). Funktioniert sprachunabhaengig in allen Modi.
-- **Glossar/Dictionary:** Begriffe (Produktnamen, Fachbegriffe, Abkuerzungen) werden bei Transkription und Bereinigung exakt beibehalten. Globale Begriffe via `verba.glossary` Setting, projektspezifische via `.verba-glossary.json`.
-- **JSDoc-Dokumentation:** Alle oeffentlichen APIs ueber 13 Source-Dateien dokumentiert.
+- **Offline Transcription (TF-257):** Local transcription via whisper.cpp CLI as an alternative to OpenAI Whisper API. Audio never leaves the machine. Strategy pattern on `TranscriptionService` with `setProvider('openai'|'local')`.
+- **Model Download:** GGML models from Hugging Face via `dictation.downloadModel` command with progress indicator and cancellation support. Model selection: tiny, base, small, medium, large.
+- **Provider Display in Status Bar:** Tooltip shows active provider (OpenAI Whisper / Local whisper.cpp), transcribing state displays provider explicitly.
+- **Streaming Post-Processing:** Claude responses are received via streaming with real-time progress display in the status bar (e.g. "Processing... 182 chars"). Dictation can be cancelled during processing by pressing the shortcut again.
+- **Course Correction:** Self-corrections in dictation are automatically detected and removed (e.g. "no wait, actually Friday" → "Friday"). Active in all modes (freeform and templates).
+- **Voice Commands:** Spoken formatting commands are recognized and applied (e.g. "New paragraph", "Period", "Bullet point"). Works language-independently in all modes.
+- **Glossary/Dictionary:** Terms (product names, technical terms, abbreviations) are preserved exactly during transcription and cleanup. Global terms via `verba.glossary` setting, project-specific via `.verba-glossary.json`.
+- **JSDoc Documentation:** All public APIs across 13 source files documented.
 
 ### Fixed
 
-- SIGKILL-Eskalation bei haengenden whisper-cli Prozessen
-- Provider-Validierung mit Fallback bei ungueltigem Setting
-- Minimale Dateigroesse-Pruefung nach Model-Download
+- SIGKILL escalation for hanging whisper-cli processes
+- Provider validation with fallback for invalid settings
+- Minimum file size check after model download
 
 ### Changed
 
@@ -34,7 +34,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Added
 
-- **Configurable Prompt Templates (TF-248):** 5 default templates (Freitext, Commit Message, JavaDoc, Markdown, E-Mail) with full customization via `verba.templates` setting
+- **Configurable Prompt Templates (TF-248):** 5 default templates (Freeform, Commit Message, JavaDoc, Markdown, Email) with full customization via `verba.templates` setting
 - Context-Aware Dictation with semantic code search via grepai or OpenAI Embeddings
 - 3 context-aware templates: Code Comment, Explain Code, Claude Code Prompt
 - `dictation.indexProject` command to build a local embeddings index for context search

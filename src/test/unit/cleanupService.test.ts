@@ -485,6 +485,29 @@ suite('CleanupService', () => {
 				'system prompt should not include mutated term');
 		});
 
+		test('exposes lastUsage after successful API call', async () => {
+			secretStorage.get.resolves('sk-ant-test-key');
+			fakeClient.messages.create.resolves({
+				content: [{ type: 'text', text: 'cleaned' }],
+				usage: { input_tokens: 150, output_tokens: 42 },
+			});
+
+			await service.process('test input');
+
+			assert.deepStrictEqual(service.lastUsage, { inputTokens: 150, outputTokens: 42 });
+		});
+
+		test('lastUsage is undefined when response has no usage field', async () => {
+			secretStorage.get.resolves('sk-ant-test-key');
+			fakeClient.messages.create.resolves({
+				content: [{ type: 'text', text: 'cleaned' }],
+			});
+
+			await service.process('test input');
+
+			assert.strictEqual(service.lastUsage, undefined);
+		});
+
 	});
 
 	suite('processStreaming()', () => {
@@ -499,6 +522,7 @@ suite('CleanupService', () => {
 					}
 				},
 				abort: sinon.stub(),
+				finalMessage: sinon.stub().resolves({}),
 			};
 		}
 
@@ -632,6 +656,7 @@ suite('CleanupService', () => {
 					throw new Error('Request was aborted.');
 				},
 				abort: sinon.stub(),
+				finalMessage: sinon.stub().resolves({}),
 			};
 			fakeClient.messages.stream.returns(fakeStream);
 
@@ -702,6 +727,7 @@ suite('CleanupService', () => {
 					yield { type: 'content_block_stop', index: 0 };
 				},
 				abort: sinon.stub(),
+				finalMessage: sinon.stub().resolves({}),
 			};
 			fakeClient.messages.stream.returns(fakeStream);
 
@@ -722,6 +748,41 @@ suite('CleanupService', () => {
 			await service.processStreaming('test', undefined, sinon.stub(), abortController.signal);
 
 			assert.ok(removeSpy.calledOnce, 'removeEventListener should be called in finally block');
+		});
+
+		test('exposes lastUsage after streaming completes', async () => {
+			secretStorage.get.resolves('sk-ant-test-key');
+			const fakeStream = createFakeStream(['Hello', ' world']);
+			fakeStream.finalMessage = sinon.stub().resolves({
+				usage: { input_tokens: 200, output_tokens: 80 },
+			});
+			fakeClient.messages.stream.returns(fakeStream);
+
+			await service.processStreaming('raw input', undefined, sinon.stub());
+
+			assert.deepStrictEqual(service.lastUsage, { inputTokens: 200, outputTokens: 80 });
+		});
+
+		test('lastUsage is undefined when finalMessage has no usage', async () => {
+			secretStorage.get.resolves('sk-ant-test-key');
+			const fakeStream = createFakeStream(['Hello']);
+			fakeStream.finalMessage = sinon.stub().resolves({});
+			fakeClient.messages.stream.returns(fakeStream);
+
+			await service.processStreaming('raw input', undefined, sinon.stub());
+
+			assert.strictEqual(service.lastUsage, undefined);
+		});
+
+		test('lastUsage is undefined when finalMessage throws', async () => {
+			secretStorage.get.resolves('sk-ant-test-key');
+			const fakeStream = createFakeStream(['Hello']);
+			fakeStream.finalMessage = sinon.stub().rejects(new Error('stream ended'));
+			fakeClient.messages.stream.returns(fakeStream);
+
+			await service.processStreaming('raw input', undefined, sinon.stub());
+
+			assert.strictEqual(service.lastUsage, undefined);
 		});
 	});
 });

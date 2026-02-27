@@ -19,6 +19,7 @@ interface SecretStorage {
 export class EmbeddingService {
 	private _client: OpenAI | null = null;
 	private secretStorage: SecretStorage;
+	lastUsage?: { promptTokens: number };
 
 	constructor(secretStorage: SecretStorage) {
 		this.secretStorage = secretStorage;
@@ -58,6 +59,10 @@ export class EmbeddingService {
 			const detail = err instanceof Error ? err.message : String(err);
 			throw new Error(`Embedding failed: ${detail}`);
 		}
+
+		this.lastUsage = response.usage
+			? { promptTokens: response.usage.prompt_tokens }
+			: undefined;
 
 		return response.data.map(d => d.embedding);
 	}

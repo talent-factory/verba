@@ -5,11 +5,11 @@
 
 const STORAGE_KEY = 'verba.costRecords';
 
-// Pricing constants
-const WHISPER_COST_PER_MINUTE = 0.006;
-const CLAUDE_INPUT_COST_PER_MILLION = 1.00;
-const CLAUDE_OUTPUT_COST_PER_MILLION = 5.00;
-const EMBEDDING_COST_PER_MILLION = 0.020;
+// Pricing as of 2026-02 — verify at https://openai.com/pricing and https://www.anthropic.com/pricing
+const WHISPER_COST_PER_MINUTE = 0.006;        // OpenAI Whisper: $0.006/min
+const CLAUDE_INPUT_COST_PER_MILLION = 1.00;    // Claude Haiku 4.5: $1.00/1M input tokens
+const CLAUDE_OUTPUT_COST_PER_MILLION = 5.00;   // Claude Haiku 4.5: $5.00/1M output tokens
+const EMBEDDING_COST_PER_MILLION = 0.020;      // text-embedding-3-small: $0.020/1M tokens
 
 export interface UsageRecord {
 	timestamp: number;
@@ -97,10 +97,12 @@ export class CostTracker {
 	resetTotalCosts(): void {
 		this._previousRecords = [];
 		this._sessionRecords = [];
-		this._globalState.update(STORAGE_KEY, []);
+		Promise.resolve(this._globalState.update(STORAGE_KEY, []))
+			.catch((err: unknown) => { console.error('[Verba] Failed to reset cost records:', err); });
 	}
 
 	private _persist(): void {
-		this._globalState.update(STORAGE_KEY, this.getTotalRecords());
+		Promise.resolve(this._globalState.update(STORAGE_KEY, this.getTotalRecords()))
+			.catch((err: unknown) => { console.error('[Verba] Failed to persist cost records:', err); });
 	}
 }

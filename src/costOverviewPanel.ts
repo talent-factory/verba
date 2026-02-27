@@ -144,6 +144,7 @@ export function buildCostOverviewHtml(
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline';">
 <style>
 body {
 	background-color: var(--vscode-editor-background);
@@ -250,7 +251,7 @@ function getVscode(): typeof import('vscode') { return require('vscode'); }
  * Manages a single WebView panel for the cost overview.
  */
 export class CostOverviewPanel {
-	public static currentPanel: CostOverviewPanel | undefined;
+	private static currentPanel: CostOverviewPanel | undefined;
 
 	private readonly _panel: vscode.WebviewPanel;
 	private readonly _costTracker: CostTracker;

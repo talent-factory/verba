@@ -69,7 +69,8 @@ function getWavDurationSec(wavPath: string): number {
 		const dataSize = header.readUInt32LE(40);
 		if (byteRate === 0) { return 0; }
 		return dataSize / byteRate;
-	} catch {
+	} catch (err: unknown) {
+		console.warn('[Verba] Failed to read WAV duration:', err);
 		return 0;
 	}
 }
@@ -265,6 +266,9 @@ export function activate(context: vscode.ExtensionContext) {
 					try {
 						contextSnippets = await contextProvider.search(rawTranscript, maxResults);
 						console.log(`[Verba] Retrieved ${contextSnippets.length} context snippets`);
+						if (embeddingService.lastUsage) {
+							costTracker.trackEmbeddingUsage(embeddingService.lastUsage.promptTokens);
+						}
 					} catch (err: unknown) {
 						console.warn('[Verba] Context search failed, proceeding without context:', err);
 					}

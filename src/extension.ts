@@ -13,6 +13,9 @@ import { ContextProvider } from './contextProvider';
 import { EmbeddingService } from './embeddingService';
 import { Indexer } from './indexer';
 import { GrepaiProvider } from './grepaiProvider';
+import { CostTracker } from './costTracker';
+import { CostOverviewPanel } from './costOverviewPanel';
+import { getWavDurationSec } from './wavDuration';
 
 const WHISPER_MODELS: { name: string; file: string; size: string }[] = [
 	{ name: 'tiny', file: 'ggml-tiny.bin', size: '~75 MB' },
@@ -62,6 +65,7 @@ export function activate(context: vscode.ExtensionContext) {
 	const statusBar = new StatusBarManager();
 	const transcriptionService = new VerbaTranscriptionService(context.secrets);
 	const cleanupService = new VerbaCleanupService(context.secrets);
+	const costTracker = new CostTracker(context.globalState);
 	let selectedTemplate: Template | undefined;
 	let preferTerminal = false;
 	let processingAbortController: AbortController | null = null;
@@ -233,6 +237,15 @@ export function activate(context: vscode.ExtensionContext) {
 				const rawTranscript = await transcriptionService.process(filePath, currentGlossary);
 				console.log(`[Verba] Whisper transcript (${rawTranscript.length} chars): ${rawTranscript.substring(0, 200)}`);
 
+				// Track Whisper usage from WAV file duration (only for OpenAI API, not local whisper.cpp)
+				const transcriptionProvider = vscode.workspace.getConfiguration('verba.transcription').get<string>('provider', 'openai');
+				if (transcriptionProvider === 'openai') {
+					const wavDurationSec = getWavDurationSec(filePath);
+					if (wavDurationSec > 0) {
+						costTracker.trackWhisperUsage(wavDurationSec);
+					}
+				}
+
 				// Step 2: Context retrieval (only for context-aware templates)
 				let contextSnippets: string[] | undefined;
 				if (selectedTemplate?.contextAware && contextProvider.isAvailable()) {
@@ -240,6 +253,10 @@ export function activate(context: vscode.ExtensionContext) {
 					try {
 						contextSnippets = await contextProvider.search(rawTranscript, maxResults);
 						console.log(`[Verba] Retrieved ${contextSnippets.length} context snippets`);
+						if (embeddingService.lastUsage) {
+							costTracker.trackEmbeddingUsage(embeddingService.lastUsage.promptTokens);
+							embeddingService.lastUsage = undefined; // Consume to prevent double-counting
+						}
 					} catch (err: unknown) {
 						console.warn('[Verba] Context search failed, proceeding without context:', err);
 					}
@@ -261,6 +278,12 @@ export function activate(context: vscode.ExtensionContext) {
 						(charCount) => statusBar.setProcessing(charCount),
 						abortController.signal,
 					);
+					if (cleanupService.lastUsage) {
+						costTracker.trackClaudeUsage(
+							cleanupService.lastUsage.inputTokens,
+							cleanupService.lastUsage.outputTokens,
+						);
+					}
 				} catch (err: unknown) {
 					if (err instanceof Error && err.name === 'AbortError') {
 						statusBar.setIdle(selectedTemplate?.name);
@@ -755,9 +778,19 @@ export function activate(context: vscode.ExtensionContext) {
 	const editorCommand = vscode.commands.registerCommand('dictation.start', () => handleDictation(false));
 	const terminalCommand = vscode.commands.registerCommand('dictation.startFromTerminal', () => handleDictation(true));
 
+	const showCostOverviewCommand = vscode.commands.registerCommand('dictation.showCostOverview', () => {
+		try {
+			CostOverviewPanel.createOrShow(costTracker);
+		} catch (err: unknown) {
+			console.error('[Verba] Failed to open Cost Overview panel:', err);
+			const message = err instanceof Error ? err.message : String(err);
+			vscode.window.showErrorMessage(`Verba: Could not open Cost Overview: ${message}`);
+		}
+	});
+
 	context.subscriptions.push(
 		editorCommand, terminalCommand, selectDeviceCommand, selectTemplateCommand,
-		indexProjectCommand, downloadModelCommand, manageApiKeysCommand, saveWatcher,
+		indexProjectCommand, downloadModelCommand, manageApiKeysCommand, showCostOverviewCommand, saveWatcher,
 		{ dispose: () => recorder.dispose() }, statusBar,
 	);
 }

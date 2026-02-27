@@ -40,6 +40,8 @@ export class CleanupService implements ProcessingStage {
 	private _client: Anthropic | null = null;
 	private secretStorage: SecretStorage;
 	private glossary: string[] = [];
+	/** Token usage from the most recent API call, or undefined if unavailable. */
+	lastUsage?: { inputTokens: number; outputTokens: number };
 
 	/** Sets the glossary terms that must be preserved verbatim during cleanup. */
 	setGlossary(terms: string[]): void {
@@ -65,6 +67,10 @@ export class CleanupService implements ProcessingStage {
 		} catch (err: unknown) {
 			this.handleApiError(err, '[Verba] Claude API call failed:');
 		}
+
+		this.lastUsage = response.usage
+			? { inputTokens: response.usage.input_tokens, outputTokens: response.usage.output_tokens }
+			: undefined;
 
 		const text = response.content[0]?.type === 'text'
 			? response.content[0].text
@@ -123,6 +129,16 @@ export class CleanupService implements ProcessingStage {
 			if (signal) {
 				signal.removeEventListener('abort', abortHandler);
 			}
+		}
+
+		try {
+			const finalMsg = await stream.finalMessage();
+			this.lastUsage = finalMsg.usage
+				? { inputTokens: finalMsg.usage.input_tokens, outputTokens: finalMsg.usage.output_tokens }
+				: undefined;
+		} catch (err: unknown) {
+			console.warn('[Verba] Failed to extract usage from streaming response:', err);
+			this.lastUsage = undefined;
 		}
 
 		console.log(`[Verba] Claude streaming response (${accumulated.length} chars): ${accumulated.substring(0, 200)}`);

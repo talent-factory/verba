@@ -69,6 +69,11 @@
         "command": "dictation.manageApiKeys",
         "title": "Manage API Keys",
         "category": "Verba"
+      },
+      {
+        "command": "dictation.showCostOverview",
+        "title": "Show Cost Overview",
+        "category": "Verba"
       }
     ],
     "keybindings": [

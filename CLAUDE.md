@@ -60,6 +60,7 @@ All phases are sub-issues of TF-243 (project overview). All core phases are comp
 - Audio device command: `dictation.selectAudioDevice` (microphone selection via Quick Pick)
 - Template command: `dictation.selectTemplate` (`Cmd+Alt+T` / `Ctrl+Alt+T`) — switch template without recording
 - API key management: `dictation.manageApiKeys` — view (masked), update, or delete stored API keys
+- Cost overview: `dictation.showCostOverview` — WebView panel with per-model API usage costs (session + total)
 - API keys are stored exclusively via `vscode.SecretStorage` (never in plaintext)
 - TypeScript strict mode
 - Follow VS Code Extension best practices
@@ -80,3 +81,6 @@ Microphone --> ffmpeg (WAV) --> Whisper API     --> Claude API --> Editor/Termin
 | `templatePicker.ts` | Quick Pick menu for template selection |
 | `insertText.ts` | Text insertion into editor or terminal |
 | `statusBarManager.ts` | Status bar display (Idle/Recording/Transcribing/Processing with character counter) |
+| `costTracker.ts` | API usage cost tracking with persistence via globalState |
+| `costOverviewPanel.ts` | WebView panel for cost overview (card layout, session/total toggle) |
+| `wavDuration.ts` | WAV file duration calculation from PCM header (for Whisper cost tracking) |

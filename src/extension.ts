@@ -13,6 +13,8 @@ import { ContextProvider } from './contextProvider';
 import { EmbeddingService } from './embeddingService';
 import { Indexer } from './indexer';
 import { GrepaiProvider } from './grepaiProvider';
+import { CostTracker } from './costTracker';
+import { CostOverviewPanel } from './costOverviewPanel';
 
 const WHISPER_MODELS: { name: string; file: string; size: string }[] = [
 	{ name: 'tiny', file: 'ggml-tiny.bin', size: '~75 MB' },
@@ -56,12 +58,29 @@ function cleanupFile(filePath: string): void {
 	}
 }
 
+/** Calculates the duration of a WAV file in seconds by reading its header. */
+function getWavDurationSec(wavPath: string): number {
+	try {
+		const fd = fs.openSync(wavPath, 'r');
+		const header = Buffer.alloc(44);
+		fs.readSync(fd, header, 0, 44, 0);
+		fs.closeSync(fd);
+		const byteRate = header.readUInt32LE(28);
+		const dataSize = header.readUInt32LE(40);
+		if (byteRate === 0) { return 0; }
+		return dataSize / byteRate;
+	} catch {
+		return 0;
+	}
+}
+
 /** Activates the Verba extension: registers commands, wires up services, and initializes the status bar. */
 export function activate(context: vscode.ExtensionContext) {
 	const recorder = new FfmpegRecorder();
 	const statusBar = new StatusBarManager();
 	const transcriptionService = new VerbaTranscriptionService(context.secrets);
 	const cleanupService = new VerbaCleanupService(context.secrets);
+	const costTracker = new CostTracker(context.globalState);
 	let selectedTemplate: Template | undefined;
 	let preferTerminal = false;
 	let processingAbortController: AbortController | null = null;
@@ -233,6 +252,12 @@ export function activate(context: vscode.ExtensionContext) {
 				const rawTranscript = await transcriptionService.process(filePath, currentGlossary);
 				console.log(`[Verba] Whisper transcript (${rawTranscript.length} chars): ${rawTranscript.substring(0, 200)}`);
 
+				// Track Whisper usage from WAV file duration
+				const wavDurationSec = getWavDurationSec(filePath);
+				if (wavDurationSec > 0) {
+					costTracker.trackWhisperUsage(wavDurationSec);
+				}
+
 				// Step 2: Context retrieval (only for context-aware templates)
 				let contextSnippets: string[] | undefined;
 				if (selectedTemplate?.contextAware && contextProvider.isAvailable()) {
@@ -261,6 +286,12 @@ export function activate(context: vscode.ExtensionContext) {
 						(charCount) => statusBar.setProcessing(charCount),
 						abortController.signal,
 					);
+					if (cleanupService.lastUsage) {
+						costTracker.trackClaudeUsage(
+							cleanupService.lastUsage.inputTokens,
+							cleanupService.lastUsage.outputTokens,
+						);
+					}
 				} catch (err: unknown) {
 					if (err instanceof Error && err.name === 'AbortError') {
 						statusBar.setIdle(selectedTemplate?.name);
@@ -755,9 +786,13 @@ export function activate(context: vscode.ExtensionContext) {
 	const editorCommand = vscode.commands.registerCommand('dictation.start', () => handleDictation(false));
 	const terminalCommand = vscode.commands.registerCommand('dictation.startFromTerminal', () => handleDictation(true));
 
+	const showCostOverviewCommand = vscode.commands.registerCommand('dictation.showCostOverview', () => {
+		CostOverviewPanel.createOrShow(context.extensionUri, costTracker);
+	});
+
 	context.subscriptions.push(
 		editorCommand, terminalCommand, selectDeviceCommand, selectTemplateCommand,
-		indexProjectCommand, downloadModelCommand, manageApiKeysCommand, saveWatcher,
+		indexProjectCommand, downloadModelCommand, manageApiKeysCommand, showCostOverviewCommand, saveWatcher,
 		{ dispose: () => recorder.dispose() }, statusBar,
 	);
 }

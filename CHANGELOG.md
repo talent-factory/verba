@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 ### Added
 
 - **API Key Management:** `dictation.manageApiKeys` command to view (masked), update, or delete stored OpenAI and Anthropic API keys via the Command Palette.
+- **LLM Cost Tracking & Overview (TF-270):** `dictation.showCostOverview` command opens a WebView panel showing per-model API usage costs. Tracks Whisper transcription (by audio duration), Claude processing (by input/output tokens), and OpenAI Embeddings (by prompt tokens). Costs displayed per session and accumulated across all sessions, grouped by provider (OpenAI / Anthropic) in a card layout with VS Code theme support.
 
 ## [0.3.0] - 2026-02-26
 

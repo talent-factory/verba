@@ -15,6 +15,7 @@ import { Indexer } from './indexer';
 import { GrepaiProvider } from './grepaiProvider';
 import { CostTracker } from './costTracker';
 import { CostOverviewPanel } from './costOverviewPanel';
+import { getWavDurationSec } from './wavDuration';
 
 const WHISPER_MODELS: { name: string; file: string; size: string }[] = [
 	{ name: 'tiny', file: 'ggml-tiny.bin', size: '~75 MB' },
@@ -55,23 +56,6 @@ function cleanupFile(filePath: string): void {
 		if (err instanceof Error && (err as NodeJS.ErrnoException).code !== 'ENOENT') {
 			console.error('[Verba] Failed to clean up temp file:', err);
 		}
-	}
-}
-
-/** Calculates the duration of a WAV file in seconds by reading its header. */
-function getWavDurationSec(wavPath: string): number {
-	try {
-		const fd = fs.openSync(wavPath, 'r');
-		const header = Buffer.alloc(44);
-		fs.readSync(fd, header, 0, 44, 0);
-		fs.closeSync(fd);
-		const byteRate = header.readUInt32LE(28);
-		const dataSize = header.readUInt32LE(40);
-		if (byteRate === 0) { return 0; }
-		return dataSize / byteRate;
-	} catch (err: unknown) {
-		console.warn('[Verba] Failed to read WAV duration:', err);
-		return 0;
 	}
 }
 
@@ -253,10 +237,13 @@ export function activate(context: vscode.ExtensionContext) {
 				const rawTranscript = await transcriptionService.process(filePath, currentGlossary);
 				console.log(`[Verba] Whisper transcript (${rawTranscript.length} chars): ${rawTranscript.substring(0, 200)}`);
 
-				// Track Whisper usage from WAV file duration
-				const wavDurationSec = getWavDurationSec(filePath);
-				if (wavDurationSec > 0) {
-					costTracker.trackWhisperUsage(wavDurationSec);
+				// Track Whisper usage from WAV file duration (only for OpenAI API, not local whisper.cpp)
+				const transcriptionProvider = vscode.workspace.getConfiguration('verba.transcription').get<string>('provider', 'openai');
+				if (transcriptionProvider === 'openai') {
+					const wavDurationSec = getWavDurationSec(filePath);
+					if (wavDurationSec > 0) {
+						costTracker.trackWhisperUsage(wavDurationSec);
+					}
 				}
 
 				// Step 2: Context retrieval (only for context-aware templates)
@@ -268,6 +255,7 @@ export function activate(context: vscode.ExtensionContext) {
 						console.log(`[Verba] Retrieved ${contextSnippets.length} context snippets`);
 						if (embeddingService.lastUsage) {
 							costTracker.trackEmbeddingUsage(embeddingService.lastUsage.promptTokens);
+							embeddingService.lastUsage = undefined; // Consume to prevent double-counting
 						}
 					} catch (err: unknown) {
 						console.warn('[Verba] Context search failed, proceeding without context:', err);
@@ -791,7 +779,13 @@ export function activate(context: vscode.ExtensionContext) {
 	const terminalCommand = vscode.commands.registerCommand('dictation.startFromTerminal', () => handleDictation(true));
 
 	const showCostOverviewCommand = vscode.commands.registerCommand('dictation.showCostOverview', () => {
-		CostOverviewPanel.createOrShow(context.extensionUri, costTracker);
+		try {
+			CostOverviewPanel.createOrShow(costTracker);
+		} catch (err: unknown) {
+			console.error('[Verba] Failed to open Cost Overview panel:', err);
+			const message = err instanceof Error ? err.message : String(err);
+			vscode.window.showErrorMessage(`Verba: Could not open Cost Overview: ${message}`);
+		}
 	});
 
 	context.subscriptions.push(

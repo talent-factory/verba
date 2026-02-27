@@ -83,3 +83,4 @@ Microphone --> ffmpeg (WAV) --> Whisper API     --> Claude API --> Editor/Termin
 | `statusBarManager.ts` | Status bar display (Idle/Recording/Transcribing/Processing with character counter) |
 | `costTracker.ts` | API usage cost tracking with persistence via globalState |
 | `costOverviewPanel.ts` | WebView panel for cost overview (card layout, session/total toggle) |
+| `wavDuration.ts` | WAV file duration calculation from PCM header (for Whisper cost tracking) |

@@ -40,6 +40,7 @@ export class CleanupService implements ProcessingStage {
 	private _client: Anthropic | null = null;
 	private secretStorage: SecretStorage;
 	private glossary: string[] = [];
+	/** Token usage from the most recent API call, or undefined if unavailable. */
 	lastUsage?: { inputTokens: number; outputTokens: number };
 
 	/** Sets the glossary terms that must be preserved verbatim during cleanup. */
@@ -135,7 +136,8 @@ export class CleanupService implements ProcessingStage {
 			this.lastUsage = finalMsg.usage
 				? { inputTokens: finalMsg.usage.input_tokens, outputTokens: finalMsg.usage.output_tokens }
 				: undefined;
-		} catch {
+		} catch (err: unknown) {
+			console.warn('[Verba] Failed to extract usage from streaming response:', err);
 			this.lastUsage = undefined;
 		}
 

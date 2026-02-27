@@ -19,6 +19,7 @@ interface SecretStorage {
 export class EmbeddingService {
 	private _client: OpenAI | null = null;
 	private secretStorage: SecretStorage;
+	/** Token usage from the most recent API call, or undefined if unavailable. */
 	lastUsage?: { promptTokens: number };
 
 	constructor(secretStorage: SecretStorage) {

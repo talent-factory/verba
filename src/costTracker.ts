@@ -6,6 +6,7 @@
 const STORAGE_KEY = 'verba.costRecords';
 
 // Pricing as of 2026-02 — verify at https://openai.com/pricing and https://www.anthropic.com/pricing
+// These rates must match the models used in cleanupService.ts and embeddingService.ts.
 const WHISPER_COST_PER_MINUTE = 0.006;        // OpenAI Whisper: $0.006/min
 const CLAUDE_INPUT_COST_PER_MILLION = 1.00;    // Claude Haiku 4.5: $1.00/1M input tokens
 const CLAUDE_OUTPUT_COST_PER_MILLION = 5.00;   // Claude Haiku 4.5: $5.00/1M output tokens

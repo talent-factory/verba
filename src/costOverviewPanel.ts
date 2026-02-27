@@ -12,14 +12,14 @@ import { CostTracker, UsageRecord } from './costTracker';
 export interface AggregatedModel {
 	model: string;
 	provider: 'openai' | 'anthropic';
-	category: string; // 'Transcription', 'Embedding', 'Processing'
+	category: 'Transcription' | 'Embedding' | 'Processing' | 'Unknown';
 	totalCostUsd: number;
 	inputTokens?: number;
 	outputTokens?: number;
 	audioDurationSec?: number;
 }
 
-const MODEL_CATEGORY_MAP: Record<string, string> = {
+const MODEL_CATEGORY_MAP: Record<string, AggregatedModel['category']> = {
 	'whisper-1': 'Transcription',
 	'text-embedding-3-small': 'Embedding',
 	'claude-haiku-4-5-20251001': 'Processing',
@@ -258,7 +258,7 @@ export class CostOverviewPanel {
 	private _scope: 'session' | 'total' = 'session';
 	private _disposables: vscode.Disposable[] = [];
 
-	public static createOrShow(extensionUri: vscode.Uri, costTracker: CostTracker): void {
+	public static createOrShow(costTracker: CostTracker): void {
 		const vs = getVscode();
 		const column = vs.window.activeTextEditor
 			? vs.window.activeTextEditor.viewColumn

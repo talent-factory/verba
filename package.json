@@ -64,6 +64,11 @@
         "command": "dictation.downloadModel",
         "title": "Download Whisper Model",
         "category": "Verba"
+      },
+      {
+        "command": "dictation.manageApiKeys",
+        "title": "Manage API Keys",
+        "category": "Verba"
       }
     ],
     "keybindings": [

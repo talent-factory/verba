@@ -693,12 +693,71 @@ export function activate(context: vscode.ExtensionContext) {
 		}
 	});
 
+	const manageApiKeysCommand = vscode.commands.registerCommand('dictation.manageApiKeys', async () => {
+		const keys = [
+			{ label: 'OpenAI', storageKey: 'openai-api-key', prefix: 'sk-' },
+			{ label: 'Anthropic', storageKey: 'anthropic-api-key', prefix: 'sk-ant-' },
+		];
+
+		const items = await Promise.all(keys.map(async (k) => {
+			const stored = await context.secrets.get(k.storageKey);
+			const status = stored
+				? `${stored.slice(0, k.prefix.length + 2)}...${stored.slice(-4)}`
+				: 'Not configured';
+			return {
+				label: `$(key) ${k.label} API Key`,
+				description: status,
+				detail: stored ? 'Configured' : 'No key stored',
+				storageKey: k.storageKey,
+				hasKey: !!stored,
+				keyLabel: k.label,
+				prefix: k.prefix,
+			};
+		}));
+
+		const picked = await vscode.window.showQuickPick(items, {
+			placeHolder: 'Select an API key to manage',
+			title: 'Verba: Manage API Keys',
+		});
+		if (!picked) { return; }
+
+		const actions = picked.hasKey
+			? [
+				{ label: '$(edit) Update Key', action: 'update' as const },
+				{ label: '$(trash) Delete Key', action: 'delete' as const },
+			]
+			: [
+				{ label: '$(add) Set Key', action: 'update' as const },
+			];
+
+		const action = await vscode.window.showQuickPick(actions, {
+			placeHolder: `${picked.keyLabel} API Key`,
+			title: 'Verba: Manage API Keys',
+		});
+		if (!action) { return; }
+
+		if (action.action === 'delete') {
+			await context.secrets.delete(picked.storageKey);
+			vscode.window.showInformationMessage(`Verba: ${picked.keyLabel} API key deleted.`);
+		} else {
+			const newKey = await vscode.window.showInputBox({
+				prompt: `Enter your ${picked.keyLabel} API key`,
+				placeHolder: `${picked.prefix}...`,
+				password: true,
+				ignoreFocusOut: true,
+			});
+			if (!newKey) { return; }
+			await context.secrets.store(picked.storageKey, newKey);
+			vscode.window.showInformationMessage(`Verba: ${picked.keyLabel} API key updated.`);
+		}
+	});
+
 	const editorCommand = vscode.commands.registerCommand('dictation.start', () => handleDictation(false));
 	const terminalCommand = vscode.commands.registerCommand('dictation.startFromTerminal', () => handleDictation(true));
 
 	context.subscriptions.push(
 		editorCommand, terminalCommand, selectDeviceCommand, selectTemplateCommand,
-		indexProjectCommand, downloadModelCommand, saveWatcher,
+		indexProjectCommand, downloadModelCommand, manageApiKeysCommand, saveWatcher,
 		{ dispose: () => recorder.dispose() }, statusBar,
 	);
 }

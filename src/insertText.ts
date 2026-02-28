@@ -67,8 +67,8 @@ export async function insertText(
 
 				for (const sel of sorted) {
 					if (hasSelection) {
-						// Replace each selection with the dictated text
-						editBuilder.replace({ start: sel.start, end: sel.end } as any, text);
+						// Replace each selection (sel is a vscode.Selection which extends Range)
+						editBuilder.replace(sel as any, text);
 					} else {
 						// Insert at each cursor position (multi-cursor without selection)
 						editBuilder.insert(sel.active, text);

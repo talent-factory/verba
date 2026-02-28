@@ -61,6 +61,7 @@ All phases are sub-issues of TF-243 (project overview). All core phases are comp
 - Template command: `dictation.selectTemplate` (`Cmd+Alt+T` / `Ctrl+Alt+T`) — switch template without recording
 - API key management: `dictation.manageApiKeys` — view (masked), update, or delete stored API keys
 - Cost overview: `dictation.showCostOverview` — WebView panel with per-model API usage costs (session + total)
+- Glossary generator: `dictation.generateGlossary` — scan workspace for project-specific terms, review via Quick Pick, merge into `.verba-glossary.json`
 - API keys are stored exclusively via `vscode.SecretStorage` (never in plaintext)
 - TypeScript strict mode
 - Follow VS Code Extension best practices
@@ -84,3 +85,4 @@ Microphone --> ffmpeg (WAV) --> Whisper API     --> Claude API --> Editor/Termin
 | `costTracker.ts` | API usage cost tracking with persistence via globalState |
 | `costOverviewPanel.ts` | WebView panel for cost overview (card layout, session/total toggle) |
 | `wavDuration.ts` | WAV file duration calculation from PCM header (for Whisper cost tracking) |
+| `glossaryGenerator.ts` | Scans workspace for project-specific glossary terms (metadata, symbols, docs) |

@@ -45,6 +45,7 @@ All phases are sub-issues of TF-243 (project overview). All core phases are comp
 - **TF-263: Adaptive Personal Dictionary** - Done. Workspace scanning for project-specific glossary terms (metadata files, source symbols, doc headings/bold terms). Review via Multi-Select Quick Pick, merge into `.verba-glossary.json`. TypeScript, Java, Python support.
 - **TF-265: Multi-Cursor / Selection-aware Dictation** - Done. Selection replacement (dictated text replaces selected text), multi-cursor insertion (text at all cursor positions), selected text as Claude context (`<selection>` tags). "Transform Selection" default template. Selection captured at recording start.
 - **TF-262: Text Expansion / Abbreviations** - Done. User-defined abbreviations expanded during Claude post-processing. Global via `verba.expansions` setting, workspace-specific via `.verba-expansions.json`. `setExpansions()` on CleanupService. Workspace expansions override global for same abbreviation.
+- **TF-259: File-Type-Aware Templates** - Done. Automatic template selection based on active editor's `languageId`. Optional `fileTypes` array on Template interface (e.g. `["java", "kotlin"]`). `findTemplateForLanguage()` in `templatePicker.ts`. Setting `verba.autoSelectTemplate` (default: `true`). Fallback to last manually chosen template. Built-in defaults: JavaDoc → java/kotlin, Markdown → markdown.
 
 ## Git Workflow
 

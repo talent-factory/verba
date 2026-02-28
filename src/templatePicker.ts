@@ -6,6 +6,8 @@ export interface Template {
 	prompt: string;
 	/** If true, semantic code search provides context snippets alongside the transcript. */
 	contextAware?: boolean;
+	/** VS Code language IDs that trigger automatic selection of this template (e.g. ["java", "kotlin"]). */
+	fileTypes?: string[];
 }
 
 interface QuickPickItem {
@@ -50,4 +52,11 @@ export async function selectTemplate(
 
 	const selected = await showQuickPick(items, options);
 	return selected?.template;
+}
+
+/** Returns the first template whose `fileTypes` array includes the given language ID, or undefined. */
+export function findTemplateForLanguage(templates: Template[], languageId: string): Template | undefined {
+	return templates.find(t =>
+		Array.isArray(t.fileTypes) && t.fileTypes.includes(languageId),
+	);
 }

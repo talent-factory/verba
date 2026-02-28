@@ -8,7 +8,7 @@ import { PipelineContext } from './pipeline';
 import { TranscriptionService, TranscriptionProvider } from './transcriptionService';
 import { CleanupService, Expansion } from './cleanupService';
 import { insertText } from './insertText';
-import { selectTemplate, Template } from './templatePicker';
+import { selectTemplate, findTemplateForLanguage, Template } from './templatePicker';
 import { ContextProvider } from './contextProvider';
 import { EmbeddingService } from './embeddingService';
 import { Indexer } from './indexer';
@@ -418,9 +418,26 @@ export function activate(context: vscode.ExtensionContext) {
 					: undefined;
 
 				let template: Template | undefined;
-				if (lastUsedTemplate) {
+
+				// Auto-select template based on active file type (if enabled)
+				const autoSelect = vscode.workspace.getConfiguration('verba').get<boolean>('autoSelectTemplate', true);
+				if (autoSelect && !forTerminal) {
+					const languageId = vscode.window.activeTextEditor?.document.languageId;
+					if (languageId) {
+						template = findTemplateForLanguage(templates, languageId);
+						if (template) {
+							console.log(`[Verba] Auto-selected template "${template.name}" for language "${languageId}"`);
+						}
+					}
+				}
+
+				// Fallback: last manually selected template
+				if (!template && lastUsedTemplate) {
 					template = lastUsedTemplate;
-				} else {
+				}
+
+				// Final fallback: show picker
+				if (!template) {
 					template = await selectTemplate(
 						templates,
 						undefined,

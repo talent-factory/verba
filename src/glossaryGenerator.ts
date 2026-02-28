@@ -1,3 +1,7 @@
+import * as fs from 'fs';
+import * as path from 'path';
+import * as vscode from 'vscode';
+
 export const STOPWORDS = new Set([
 	'index', 'main', 'test', 'tests', 'spec', 'App', 'app',
 	'constructor', 'prototype', 'toString', 'valueOf',
@@ -118,6 +122,51 @@ export class GlossaryGenerator {
 	}
 
 	async generate(workspaceRoot: string, existingTerms: string[]): Promise<string[]> {
-		return [];
+		const rawTerms: string[] = [];
+
+		// 1. Read metadata files from workspace root
+		const metadataFiles: { file: string; parser: (content: string) => string[] }[] = [
+			{ file: 'package.json', parser: GlossaryGenerator.parsePackageJson },
+			{ file: 'pom.xml', parser: GlossaryGenerator.parsePomXml },
+			{ file: 'pyproject.toml', parser: GlossaryGenerator.parsePyprojectToml },
+		];
+
+		for (const { file, parser } of metadataFiles) {
+			try {
+				const content = fs.readFileSync(path.join(workspaceRoot, file), 'utf-8');
+				rawTerms.push(...parser(content));
+			} catch {
+				// File not found — skip silently
+			}
+		}
+
+		// 2. Scan source files for symbols
+		const excludePattern = '{**/node_modules/**,**/dist/**,**/out/**,**/.git/**,**/.verba/**,**/__pycache__/**,**/target/**,**/build/**}';
+		const sourceFiles = await vscode.workspace.findFiles('**/*.{ts,java,py}', excludePattern);
+
+		for (const fileUri of sourceFiles) {
+			try {
+				const content = fs.readFileSync(fileUri.fsPath, 'utf-8');
+				const ext = path.extname(fileUri.fsPath).slice(1); // 'ts', 'java', 'py'
+				const language = ext === 'java' ? 'java' : ext === 'py' ? 'py' : 'ts';
+				rawTerms.push(...GlossaryGenerator.parseSymbols(content, language));
+			} catch {
+				// Unreadable file — skip silently
+			}
+		}
+
+		// 3. Read docs from workspace root
+		const docFiles = ['README.md', 'CLAUDE.md'];
+		for (const docFile of docFiles) {
+			try {
+				const content = fs.readFileSync(path.join(workspaceRoot, docFile), 'utf-8');
+				rawTerms.push(...GlossaryGenerator.parseDocs(content));
+			} catch {
+				// File not found — skip silently
+			}
+		}
+
+		// 4. Filter through filterTerms
+		return filterTerms(rawTerms, existingTerms);
 	}
 }

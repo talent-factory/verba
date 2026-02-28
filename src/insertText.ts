@@ -14,10 +14,6 @@ interface TextEditor {
 	}) => void): Thenable<boolean>;
 }
 
-interface Range {
-	new(start: unknown, end: unknown): unknown;
-}
-
 interface Terminal {
 	sendText(text: string, addNewline?: boolean): void;
 }
@@ -35,7 +31,6 @@ interface Terminal {
  *
  * @param executeCommand - When inserting into a terminal, also submit with Enter.
  * @param preferTerminal - If true, prefer terminal over editor (used for terminal-initiated dictation).
- * @param replaceSelection - If true, force replacement of selections even if empty (unused for now, reserved for future).
  */
 export async function insertText(
 	text: string,
@@ -53,6 +48,11 @@ export async function insertText(
 	if (editor) {
 		const selections = editor.selections;
 		const hasSelection = selections.some(s => !s.isEmpty);
+		console.log(
+			`[Verba] Inserting into editor: ${selections.length} cursor(s), ` +
+			`${selections.filter(s => !s.isEmpty).length} selection(s), ` +
+			`mode=${hasSelection ? 'replace' : 'insert'}, length=${text.length}`
+		);
 
 		let success: boolean;
 		try {

@@ -155,6 +155,23 @@ suite('CleanupService', () => {
 			assert.strictEqual(result, 'raw input text');
 		});
 
+		test('throws instead of fallback when Claude returns empty during selection transform', async () => {
+			secretStorage.get.resolves('sk-ant-test-key');
+			fakeClient.messages.create.resolves({
+				content: [{ type: 'text', text: '' }],
+			});
+
+			const context: PipelineContext = {
+				templatePrompt: 'Transform the selection.',
+				selectedText: 'const x = 42;',
+			};
+
+			await assert.rejects(
+				() => service.process('translate this to Python', context),
+				/Post-processing returned an empty response/
+			);
+		});
+
 		test('clears stored key, resets client, and throws on 401 error', async () => {
 			secretStorage.get.resolves('sk-ant-bad-key');
 			const authError = new Error('Invalid API key');

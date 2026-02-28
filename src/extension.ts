@@ -212,6 +212,7 @@ export function activate(context: vscode.ExtensionContext) {
 
 	recorder.onUnexpectedStop = (error) => {
 		selectedTemplate = undefined;
+		capturedSelectedText = undefined;
 		statusBar.setIdle();
 		console.error('[Verba] Unexpected recording stop:', error);
 		vscode.window.showErrorMessage(`Verba: ${error.message}`);
@@ -267,12 +268,10 @@ export function activate(context: vscode.ExtensionContext) {
 					}
 				}
 
-				// Step 3: Claude post-processing (pass captured selection as context)
+				// Step 3: Claude post-processing (pass captured selection as context only with a template)
 				const pipelineContext: PipelineContext | undefined = selectedTemplate
 					? { templatePrompt: selectedTemplate.prompt, contextSnippets, selectedText: capturedSelectedText }
-					: capturedSelectedText
-						? { selectedText: capturedSelectedText }
-						: undefined;
+					: undefined;
 				statusBar.setProcessing();
 				const abortController = new AbortController();
 				processingAbortController = abortController;
@@ -293,6 +292,7 @@ export function activate(context: vscode.ExtensionContext) {
 					}
 				} catch (err: unknown) {
 					if (err instanceof Error && err.name === 'AbortError') {
+						capturedSelectedText = undefined;
 						statusBar.setIdle(selectedTemplate?.name);
 						vscode.window.showInformationMessage('Verba: Dictation cancelled.');
 						return;

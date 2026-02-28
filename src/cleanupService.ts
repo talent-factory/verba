@@ -78,7 +78,7 @@ export class CleanupService implements ProcessingStage {
 
 		console.log(`[Verba] Claude response (${(text || '').length} chars): ${(text || '').substring(0, 200)}`);
 
-		return this.fallbackIfEmpty(text, input);
+		return this.fallbackIfEmpty(text, input, !!context?.selectedText);
 	}
 
 	/**
@@ -143,7 +143,7 @@ export class CleanupService implements ProcessingStage {
 
 		console.log(`[Verba] Claude streaming response (${accumulated.length} chars): ${accumulated.substring(0, 200)}`);
 
-		return this.fallbackIfEmpty(accumulated, input);
+		return this.fallbackIfEmpty(accumulated, input, !!context?.selectedText);
 	}
 
 	private async prepareRequest(
@@ -190,8 +190,14 @@ export class CleanupService implements ProcessingStage {
 		throw new Error(`Post-processing failed: ${detail}`);
 	}
 
-	private fallbackIfEmpty(text: string, rawInput: string): string {
+	private fallbackIfEmpty(text: string, rawInput: string, hasSelection: boolean): string {
 		if (!text || text.trim() === '') {
+			if (hasSelection) {
+				console.error('[Verba] Claude returned empty response during selection transform.');
+				throw new Error(
+					'Post-processing returned an empty response. Your selection was not modified. Try again or check your API key.'
+				);
+			}
 			console.warn('[Verba] Claude returned empty response; skipping cleanup and using raw transcript.');
 			return rawInput;
 		}

@@ -91,8 +91,12 @@ export class CostTracker {
 		return [...this._sessionRecords];
 	}
 
+	/**
+	 * Returns records from the current calendar month only.
+	 * Older records are retained in storage but excluded from the total view.
+	 */
 	getTotalRecords(): UsageRecord[] {
-		return [...this._previousRecords, ...this._sessionRecords];
+		return this._allRecords().filter(r => this._isCurrentMonth(r.timestamp));
 	}
 
 	resetTotalCosts(): void {
@@ -102,8 +106,18 @@ export class CostTracker {
 			.catch((err: unknown) => { console.error('[Verba] Failed to reset cost records:', err); });
 	}
 
+	private _allRecords(): UsageRecord[] {
+		return [...this._previousRecords, ...this._sessionRecords];
+	}
+
+	private _isCurrentMonth(timestamp: number): boolean {
+		const now = new Date();
+		const date = new Date(timestamp);
+		return date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth();
+	}
+
 	private _persist(): void {
-		Promise.resolve(this._globalState.update(STORAGE_KEY, this.getTotalRecords()))
+		Promise.resolve(this._globalState.update(STORAGE_KEY, this._allRecords()))
 			.catch((err: unknown) => { console.error('[Verba] Failed to persist cost records:', err); });
 	}
 }

@@ -212,6 +212,25 @@ suite('CostTracker', () => {
 
 			assert.strictEqual(tracker.getTotalCosts(), 0.012 + 0.006);
 		});
+
+		test('excludes costs from previous months', () => {
+			const lastMonth = new Date();
+			lastMonth.setMonth(lastMonth.getMonth() - 1);
+
+			const previousRecords: UsageRecord[] = [{
+				timestamp: lastMonth.getTime(),
+				model: 'whisper-1',
+				provider: 'openai',
+				audioDurationSec: 120,
+				costUsd: 0.012,
+			}];
+			globalState = createFakeGlobalState(previousRecords);
+			tracker = new CostTracker(globalState);
+
+			tracker.trackWhisperUsage(60); // 0.006
+
+			assert.strictEqual(tracker.getTotalCosts(), 0.006);
+		});
 	});
 
 	suite('getSessionRecords', () => {
@@ -268,6 +287,34 @@ suite('CostTracker', () => {
 			assert.strictEqual(records.length, 2);
 			assert.strictEqual(records[0].model, 'whisper-1');
 			assert.strictEqual(records[1].model, 'claude-haiku-4-5-20251001');
+		});
+
+		test('excludes records from previous months', () => {
+			const lastMonth = new Date();
+			lastMonth.setMonth(lastMonth.getMonth() - 1);
+
+			const previousRecords: UsageRecord[] = [
+				{
+					timestamp: lastMonth.getTime(),
+					model: 'whisper-1',
+					provider: 'openai',
+					audioDurationSec: 60,
+					costUsd: 0.006,
+				},
+				{
+					timestamp: Date.now() - 100000,
+					model: 'whisper-1',
+					provider: 'openai',
+					audioDurationSec: 30,
+					costUsd: 0.003,
+				},
+			];
+			globalState = createFakeGlobalState(previousRecords);
+			tracker = new CostTracker(globalState);
+
+			const records = tracker.getTotalRecords();
+			assert.strictEqual(records.length, 1);
+			assert.strictEqual(records[0].costUsd, 0.003);
 		});
 	});
 
@@ -347,6 +394,28 @@ suite('CostTracker', () => {
 			assert.strictEqual(persisted.length, 2);
 			assert.strictEqual(persisted[0].costUsd, 0.006);      // previous
 			assert.strictEqual(persisted[1].audioDurationSec, 30); // new session
+		});
+
+		test('persists records from previous months in globalState', () => {
+			const lastMonth = new Date();
+			lastMonth.setMonth(lastMonth.getMonth() - 1);
+
+			const previousRecords: UsageRecord[] = [{
+				timestamp: lastMonth.getTime(),
+				model: 'whisper-1',
+				provider: 'openai',
+				audioDurationSec: 60,
+				costUsd: 0.006,
+			}];
+			globalState = createFakeGlobalState(previousRecords);
+			tracker = new CostTracker(globalState);
+
+			tracker.trackWhisperUsage(30);
+
+			const persisted = globalState.update.firstCall.args[1] as UsageRecord[];
+			assert.strictEqual(persisted.length, 2);
+			assert.strictEqual(persisted[0].timestamp, lastMonth.getTime());
+			assert.strictEqual(persisted[1].audioDurationSec, 30);
 		});
 
 		test('persists after each individual track call', () => {

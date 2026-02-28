@@ -32,6 +32,11 @@ suite('filterTerms', () => {
 		const result = filterTerms(['ab', 'constructor', 'module'], []);
 		assert.deepStrictEqual(result, []);
 	});
+
+	test('trims whitespace from terms', () => {
+		const result = filterTerms(['  Verba  ', '   ', '\tClaude\n'], []);
+		assert.deepStrictEqual(result, ['Claude', 'Verba']);
+	});
 });
 
 suite('GlossaryGenerator.parsePackageJson', () => {
@@ -57,6 +62,12 @@ suite('GlossaryGenerator.parsePackageJson', () => {
 		assert.ok(result.includes('anthropic-ai/sdk'));
 		assert.ok(result.includes('sdk'));
 		assert.ok(result.includes('sinon'));
+	});
+
+	test('handles package.json with no dependencies', () => {
+		const pkg = JSON.stringify({ name: 'my-app' });
+		const result = GlossaryGenerator.parsePackageJson(pkg);
+		assert.deepStrictEqual(result, ['my-app']);
 	});
 
 	test('handles invalid JSON gracefully', () => {
@@ -149,7 +160,7 @@ class DefaultService {}
 		assert.ok(result.includes('DefaultService'));
 	});
 
-	test('extracts Python top-level classes and functions, skips private and dunder', () => {
+	test('extracts Python classes and functions, skips underscore-prefixed names', () => {
 		const py = `
 class GlossaryGenerator:
     pass
@@ -168,6 +179,15 @@ def __init__():
 		assert.ok(result.includes('generate_terms'));
 		assert.ok(!result.includes('_private_helper'));
 		assert.ok(!result.includes('__init__'));
+	});
+
+	test('does not match class/interface/enum as substrings in Java', () => {
+		const java = `
+// This is a subclass reference
+String reclassify = "test";
+`;
+		const result = GlossaryGenerator.parseSymbols(java, 'java');
+		assert.deepStrictEqual(result, []);
 	});
 
 	test('returns empty array for unknown language', () => {

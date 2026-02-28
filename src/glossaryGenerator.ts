@@ -6,7 +6,7 @@ import * as path from 'path';
 function getVscode(): typeof import('vscode') { return require('vscode'); }
 
 export const STOPWORDS = new Set([
-	'index', 'main', 'test', 'tests', 'spec', 'App', 'app',
+	'index', 'main', 'tests', 'spec', 'App', 'app',
 	'constructor', 'prototype', 'toString', 'valueOf',
 	'get', 'set', 'put', 'post', 'delete', 'patch',
 	'true', 'false', 'null', 'undefined', 'void',
@@ -91,7 +91,7 @@ export class GlossaryGenerator {
 				regex = /(?:export\s+)?(?:class|interface|enum|type|function)\s+(\w+)/g;
 				break;
 			case 'java':
-				regex = /(?:public|private|protected)?\s*(?:class|interface|enum)\s+(\w+)/g;
+				regex = /(?:public|private|protected)?\s*\b(?:class|interface|enum)\s+(\w+)/g;
 				break;
 			case 'py':
 				regex = /^(?:class|def)\s+(\w+)/gm;
@@ -110,7 +110,7 @@ export class GlossaryGenerator {
 
 	static parseDocs(content: string): string[] {
 		const terms: string[] = [];
-		// Markdown headings h1-h3
+		// Markdown headings h1-h3 (h4+ excluded -- too granular for glossary terms)
 		const headingRegex = /^#{1,3}\s+(.+)$/gm;
 		let match: RegExpExecArray | null;
 		while ((match = headingRegex.exec(content)) !== null) {
@@ -138,8 +138,11 @@ export class GlossaryGenerator {
 			try {
 				const content = fs.readFileSync(path.join(workspaceRoot, file), 'utf-8');
 				rawTerms.push(...parser(content));
-			} catch {
-				// File not found — skip silently
+			} catch (err: unknown) {
+				if (err instanceof Error && (err as NodeJS.ErrnoException).code === 'ENOENT') {
+					continue;
+				}
+				console.warn(`[Verba] Failed to read ${file} for glossary generation:`, err);
 			}
 		}
 
@@ -147,15 +150,20 @@ export class GlossaryGenerator {
 		const excludePattern = '{**/node_modules/**,**/dist/**,**/out/**,**/.git/**,**/.verba/**,**/__pycache__/**,**/target/**,**/build/**}';
 		const sourceFiles = await getVscode().workspace.findFiles('**/*.{ts,java,py}', excludePattern);
 
+		let skippedFiles = 0;
 		for (const fileUri of sourceFiles) {
 			try {
 				const content = fs.readFileSync(fileUri.fsPath, 'utf-8');
 				const ext = path.extname(fileUri.fsPath).slice(1); // 'ts', 'java', 'py'
 				const language = ext === 'java' ? 'java' : ext === 'py' ? 'py' : 'ts';
 				rawTerms.push(...GlossaryGenerator.parseSymbols(content, language));
-			} catch {
-				// Unreadable file — skip silently
+			} catch (err: unknown) {
+				skippedFiles++;
+				console.warn(`[Verba] Failed to read ${fileUri.fsPath} for glossary generation:`, err);
 			}
+		}
+		if (skippedFiles > 0) {
+			console.warn(`[Verba] Glossary generation skipped ${skippedFiles} of ${sourceFiles.length} source files due to read errors`);
 		}
 
 		// 3. Read docs from workspace root
@@ -164,8 +172,11 @@ export class GlossaryGenerator {
 			try {
 				const content = fs.readFileSync(path.join(workspaceRoot, docFile), 'utf-8');
 				rawTerms.push(...GlossaryGenerator.parseDocs(content));
-			} catch {
-				// File not found — skip silently
+			} catch (err: unknown) {
+				if (err instanceof Error && (err as NodeJS.ErrnoException).code === 'ENOENT') {
+					continue;
+				}
+				console.warn(`[Verba] Failed to read ${docFile} for glossary generation:`, err);
 			}
 		}
 

@@ -830,19 +830,43 @@ export function activate(context: vscode.ExtensionContext) {
 				if (Array.isArray(parsed)) {
 					existing = parsed.filter((t): t is string => typeof t === 'string');
 				}
-			} catch {
-				// File doesn't exist or invalid — start fresh
+			} catch (readErr: unknown) {
+				if (readErr instanceof Error && (readErr as NodeJS.ErrnoException).code === 'ENOENT') {
+					// File doesn't exist yet -- will be created
+				} else {
+					const detail = readErr instanceof SyntaxError
+						? 'Invalid JSON syntax'
+						: (readErr instanceof Error ? readErr.message : String(readErr));
+					console.warn('[Verba] Failed to read existing .verba-glossary.json:', readErr);
+					const action = await vscode.window.showWarningMessage(
+						`Verba: Could not read existing glossary (${detail}). Continuing will create a new file with only the selected terms.`,
+						'Continue', 'Cancel',
+					);
+					if (action !== 'Continue') { return; }
+				}
 			}
 
 			// Merge, deduplicate, sort
 			const merged = [...new Set([...existing, ...selectedTerms])].sort((a, b) => a.localeCompare(b));
-			fs.writeFileSync(glossaryPath, JSON.stringify(merged, null, 2) + '\n', 'utf-8');
+			try {
+				fs.writeFileSync(glossaryPath, JSON.stringify(merged, null, 2) + '\n', 'utf-8');
+			} catch (writeErr: unknown) {
+				const detail = writeErr instanceof Error ? writeErr.message : String(writeErr);
+				console.error('[Verba] Failed to write glossary file:', writeErr);
+				vscode.window.showErrorMessage(`Verba: Could not save glossary to .verba-glossary.json: ${detail}`);
+				return;
+			}
 
 			const added = merged.length - existing.length;
 			vscode.window.showInformationMessage(`Verba: ${added} term${added !== 1 ? 's' : ''} added to glossary (${merged.length} total).`);
 
 			// Reload glossary so Whisper + Claude pick it up immediately
-			applyGlossary();
+			try {
+				applyGlossary();
+			} catch (reloadErr: unknown) {
+				console.warn('[Verba] Glossary saved but reload failed:', reloadErr);
+				vscode.window.showWarningMessage('Verba: Glossary file saved, but live reload failed. Restart VS Code to apply the new terms.');
+			}
 		} catch (err: unknown) {
 			console.error('[Verba] generateGlossary failed:', err);
 			const message = err instanceof Error ? err.message : String(err);

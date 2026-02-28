@@ -155,6 +155,24 @@ suite('insertText', () => {
 
 	// --- Selection replacement ---
 
+	test('inserts at multiple cursors on the same line in reverse character order', async () => {
+		const cursors = [
+			sel(2, 5, 2, 5),   // col 5
+			sel(2, 20, 2, 20), // col 20
+			sel(2, 0, 2, 0),   // col 0
+		];
+		const editor = fakeEditor(cursors);
+
+		await insertText('X', editor as any, undefined, false);
+
+		const insertStub = (editor as any)._lastInsertStub;
+		assert.strictEqual(insertStub.callCount, 3);
+		// Reverse character order: col 20, col 5, col 0
+		assert.deepStrictEqual(insertStub.getCall(0).args[0], cursors[1].active); // col 20
+		assert.deepStrictEqual(insertStub.getCall(1).args[0], cursors[0].active); // col 5
+		assert.deepStrictEqual(insertStub.getCall(2).args[0], cursors[2].active); // col 0
+	});
+
 	test('replaces selected text with dictated text', async () => {
 		const selection = sel(2, 0, 2, 15); // non-empty selection
 		const editor = fakeEditor([selection]);

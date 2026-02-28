@@ -367,10 +367,19 @@ export function activate(context: vscode.ExtensionContext) {
 					capturedSelectedText = undefined;
 				}
 
+				// Guard: template referencing <selection> requires actual selection
+				if (!capturedSelectedText && selectedTemplate?.prompt.includes('<selection>')) {
+					vscode.window.showWarningMessage(
+						'Verba: This template requires text to be selected in the editor.'
+					);
+					return;
+				}
+
 				let audioDevice = vscode.workspace.getConfiguration('verba').get<string>('audioDevice', '').trim() || undefined;
 				if (!audioDevice && process.platform === 'win32') {
 					audioDevice = await pickAudioDevice(true);
 					if (!audioDevice) {
+						capturedSelectedText = undefined;
 						return;
 					}
 				}
@@ -380,6 +389,7 @@ export function activate(context: vscode.ExtensionContext) {
 					`Verba: Recording started (${template.name})...`
 				);
 			} catch (err: unknown) {
+				capturedSelectedText = undefined;
 				statusBar.setIdle(selectedTemplate?.name);
 				console.error('[Verba] Start recording failed:', err);
 				const message = err instanceof Error ? err.message : String(err);

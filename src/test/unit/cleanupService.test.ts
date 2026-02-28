@@ -715,6 +715,41 @@ suite('CleanupService', () => {
 			assert.strictEqual(result, 'raw input');
 		});
 
+		test('streaming throws instead of fallback when stream is empty during selection transform', async () => {
+			secretStorage.get.resolves('sk-ant-test-key');
+			fakeClient.messages.stream.returns(createFakeStream([]));
+
+			const context: PipelineContext = {
+				templatePrompt: 'Transform the selection.',
+				selectedText: 'const x = 42;',
+			};
+
+			await assert.rejects(
+				() => service.processStreaming('translate this to Python', context, sinon.stub()),
+				/Post-processing returned an empty response/
+			);
+		});
+
+		test('streaming includes selection block before transcript when selectedText is provided', async () => {
+			secretStorage.get.resolves('sk-ant-test-key');
+			fakeClient.messages.stream.returns(createFakeStream(['transformed']));
+
+			const context: PipelineContext = {
+				templatePrompt: 'Transform the selection.',
+				selectedText: 'function foo() {}',
+			};
+			await service.processStreaming('rename to bar', context, sinon.stub());
+
+			const callArgs = fakeClient.messages.stream.firstCall.args[0];
+			const userContent = callArgs.messages[0].content;
+			assert.ok(userContent.includes('<selection>'), 'streaming should contain selection tags');
+			assert.ok(userContent.includes('function foo() {}'), 'streaming should contain selected text');
+			assert.ok(
+				userContent.indexOf('<selection>') < userContent.indexOf('<transcript>'),
+				'selection should appear before transcript in streaming'
+			);
+		});
+
 		test('aborts stream and throws AbortError when signal fires', async () => {
 			secretStorage.get.resolves('sk-ant-test-key');
 

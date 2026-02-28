@@ -71,6 +71,7 @@ export function activate(context: vscode.ExtensionContext) {
 	let preferTerminal = false;
 	let processingAbortController: AbortController | null = null;
 	let currentGlossary: string[] = [];
+	let currentExpansions: Array<{ abbreviation: string; expansion: string }> = [];
 
 	function applyTranscriptionProvider(): void {
 		const config = vscode.workspace.getConfiguration('verba.transcription');
@@ -123,6 +124,63 @@ export function activate(context: vscode.ExtensionContext) {
 		}
 	}
 	applyGlossary();
+
+	function loadExpansions(): Array<{ abbreviation: string; expansion: string }> {
+		const rawGlobal = vscode.workspace
+			.getConfiguration('verba')
+			.get<unknown[]>('expansions', []);
+		const globalExpansions = (Array.isArray(rawGlobal) ? rawGlobal : [])
+			.filter((e): e is { abbreviation: string; expansion: string } =>
+				typeof (e as any)?.abbreviation === 'string' && (e as any).abbreviation.trim() !== ''
+				&& typeof (e as any)?.expansion === 'string' && (e as any).expansion.trim() !== '');
+
+		const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+		let workspaceExpansions: Array<{ abbreviation: string; expansion: string }> = [];
+		if (workspaceRoot) {
+			const expansionsPath = path.join(workspaceRoot, '.verba-expansions.json');
+			try {
+				const content = fs.readFileSync(expansionsPath, 'utf-8');
+				const parsed = JSON.parse(content);
+				if (Array.isArray(parsed)) {
+					workspaceExpansions = parsed.filter((e): e is { abbreviation: string; expansion: string } =>
+						typeof (e as any)?.abbreviation === 'string' && (e as any).abbreviation.trim() !== ''
+						&& typeof (e as any)?.expansion === 'string' && (e as any).expansion.trim() !== '');
+				} else {
+					console.warn('[Verba] .verba-expansions.json is not an array, ignoring');
+					vscode.window.showWarningMessage(
+						'Verba: .verba-expansions.json must be a JSON array of {abbreviation, expansion} objects. Workspace expansions ignored.'
+					);
+				}
+			} catch (err: unknown) {
+				if (err instanceof Error && (err as NodeJS.ErrnoException).code === 'ENOENT') {
+					// File doesn't exist — normal state
+				} else {
+					const detail = err instanceof SyntaxError
+						? 'Invalid JSON syntax'
+						: (err instanceof Error ? err.message : String(err));
+					console.warn('[Verba] Failed to read .verba-expansions.json:', err);
+					vscode.window.showWarningMessage(
+						`Verba: Could not load .verba-expansions.json (${detail}). Workspace expansions will not be applied.`
+					);
+				}
+			}
+		}
+
+		// Merge: workspace expansions override global ones with the same abbreviation
+		const merged = new Map<string, { abbreviation: string; expansion: string }>();
+		for (const e of globalExpansions) { merged.set(e.abbreviation.toLowerCase(), e); }
+		for (const e of workspaceExpansions) { merged.set(e.abbreviation.toLowerCase(), e); }
+		return [...merged.values()];
+	}
+
+	function applyExpansions(): void {
+		currentExpansions = loadExpansions();
+		cleanupService.setExpansions(currentExpansions);
+		if (currentExpansions.length > 0) {
+			console.log(`[Verba] Expansions loaded: ${currentExpansions.length} entries`);
+		}
+	}
+	applyExpansions();
 
 	const embeddingService = new EmbeddingService(context.secrets);
 
@@ -536,11 +594,26 @@ export function activate(context: vscode.ExtensionContext) {
 		glossaryWatcher.onDidCreate(safeApplyGlossary);
 		glossaryWatcher.onDidDelete(safeApplyGlossary);
 		context.subscriptions.push(glossaryWatcher);
+
+		const expansionsPattern = new vscode.RelativePattern(workspaceRoot, '.verba-expansions.json');
+		const expansionsWatcher = vscode.workspace.createFileSystemWatcher(expansionsPattern);
+		const safeApplyExpansions = () => {
+			try { applyExpansions(); } catch (err) {
+				console.error('[Verba] Failed to reload expansions:', err);
+			}
+		};
+		expansionsWatcher.onDidChange(safeApplyExpansions);
+		expansionsWatcher.onDidCreate(safeApplyExpansions);
+		expansionsWatcher.onDidDelete(safeApplyExpansions);
+		context.subscriptions.push(expansionsWatcher);
 	}
 
 	const settingsWatcher = vscode.workspace.onDidChangeConfiguration((e) => {
 		if (e.affectsConfiguration('verba.glossary')) {
 			applyGlossary();
+		}
+		if (e.affectsConfiguration('verba.expansions')) {
+			applyExpansions();
 		}
 		if (e.affectsConfiguration('verba.transcription')) {
 			applyTranscriptionProvider();

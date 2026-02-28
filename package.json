@@ -188,6 +188,25 @@
           },
           "description": "Terms that must be preserved exactly during transcription and cleanup (e.g. product names, technical terms). These terms are sent as hints to Whisper and as protection instructions to Claude. Recommended limit: ~80 terms (~224 Whisper prompt tokens)."
         },
+        "verba.expansions": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "object",
+            "required": ["abbreviation", "expansion"],
+            "properties": {
+              "abbreviation": {
+                "type": "string",
+                "description": "The short form spoken during dictation (e.g. 'mfg', 'br')."
+              },
+              "expansion": {
+                "type": "string",
+                "description": "The full text to replace it with (e.g. 'Mit freundlichen Grüssen')."
+              }
+            }
+          },
+          "description": "Text expansions: abbreviations that are automatically expanded during post-processing. Define abbreviation/expansion pairs (e.g. 'mfg' → 'Mit freundlichen Grüssen'). Workspace-specific expansions can be added via '.verba-expansions.json'."
+        },
         "verba.transcription.provider": {
           "type": "string",
           "default": "openai",

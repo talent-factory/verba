@@ -557,6 +557,117 @@ suite('CleanupService', () => {
 				'system prompt should not include mutated term');
 		});
 
+		// --- Text Expansion tests ---
+
+		test('default system prompt includes expansion instruction when expansions are set', async () => {
+			service.setExpansions([
+				{ abbreviation: 'mfg', expansion: 'Mit freundlichen Grüssen' },
+				{ abbreviation: 'br', expansion: 'Best regards' },
+			]);
+			secretStorage.get.resolves('sk-ant-test-key');
+			fakeClient.messages.create.resolves({
+				content: [{ type: 'text', text: 'cleaned' }],
+			});
+
+			await service.process('test input');
+
+			const callArgs = fakeClient.messages.create.firstCall.args[0];
+			assert.ok(callArgs.system.includes('"mfg"'),
+				'system prompt should include abbreviation');
+			assert.ok(callArgs.system.includes('Mit freundlichen Grüssen'),
+				'system prompt should include expansion');
+			assert.ok(callArgs.system.includes('"br"'),
+				'system prompt should include second abbreviation');
+		});
+
+		test('default system prompt has no expansion instruction when expansions are empty', async () => {
+			service.setExpansions([]);
+			secretStorage.get.resolves('sk-ant-test-key');
+			fakeClient.messages.create.resolves({
+				content: [{ type: 'text', text: 'cleaned' }],
+			});
+
+			await service.process('test input');
+
+			const callArgs = fakeClient.messages.create.firstCall.args[0];
+			assert.ok(!callArgs.system.includes('Expandiere'),
+				'system prompt should not include expansion instruction when empty');
+		});
+
+		test('template system prompt includes expansion instruction', async () => {
+			service.setExpansions([{ abbreviation: 'lg', expansion: 'Liebe Grüsse' }]);
+			secretStorage.get.resolves('sk-ant-test-key');
+			fakeClient.messages.create.resolves({
+				content: [{ type: 'text', text: 'cleaned' }],
+			});
+
+			const context: PipelineContext = {
+				templatePrompt: 'Convert to an email.',
+			};
+			await service.process('test input', context);
+
+			const callArgs = fakeClient.messages.create.firstCall.args[0];
+			assert.ok(callArgs.system.includes('"lg"'),
+				'template prompt should include expansion abbreviation');
+			assert.ok(callArgs.system.includes('Liebe Grüsse'),
+				'template prompt should include expansion text');
+		});
+
+		test('setExpansions replaces previous expansions completely', async () => {
+			service.setExpansions([{ abbreviation: 'old', expansion: 'OldExpansion' }]);
+			service.setExpansions([{ abbreviation: 'new', expansion: 'NewExpansion' }]);
+			secretStorage.get.resolves('sk-ant-test-key');
+			fakeClient.messages.create.resolves({
+				content: [{ type: 'text', text: 'cleaned' }],
+			});
+
+			await service.process('test input');
+
+			const callArgs = fakeClient.messages.create.firstCall.args[0];
+			assert.ok(callArgs.system.includes('NewExpansion'),
+				'system prompt should include new expansion');
+			assert.ok(!callArgs.system.includes('OldExpansion'),
+				'system prompt should not include old expansion');
+		});
+
+		test('setExpansions makes a defensive copy', async () => {
+			const expansions = [{ abbreviation: 'orig', expansion: 'Original' }];
+			service.setExpansions(expansions);
+			expansions.push({ abbreviation: 'mut', expansion: 'Mutated' });
+
+			secretStorage.get.resolves('sk-ant-test-key');
+			fakeClient.messages.create.resolves({
+				content: [{ type: 'text', text: 'cleaned' }],
+			});
+
+			await service.process('test input');
+
+			const callArgs = fakeClient.messages.create.firstCall.args[0];
+			assert.ok(callArgs.system.includes('Original'),
+				'system prompt should include original expansion');
+			assert.ok(!callArgs.system.includes('Mutated'),
+				'system prompt should not include mutated expansion');
+		});
+
+		test('glossary and expansions coexist in system prompt', async () => {
+			service.setGlossary(['Kubernetes']);
+			service.setExpansions([{ abbreviation: 'k8s', expansion: 'Kubernetes Cluster' }]);
+			secretStorage.get.resolves('sk-ant-test-key');
+			fakeClient.messages.create.resolves({
+				content: [{ type: 'text', text: 'cleaned' }],
+			});
+
+			await service.process('test input');
+
+			const callArgs = fakeClient.messages.create.firstCall.args[0];
+			assert.ok(callArgs.system.includes('Kubernetes'),
+				'system prompt should include glossary');
+			assert.ok(callArgs.system.includes('"k8s"'),
+				'system prompt should include expansion abbreviation');
+			assert.ok(callArgs.system.includes('Kubernetes Cluster'),
+				'system prompt should include expansion text');
+		});
+
 		test('exposes lastUsage after successful API call', async () => {
 			secretStorage.get.resolves('sk-ant-test-key');
 			fakeClient.messages.create.resolves({

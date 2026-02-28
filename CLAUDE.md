@@ -44,6 +44,7 @@ All phases are sub-issues of TF-243 (project overview). All core phases are comp
 - **TF-257: Offline Transcription** - Done. Local transcription via whisper.cpp CLI as alternative to Whisper API. Strategy pattern on `TranscriptionService` with `setProvider('openai'|'local')`. Model download via `dictation.downloadModel` command (Hugging Face). Settings: `verba.transcription.provider`, `verba.transcription.localModel`. macOS support (Linux/Windows planned).
 - **TF-263: Adaptive Personal Dictionary** - Done. Workspace scanning for project-specific glossary terms (metadata files, source symbols, doc headings/bold terms). Review via Multi-Select Quick Pick, merge into `.verba-glossary.json`. TypeScript, Java, Python support.
 - **TF-265: Multi-Cursor / Selection-aware Dictation** - Done. Selection replacement (dictated text replaces selected text), multi-cursor insertion (text at all cursor positions), selected text as Claude context (`<selection>` tags). "Transform Selection" default template. Selection captured at recording start.
+- **TF-262: Text Expansion / Abbreviations** - Done. User-defined abbreviations expanded during Claude post-processing. Global via `verba.expansions` setting, workspace-specific via `.verba-expansions.json`. `setExpansions()` on CleanupService. Workspace expansions override global for same abbreviation.
 
 ## Git Workflow
 
@@ -79,7 +80,7 @@ Microphone --> ffmpeg (WAV) --> Whisper API     --> Claude API --> Editor/Termin
 |--------|---------|
 | `recorder.ts` | ffmpeg child process for audio recording (macOS/Linux/Windows) |
 | `transcriptionService.ts` | Transcription via OpenAI Whisper API or local whisper.cpp CLI (glossary hints) |
-| `cleanupService.ts` | Anthropic Claude API integration (streaming, course correction, voice commands, glossary) |
+| `cleanupService.ts` | Anthropic Claude API integration (streaming, course correction, voice commands, glossary, text expansions) |
 | `pipeline.ts` | Processing stage orchestration |
 | `templatePicker.ts` | Quick Pick menu for template selection |
 | `insertText.ts` | Text insertion into editor or terminal (multi-cursor, selection replacement) |

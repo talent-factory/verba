@@ -23,6 +23,14 @@ suite('Extension', () => {
 		);
 	});
 
+	test('dictation.generateGlossary command is registered', async () => {
+		const commands = await vscode.commands.getCommands(true);
+		assert.ok(
+			commands.includes('dictation.generateGlossary'),
+			'dictation.generateGlossary command not found in registered commands'
+		);
+	});
+
 	test('command execution handles expected errors gracefully', async () => {
 		try {
 			// Race against a timeout: the command may block on a QuickPick

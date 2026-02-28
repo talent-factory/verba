@@ -16,6 +16,7 @@ import { GrepaiProvider } from './grepaiProvider';
 import { CostTracker } from './costTracker';
 import { CostOverviewPanel } from './costOverviewPanel';
 import { getWavDurationSec } from './wavDuration';
+import { GlossaryGenerator } from './glossaryGenerator';
 
 const WHISPER_MODELS: { name: string; file: string; size: string }[] = [
 	{ name: 'tiny', file: 'ggml-tiny.bin', size: '~75 MB' },
@@ -788,9 +789,95 @@ export function activate(context: vscode.ExtensionContext) {
 		}
 	});
 
+	const generateGlossaryCommand = vscode.commands.registerCommand('dictation.generateGlossary', async () => {
+		try {
+			const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+			if (!workspaceRoot) {
+				vscode.window.showWarningMessage('Verba: Open a workspace to generate glossary.');
+				return;
+			}
+
+			const generator = new GlossaryGenerator();
+			const suggestions = await vscode.window.withProgress(
+				{ location: vscode.ProgressLocation.Notification, title: 'Verba: Scanning project for glossary terms...' },
+				() => generator.generate(workspaceRoot, currentGlossary),
+			);
+
+			if (suggestions.length === 0) {
+				vscode.window.showInformationMessage('Verba: No new glossary terms found in this project.');
+				return;
+			}
+
+			const items = suggestions.map(term => ({ label: term, picked: true }));
+			const selected = await vscode.window.showQuickPick(items, {
+				canPickMany: true,
+				placeHolder: `${suggestions.length} terms found — deselect any you don't want`,
+				title: 'Verba: Review Glossary Suggestions',
+			});
+
+			if (!selected || selected.length === 0) {
+				return;
+			}
+
+			const selectedTerms = selected.map(s => s.label);
+
+			// Load existing glossary file
+			const glossaryPath = path.join(workspaceRoot, '.verba-glossary.json');
+			let existing: string[] = [];
+			try {
+				const content = fs.readFileSync(glossaryPath, 'utf-8');
+				const parsed = JSON.parse(content);
+				if (Array.isArray(parsed)) {
+					existing = parsed.filter((t): t is string => typeof t === 'string');
+				}
+			} catch (readErr: unknown) {
+				if (readErr instanceof Error && (readErr as NodeJS.ErrnoException).code === 'ENOENT') {
+					// File doesn't exist yet -- will be created
+				} else {
+					const detail = readErr instanceof SyntaxError
+						? 'Invalid JSON syntax'
+						: (readErr instanceof Error ? readErr.message : String(readErr));
+					console.warn('[Verba] Failed to read existing .verba-glossary.json:', readErr);
+					const action = await vscode.window.showWarningMessage(
+						`Verba: Could not read existing glossary (${detail}). Continuing will create a new file with only the selected terms.`,
+						'Continue', 'Cancel',
+					);
+					if (action !== 'Continue') { return; }
+				}
+			}
+
+			// Merge, deduplicate, sort
+			const merged = [...new Set([...existing, ...selectedTerms])].sort((a, b) => a.localeCompare(b));
+			try {
+				fs.writeFileSync(glossaryPath, JSON.stringify(merged, null, 2) + '\n', 'utf-8');
+			} catch (writeErr: unknown) {
+				const detail = writeErr instanceof Error ? writeErr.message : String(writeErr);
+				console.error('[Verba] Failed to write glossary file:', writeErr);
+				vscode.window.showErrorMessage(`Verba: Could not save glossary to .verba-glossary.json: ${detail}`);
+				return;
+			}
+
+			const added = merged.length - existing.length;
+			vscode.window.showInformationMessage(`Verba: ${added} term${added !== 1 ? 's' : ''} added to glossary (${merged.length} total).`);
+
+			// Reload glossary so Whisper + Claude pick it up immediately
+			try {
+				applyGlossary();
+			} catch (reloadErr: unknown) {
+				console.warn('[Verba] Glossary saved but reload failed:', reloadErr);
+				vscode.window.showWarningMessage('Verba: Glossary file saved, but live reload failed. Restart VS Code to apply the new terms.');
+			}
+		} catch (err: unknown) {
+			console.error('[Verba] generateGlossary failed:', err);
+			const message = err instanceof Error ? err.message : String(err);
+			vscode.window.showErrorMessage(`Verba: Could not generate glossary: ${message}`);
+		}
+	});
+
 	context.subscriptions.push(
 		editorCommand, terminalCommand, selectDeviceCommand, selectTemplateCommand,
-		indexProjectCommand, downloadModelCommand, manageApiKeysCommand, showCostOverviewCommand, saveWatcher,
+		indexProjectCommand, downloadModelCommand, manageApiKeysCommand, showCostOverviewCommand,
+		generateGlossaryCommand, saveWatcher,
 		{ dispose: () => recorder.dispose() }, statusBar,
 	);
 }

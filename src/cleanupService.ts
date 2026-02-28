@@ -1,6 +1,16 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { ProcessingStage, PipelineContext } from './pipeline';
 
+export interface Expansion {
+	abbreviation: string;
+	expansion: string;
+}
+
+/** Sanitizes user-provided text before embedding it in LLM system prompts. */
+function sanitize(s: string): string {
+	return s.replace(/[\r\n]+/g, ' ').replace(/"/g, "'");
+}
+
 const API_KEY_STORAGE_KEY = 'anthropic-api-key';
 
 const COURSE_CORRECTION_INSTRUCTION = 'Erkenne und entferne Selbstkorrekturen (z.B. "nein warte", "ich meinte", "also doch", "beziehungsweise", "korrektur"). Behalte nur die finale, korrigierte Aussage.';
@@ -40,7 +50,7 @@ export class CleanupService implements ProcessingStage {
 	private _client: Anthropic | null = null;
 	private secretStorage: SecretStorage;
 	private glossary: string[] = [];
-	private expansions: Array<{ abbreviation: string; expansion: string }> = [];
+	private expansions: Expansion[] = [];
 	/** Token usage from the most recent API call, or undefined if unavailable. */
 	lastUsage?: { inputTokens: number; outputTokens: number };
 
@@ -50,7 +60,7 @@ export class CleanupService implements ProcessingStage {
 	}
 
 	/** Sets the text expansions (abbreviation → full text) applied during cleanup. */
-	setExpansions(expansions: Array<{ abbreviation: string; expansion: string }>): void {
+	setExpansions(expansions: Expansion[]): void {
 		this.expansions = [...expansions];
 	}
 
@@ -159,7 +169,6 @@ export class CleanupService implements ProcessingStage {
 		const glossaryInstruction = this.glossary.length > 0
 			? `\nBehalte folgende Begriffe exakt bei (nicht uebersetzen, nicht kuerzen, nicht aendern): ${this.glossary.join(', ')}.`
 			: '';
-		const sanitize = (s: string) => s.replace(/[\r\n]+/g, ' ');
 		const expansionInstruction = this.expansions.length > 0
 			? `\nExpandiere folgende Abkuerzungen im Text (ersetze die Kurzform durch die Langform): ${this.expansions.map(e => `"${sanitize(e.abbreviation)}" → "${sanitize(e.expansion)}"`).join(', ')}.`
 			: '';

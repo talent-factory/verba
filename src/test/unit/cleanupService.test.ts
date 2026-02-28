@@ -649,6 +649,68 @@ suite('CleanupService', () => {
 				'system prompt should not include mutated expansion');
 		});
 
+		test('sanitizes newlines in expansion values before injecting into prompt', async () => {
+			service.setExpansions([
+				{ abbreviation: 'ab\nc', expansion: 'line1\r\nline2\nline3' },
+			]);
+			secretStorage.get.resolves('sk-ant-test-key');
+			fakeClient.messages.create.resolves({
+				content: [{ type: 'text', text: 'cleaned' }],
+			});
+
+			await service.process('test input');
+
+			const callArgs = fakeClient.messages.create.firstCall.args[0];
+			assert.ok(callArgs.system.includes('ab c'),
+				'newlines in abbreviation should be replaced with spaces');
+			assert.ok(callArgs.system.includes('line1 line2 line3'),
+				'newlines in expansion should be replaced with spaces');
+			assert.ok(!callArgs.system.match(/"ab\nc"/),
+				'raw newlines should not appear in quoted abbreviation');
+		});
+
+		test('sanitizes double quotes in expansion values to prevent prompt injection', async () => {
+			service.setExpansions([
+				{ abbreviation: 'test', expansion: 'say "hello" world' },
+			]);
+			secretStorage.get.resolves('sk-ant-test-key');
+			fakeClient.messages.create.resolves({
+				content: [{ type: 'text', text: 'cleaned' }],
+			});
+
+			await service.process('test input');
+
+			const callArgs = fakeClient.messages.create.firstCall.args[0];
+			assert.ok(callArgs.system.includes("say 'hello' world"),
+				'double quotes in expansion should be replaced with single quotes');
+			assert.ok(!callArgs.system.includes('say "hello"'),
+				'raw double quotes should not appear in expansion text');
+		});
+
+		test('expansion instruction appears after glossary and before template prompt', async () => {
+			service.setGlossary(['TestTerm']);
+			service.setExpansions([{ abbreviation: 'tt', expansion: 'TestTerm Expansion' }]);
+			secretStorage.get.resolves('sk-ant-test-key');
+			fakeClient.messages.create.resolves({
+				content: [{ type: 'text', text: 'cleaned' }],
+			});
+
+			const context: PipelineContext = {
+				templatePrompt: 'Convert to a commit message.',
+			};
+			await service.process('test input', context);
+
+			const callArgs = fakeClient.messages.create.firstCall.args[0];
+			const glossaryIdx = callArgs.system.indexOf('Behalte folgende Begriffe');
+			const expansionIdx = callArgs.system.indexOf('Expandiere folgende Abkuerzungen');
+			const templateIdx = callArgs.system.indexOf('Convert to a commit message.');
+			assert.ok(glossaryIdx > 0, 'glossary instruction should be present');
+			assert.ok(expansionIdx > glossaryIdx,
+				'expansion instruction should appear after glossary instruction');
+			assert.ok(templateIdx > expansionIdx,
+				'template prompt should appear after expansion instruction');
+		});
+
 		test('glossary and expansions coexist in system prompt', async () => {
 			service.setGlossary(['Kubernetes']);
 			service.setExpansions([{ abbreviation: 'k8s', expansion: 'Kubernetes Cluster' }]);
@@ -816,6 +878,37 @@ suite('CleanupService', () => {
 			const callArgs = fakeClient.messages.stream.firstCall.args[0];
 			assert.ok(callArgs.system.includes('Kubernetes'),
 				'streaming template prompt should include glossary term');
+		});
+
+		test('streaming uses expansions in default prompt', async () => {
+			service.setExpansions([{ abbreviation: 'mfg', expansion: 'Mit freundlichen Gruessen' }]);
+			secretStorage.get.resolves('sk-ant-test-key');
+			fakeClient.messages.stream.returns(createFakeStream(['cleaned']));
+
+			await service.processStreaming('test input', undefined, sinon.stub());
+
+			const callArgs = fakeClient.messages.stream.firstCall.args[0];
+			assert.ok(callArgs.system.includes('"mfg"'),
+				'streaming default prompt should include expansion abbreviation');
+			assert.ok(callArgs.system.includes('Mit freundlichen Gruessen'),
+				'streaming default prompt should include expansion text');
+		});
+
+		test('streaming uses expansions in template prompt', async () => {
+			service.setExpansions([{ abbreviation: 'br', expansion: 'Best regards' }]);
+			secretStorage.get.resolves('sk-ant-test-key');
+			fakeClient.messages.stream.returns(createFakeStream(['cleaned']));
+
+			const context: PipelineContext = {
+				templatePrompt: 'Convert to email.',
+			};
+			await service.processStreaming('test input', context, sinon.stub());
+
+			const callArgs = fakeClient.messages.stream.firstCall.args[0];
+			assert.ok(callArgs.system.includes('"br"'),
+				'streaming template prompt should include expansion abbreviation');
+			assert.ok(callArgs.system.includes('Best regards'),
+				'streaming template prompt should include expansion text');
 		});
 
 		test('returns raw input when stream produces empty text', async () => {

@@ -43,6 +43,7 @@ All phases are sub-issues of TF-243 (project overview). All core phases are comp
 - **Glossary/Dictionary** - Done. Protected terms during transcription (Whisper `prompt` parameter) and cleanup (Claude prompt instruction). Global terms via `verba.glossary` setting, project-specific via `.verba-glossary.json`. `setGlossary()` on CleanupService, `glossary` parameter on TranscriptionService.
 - **TF-257: Offline Transcription** - Done. Local transcription via whisper.cpp CLI as alternative to Whisper API. Strategy pattern on `TranscriptionService` with `setProvider('openai'|'local')`. Model download via `dictation.downloadModel` command (Hugging Face). Settings: `verba.transcription.provider`, `verba.transcription.localModel`. macOS support (Linux/Windows planned).
 - **TF-263: Adaptive Personal Dictionary** - Done. Workspace scanning for project-specific glossary terms (metadata files, source symbols, doc headings/bold terms). Review via Multi-Select Quick Pick, merge into `.verba-glossary.json`. TypeScript, Java, Python support.
+- **TF-265: Multi-Cursor / Selection-aware Dictation** - Done. Selection replacement (dictated text replaces selected text), multi-cursor insertion (text at all cursor positions), selected text as Claude context (`<selection>` tags). "Transform Selection" default template. Selection captured at recording start.
 
 ## Git Workflow
 
@@ -81,7 +82,7 @@ Microphone --> ffmpeg (WAV) --> Whisper API     --> Claude API --> Editor/Termin
 | `cleanupService.ts` | Anthropic Claude API integration (streaming, course correction, voice commands, glossary) |
 | `pipeline.ts` | Processing stage orchestration |
 | `templatePicker.ts` | Quick Pick menu for template selection |
-| `insertText.ts` | Text insertion into editor or terminal |
+| `insertText.ts` | Text insertion into editor or terminal (multi-cursor, selection replacement) |
 | `statusBarManager.ts` | Status bar display (Idle/Recording/Transcribing/Processing with character counter) |
 | `costTracker.ts` | API usage cost tracking with persistence via globalState |
 | `costOverviewPanel.ts` | WebView panel for cost overview (card layout, session/total toggle) |

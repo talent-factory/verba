@@ -162,7 +162,10 @@ export class CleanupService implements ProcessingStage {
 		const contextBlock = context?.contextSnippets?.length
 			? `<context>\n${context.contextSnippets.join('\n\n')}\n</context>\n\n`
 			: '';
-		const userMessage = `${contextBlock}<transcript>\n${input}\n</transcript>`;
+		const selectionBlock = context?.selectedText
+			? `<selection>\n${context.selectedText}\n</selection>\n\n`
+			: '';
+		const userMessage = `${contextBlock}${selectionBlock}<transcript>\n${input}\n</transcript>`;
 
 		return { client, systemPrompt, userMessage };
 	}

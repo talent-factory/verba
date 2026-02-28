@@ -4,6 +4,8 @@ export interface PipelineContext {
 	templatePrompt?: string;
 	/** Code snippets retrieved via semantic search for context-aware templates. */
 	contextSnippets?: string[];
+	/** Text that was selected in the editor when recording started. */
+	selectedText?: string;
 }
 
 /** A single step in the dictation processing pipeline. */

@@ -217,6 +217,10 @@ export function activate(context: vscode.ExtensionContext) {
 		vscode.window.showErrorMessage(`Verba: ${error.message}`);
 	};
 
+	// Text selected in the editor when recording started (captured early so it
+	// survives editor focus changes during recording).
+	let capturedSelectedText: string | undefined;
+
 	const handleDictation = async (forTerminal: boolean) => {
 		// Cancel ongoing processing if user triggers shortcut during streaming
 		if (processingAbortController) {
@@ -263,10 +267,12 @@ export function activate(context: vscode.ExtensionContext) {
 					}
 				}
 
-				// Step 3: Claude post-processing
+				// Step 3: Claude post-processing (pass captured selection as context)
 				const pipelineContext: PipelineContext | undefined = selectedTemplate
-					? { templatePrompt: selectedTemplate.prompt, contextSnippets }
-					: undefined;
+					? { templatePrompt: selectedTemplate.prompt, contextSnippets, selectedText: capturedSelectedText }
+					: capturedSelectedText
+						? { selectedText: capturedSelectedText }
+						: undefined;
 				statusBar.setProcessing();
 				const abortController = new AbortController();
 				processingAbortController = abortController;
@@ -306,11 +312,13 @@ export function activate(context: vscode.ExtensionContext) {
 					preferTerminal,
 				);
 
+				capturedSelectedText = undefined;
 				statusBar.setIdle(selectedTemplate?.name);
 				vscode.window.setStatusBarMessage(
 					'$(check) Verba: transcription inserted', 5000
 				);
 			} catch (err: unknown) {
+				capturedSelectedText = undefined;
 				selectedTemplate = undefined;
 				statusBar.setIdle();
 				console.error('[Verba] Transcription failed:', err);
@@ -345,6 +353,19 @@ export function activate(context: vscode.ExtensionContext) {
 					await context.workspaceState.update('verba.lastTemplateName', template.name);
 				}
 				selectedTemplate = template;
+
+				// Capture selected text before recording starts (survives editor changes during recording)
+				const activeEditor = vscode.window.activeTextEditor;
+				if (activeEditor && !forTerminal) {
+					const sel = activeEditor.selection;
+					if (!sel.isEmpty) {
+						capturedSelectedText = activeEditor.document.getText(sel);
+					} else {
+						capturedSelectedText = undefined;
+					}
+				} else {
+					capturedSelectedText = undefined;
+				}
 
 				let audioDevice = vscode.workspace.getConfiguration('verba').get<string>('audioDevice', '').trim() || undefined;
 				if (!audioDevice && process.platform === 'win32') {

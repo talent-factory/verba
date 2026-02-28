@@ -3,28 +3,61 @@ import * as sinon from 'sinon';
 
 import { insertText } from '../../insertText';
 
+/** Creates a fake selection with isEmpty derived from start/end equality. */
+function sel(
+	startLine: number, startChar: number,
+	endLine: number, endChar: number,
+) {
+	const start = { line: startLine, character: startChar };
+	const end = { line: endLine, character: endChar };
+	return {
+		active: end,
+		start,
+		end,
+		isEmpty: startLine === endLine && startChar === endChar,
+	};
+}
+
+/** Creates a fake editor with the given selections. */
+function fakeEditor(selections: ReturnType<typeof sel>[], editResult: boolean | Error = true) {
+	const editStub = sinon.stub().callsFake((cb: Function) => {
+		if (editResult instanceof Error) {
+			return Promise.reject(editResult);
+		}
+		const insertStub = sinon.stub();
+		const replaceStub = sinon.stub();
+		cb({ insert: insertStub, replace: replaceStub });
+		// Store stubs on the editor for assertion access
+		(editor as any)._lastInsertStub = insertStub;
+		(editor as any)._lastReplaceStub = replaceStub;
+		return Promise.resolve(editResult);
+	});
+
+	const editor = {
+		selection: selections[0],
+		selections,
+		edit: editStub,
+	};
+	return editor;
+}
+
 suite('insertText', () => {
 	teardown(() => {
 		sinon.restore();
 	});
 
+	// --- Existing behaviour (single cursor, no selection) ---
+
 	test('inserts text into active editor at cursor position', async () => {
-		const insertStub = sinon.stub();
-		const editStub = sinon.stub().callsFake((cb: Function) => {
-			cb({ insert: insertStub });
-			return Promise.resolve(true);
-		});
-		const cursorPosition = { line: 5, character: 10 };
-		const fakeEditor = {
-			selection: { active: cursorPosition },
-			edit: editStub,
-		};
+		const cursor = sel(5, 10, 5, 10);
+		const editor = fakeEditor([cursor]);
 
-		await insertText('hello world', fakeEditor as any, undefined, false);
+		await insertText('hello world', editor as any, undefined, false);
 
-		assert.ok(editStub.calledOnce);
+		assert.ok(editor.edit.calledOnce);
+		const insertStub = (editor as any)._lastInsertStub;
 		assert.ok(insertStub.calledOnce);
-		assert.strictEqual(insertStub.firstCall.args[0], cursorPosition);
+		assert.strictEqual(insertStub.firstCall.args[0], cursor.active);
 		assert.strictEqual(insertStub.firstCall.args[1], 'hello world');
 	});
 
@@ -55,70 +88,120 @@ suite('insertText', () => {
 	});
 
 	test('throws when editor.edit returns false', async () => {
-		const editStub = sinon.stub().resolves(false);
-		const fakeEditor = {
-			selection: { active: { line: 0, character: 0 } },
-			edit: editStub,
-		};
+		const editor = fakeEditor([sel(0, 0, 0, 0)], false);
 
 		await assert.rejects(
-			() => insertText('hello', fakeEditor as any, undefined, false),
+			() => insertText('hello', editor as any, undefined, false),
 			/Failed to insert transcription/
 		);
 	});
 
 	test('throws actionable message when editor.edit rejects', async () => {
-		const editStub = sinon.stub().rejects(new Error('Editor disposed'));
-		const fakeEditor = {
-			selection: { active: { line: 0, character: 0 } },
-			edit: editStub,
-		};
+		const editor = fakeEditor([sel(0, 0, 0, 0)], new Error('Editor disposed'));
 
 		await assert.rejects(
-			() => insertText('hello', fakeEditor as any, undefined, false),
+			() => insertText('hello', editor as any, undefined, false),
 			/Failed to insert transcription.*Editor disposed/
 		);
 	});
 
 	test('prefers terminal when preferTerminal is true and both are available', async () => {
-		const editStub = sinon.stub().resolves(true);
-		const fakeEditor = {
-			selection: { active: { line: 0, character: 0 } },
-			edit: editStub,
-		};
+		const editor = fakeEditor([sel(0, 0, 0, 0)]);
 		const sendTextStub = sinon.stub();
 		const fakeTerminal = { sendText: sendTextStub };
 
-		await insertText('hello', fakeEditor as any, fakeTerminal as any, false, true);
+		await insertText('hello', editor as any, fakeTerminal as any, false, true);
 
 		assert.ok(sendTextStub.calledOnce, 'terminal.sendText should be called');
-		assert.ok(editStub.notCalled, 'editor.edit should not be called');
+		assert.ok(editor.edit.notCalled, 'editor.edit should not be called');
 	});
 
 	test('falls back to editor when preferTerminal is true but no terminal', async () => {
-		const editStub = sinon.stub().resolves(true);
-		const fakeEditor = {
-			selection: { active: { line: 0, character: 0 } },
-			edit: editStub,
-		};
+		const editor = fakeEditor([sel(0, 0, 0, 0)]);
 
-		await insertText('hello', fakeEditor as any, undefined, false, true);
+		await insertText('hello', editor as any, undefined, false, true);
 
-		assert.ok(editStub.calledOnce, 'editor.edit should be called as fallback');
+		assert.ok(editor.edit.calledOnce, 'editor.edit should be called as fallback');
 	});
 
 	test('prefers editor over terminal when both are available', async () => {
-		const editStub = sinon.stub().resolves(true);
-		const fakeEditor = {
-			selection: { active: { line: 0, character: 0 } },
-			edit: editStub,
-		};
+		const editor = fakeEditor([sel(0, 0, 0, 0)]);
 		const sendTextStub = sinon.stub();
 		const fakeTerminal = { sendText: sendTextStub };
 
-		await insertText('hello', fakeEditor as any, fakeTerminal as any, false);
+		await insertText('hello', editor as any, fakeTerminal as any, false);
 
-		assert.ok(editStub.calledOnce, 'editor.edit should be called');
+		assert.ok(editor.edit.calledOnce, 'editor.edit should be called');
 		assert.ok(sendTextStub.notCalled, 'terminal.sendText should not be called');
+	});
+
+	// --- Multi-cursor support ---
+
+	test('inserts text at all cursor positions with multi-cursor', async () => {
+		const cursors = [sel(1, 5, 1, 5), sel(3, 10, 3, 10), sel(5, 0, 5, 0)];
+		const editor = fakeEditor(cursors);
+
+		await insertText('inserted', editor as any, undefined, false);
+
+		assert.ok(editor.edit.calledOnce);
+		const insertStub = (editor as any)._lastInsertStub;
+		assert.strictEqual(insertStub.callCount, 3, 'should insert at all 3 cursor positions');
+
+		// Should be called in reverse document order (line 5, 3, 1)
+		assert.deepStrictEqual(insertStub.getCall(0).args[0], cursors[2].active);
+		assert.deepStrictEqual(insertStub.getCall(1).args[0], cursors[1].active);
+		assert.deepStrictEqual(insertStub.getCall(2).args[0], cursors[0].active);
+	});
+
+	// --- Selection replacement ---
+
+	test('replaces selected text with dictated text', async () => {
+		const selection = sel(2, 0, 2, 15); // non-empty selection
+		const editor = fakeEditor([selection]);
+
+		await insertText('replacement', editor as any, undefined, false);
+
+		assert.ok(editor.edit.calledOnce);
+		const replaceStub = (editor as any)._lastReplaceStub;
+		assert.strictEqual(replaceStub.callCount, 1, 'should replace the selection');
+		const range = replaceStub.firstCall.args[0];
+		assert.deepStrictEqual(range.start, selection.start);
+		assert.deepStrictEqual(range.end, selection.end);
+		assert.strictEqual(replaceStub.firstCall.args[1], 'replacement');
+	});
+
+	test('replaces multiple selections in reverse order', async () => {
+		const selections = [
+			sel(1, 0, 1, 5),   // line 1, chars 0-5
+			sel(5, 3, 5, 10),  // line 5, chars 3-10
+			sel(3, 0, 3, 8),   // line 3, chars 0-8
+		];
+		const editor = fakeEditor(selections);
+
+		await insertText('new', editor as any, undefined, false);
+
+		const replaceStub = (editor as any)._lastReplaceStub;
+		assert.strictEqual(replaceStub.callCount, 3, 'should replace all 3 selections');
+
+		// Reverse order: line 5, line 3, line 1
+		assert.deepStrictEqual(replaceStub.getCall(0).args[0].start, selections[1].start);
+		assert.deepStrictEqual(replaceStub.getCall(1).args[0].start, selections[2].start);
+		assert.deepStrictEqual(replaceStub.getCall(2).args[0].start, selections[0].start);
+	});
+
+	test('uses replace when any selection is non-empty (mixed cursors and selections)', async () => {
+		const selections = [
+			sel(1, 0, 1, 0),   // empty cursor
+			sel(3, 0, 3, 10),  // non-empty selection
+		];
+		const editor = fakeEditor(selections);
+
+		await insertText('text', editor as any, undefined, false);
+
+		const replaceStub = (editor as any)._lastReplaceStub;
+		const insertStub = (editor as any)._lastInsertStub;
+		// All should use replace when any selection is non-empty
+		assert.strictEqual(replaceStub.callCount, 2, 'both should use replace');
+		assert.strictEqual(insertStub.callCount, 0, 'insert should not be used');
 	});
 });

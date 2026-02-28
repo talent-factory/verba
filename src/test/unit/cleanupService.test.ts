@@ -334,6 +334,61 @@ suite('CleanupService', () => {
 			assert.ok(!userContent.includes('<context>'), 'should not contain context tags when undefined');
 		});
 
+		test('includes selection block before transcript when selectedText is provided', async () => {
+			secretStorage.get.resolves('sk-ant-test-key');
+			fakeClient.messages.create.resolves({
+				content: [{ type: 'text', text: 'transformed text' }],
+			});
+
+			const context: PipelineContext = {
+				templatePrompt: 'Transform the selection.',
+				selectedText: 'const x = 42;',
+			};
+			await service.process('translate this to Python', context);
+
+			const userContent = fakeClient.messages.create.firstCall.args[0].messages[0].content;
+			assert.ok(userContent.includes('<selection>'), 'should contain selection tags');
+			assert.ok(userContent.includes('const x = 42;'), 'should contain selected text');
+			assert.ok(userContent.includes('</selection>'), 'should close selection tags');
+			assert.ok(userContent.indexOf('<selection>') < userContent.indexOf('<transcript>'),
+				'selection should appear before transcript');
+		});
+
+		test('omits selection block when selectedText is undefined', async () => {
+			secretStorage.get.resolves('sk-ant-test-key');
+			fakeClient.messages.create.resolves({
+				content: [{ type: 'text', text: 'cleaned' }],
+			});
+
+			const context: PipelineContext = { templatePrompt: 'Clean up.' };
+			await service.process('test input', context);
+
+			const userContent = fakeClient.messages.create.firstCall.args[0].messages[0].content;
+			assert.ok(!userContent.includes('<selection>'), 'should not contain selection tags when undefined');
+		});
+
+		test('includes both context and selection blocks when both provided', async () => {
+			secretStorage.get.resolves('sk-ant-test-key');
+			fakeClient.messages.create.resolves({
+				content: [{ type: 'text', text: 'result' }],
+			});
+
+			const context: PipelineContext = {
+				templatePrompt: 'Process.',
+				contextSnippets: ['// code context'],
+				selectedText: 'selected code',
+			};
+			await service.process('do something', context);
+
+			const userContent = fakeClient.messages.create.firstCall.args[0].messages[0].content;
+			assert.ok(userContent.includes('<context>'), 'should contain context');
+			assert.ok(userContent.includes('<selection>'), 'should contain selection');
+			assert.ok(userContent.indexOf('<context>') < userContent.indexOf('<selection>'),
+				'context should appear before selection');
+			assert.ok(userContent.indexOf('<selection>') < userContent.indexOf('<transcript>'),
+				'selection should appear before transcript');
+		});
+
 		test('default system prompt includes glossary instruction when glossary is set', async () => {
 			service.setGlossary(['Visual Studio Code', 'Kubernetes']);
 			secretStorage.get.resolves('sk-ant-test-key');

@@ -1,6 +1,16 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { ProcessingStage, PipelineContext } from './pipeline';
 
+export interface Expansion {
+	abbreviation: string;
+	expansion: string;
+}
+
+/** Sanitizes user-provided text before embedding it in LLM system prompts. */
+function sanitize(s: string): string {
+	return s.replace(/[\r\n]+/g, ' ').replace(/"/g, "'");
+}
+
 const API_KEY_STORAGE_KEY = 'anthropic-api-key';
 
 const COURSE_CORRECTION_INSTRUCTION = 'Erkenne und entferne Selbstkorrekturen (z.B. "nein warte", "ich meinte", "also doch", "beziehungsweise", "korrektur"). Behalte nur die finale, korrigierte Aussage.';
@@ -40,12 +50,18 @@ export class CleanupService implements ProcessingStage {
 	private _client: Anthropic | null = null;
 	private secretStorage: SecretStorage;
 	private glossary: string[] = [];
+	private expansions: Expansion[] = [];
 	/** Token usage from the most recent API call, or undefined if unavailable. */
 	lastUsage?: { inputTokens: number; outputTokens: number };
 
 	/** Sets the glossary terms that must be preserved verbatim during cleanup. */
 	setGlossary(terms: string[]): void {
 		this.glossary = [...terms];
+	}
+
+	/** Sets the text expansions (abbreviation → full text) applied during cleanup. */
+	setExpansions(expansions: Expansion[]): void {
+		this.expansions = [...expansions];
 	}
 
 	constructor(secretStorage: SecretStorage) {
@@ -153,9 +169,12 @@ export class CleanupService implements ProcessingStage {
 		const glossaryInstruction = this.glossary.length > 0
 			? `\nBehalte folgende Begriffe exakt bei (nicht uebersetzen, nicht kuerzen, nicht aendern): ${this.glossary.join(', ')}.`
 			: '';
+		const expansionInstruction = this.expansions.length > 0
+			? `\nExpandiere folgende Abkuerzungen im Text (ersetze die Kurzform durch die Langform): ${this.expansions.map(e => `"${sanitize(e.abbreviation)}" → "${sanitize(e.expansion)}"`).join(', ')}.`
+			: '';
 		const systemPrompt = context?.templatePrompt
-			? TEMPLATE_FRAMING + glossaryInstruction + '\n' + context.templatePrompt
-			: CLEANUP_SYSTEM_PROMPT + glossaryInstruction;
+			? TEMPLATE_FRAMING + glossaryInstruction + expansionInstruction + '\n' + context.templatePrompt
+			: CLEANUP_SYSTEM_PROMPT + glossaryInstruction + expansionInstruction;
 		const apiKey = await this.getApiKey();
 		const client = this.getClient(apiKey);
 

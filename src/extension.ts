@@ -790,58 +790,64 @@ export function activate(context: vscode.ExtensionContext) {
 	});
 
 	const generateGlossaryCommand = vscode.commands.registerCommand('dictation.generateGlossary', async () => {
-		const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-		if (!workspaceRoot) {
-			vscode.window.showWarningMessage('Verba: Open a workspace to generate glossary.');
-			return;
-		}
-
-		const generator = new GlossaryGenerator();
-		const suggestions = await vscode.window.withProgress(
-			{ location: vscode.ProgressLocation.Notification, title: 'Verba: Scanning project for glossary terms...' },
-			() => generator.generate(workspaceRoot, currentGlossary),
-		);
-
-		if (suggestions.length === 0) {
-			vscode.window.showInformationMessage('Verba: No new glossary terms found in this project.');
-			return;
-		}
-
-		const items = suggestions.map(term => ({ label: term, picked: true }));
-		const selected = await vscode.window.showQuickPick(items, {
-			canPickMany: true,
-			placeHolder: `${suggestions.length} terms found — deselect any you don't want`,
-			title: 'Verba: Review Glossary Suggestions',
-		});
-
-		if (!selected || selected.length === 0) {
-			return;
-		}
-
-		const selectedTerms = selected.map(s => s.label);
-
-		// Load existing glossary file
-		const glossaryPath = path.join(workspaceRoot, '.verba-glossary.json');
-		let existing: string[] = [];
 		try {
-			const content = fs.readFileSync(glossaryPath, 'utf-8');
-			const parsed = JSON.parse(content);
-			if (Array.isArray(parsed)) {
-				existing = parsed.filter((t): t is string => typeof t === 'string');
+			const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+			if (!workspaceRoot) {
+				vscode.window.showWarningMessage('Verba: Open a workspace to generate glossary.');
+				return;
 			}
-		} catch {
-			// File doesn't exist or invalid — start fresh
+
+			const generator = new GlossaryGenerator();
+			const suggestions = await vscode.window.withProgress(
+				{ location: vscode.ProgressLocation.Notification, title: 'Verba: Scanning project for glossary terms...' },
+				() => generator.generate(workspaceRoot, currentGlossary),
+			);
+
+			if (suggestions.length === 0) {
+				vscode.window.showInformationMessage('Verba: No new glossary terms found in this project.');
+				return;
+			}
+
+			const items = suggestions.map(term => ({ label: term, picked: true }));
+			const selected = await vscode.window.showQuickPick(items, {
+				canPickMany: true,
+				placeHolder: `${suggestions.length} terms found — deselect any you don't want`,
+				title: 'Verba: Review Glossary Suggestions',
+			});
+
+			if (!selected || selected.length === 0) {
+				return;
+			}
+
+			const selectedTerms = selected.map(s => s.label);
+
+			// Load existing glossary file
+			const glossaryPath = path.join(workspaceRoot, '.verba-glossary.json');
+			let existing: string[] = [];
+			try {
+				const content = fs.readFileSync(glossaryPath, 'utf-8');
+				const parsed = JSON.parse(content);
+				if (Array.isArray(parsed)) {
+					existing = parsed.filter((t): t is string => typeof t === 'string');
+				}
+			} catch {
+				// File doesn't exist or invalid — start fresh
+			}
+
+			// Merge, deduplicate, sort
+			const merged = [...new Set([...existing, ...selectedTerms])].sort((a, b) => a.localeCompare(b));
+			fs.writeFileSync(glossaryPath, JSON.stringify(merged, null, 2) + '\n', 'utf-8');
+
+			const added = merged.length - existing.length;
+			vscode.window.showInformationMessage(`Verba: ${added} term${added !== 1 ? 's' : ''} added to glossary (${merged.length} total).`);
+
+			// Reload glossary so Whisper + Claude pick it up immediately
+			applyGlossary();
+		} catch (err: unknown) {
+			console.error('[Verba] generateGlossary failed:', err);
+			const message = err instanceof Error ? err.message : String(err);
+			vscode.window.showErrorMessage(`Verba: Could not generate glossary: ${message}`);
 		}
-
-		// Merge, deduplicate, sort
-		const merged = [...new Set([...existing, ...selectedTerms])].sort((a, b) => a.localeCompare(b));
-		fs.writeFileSync(glossaryPath, JSON.stringify(merged, null, 2) + '\n', 'utf-8');
-
-		const added = merged.length - existing.length;
-		vscode.window.showInformationMessage(`Verba: ${added} term${added !== 1 ? 's' : ''} added to glossary (${merged.length} total).`);
-
-		// Reload glossary so Whisper + Claude pick it up immediately
-		applyGlossary();
 	});
 
 	context.subscriptions.push(

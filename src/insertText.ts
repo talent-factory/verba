@@ -1,6 +1,17 @@
+interface Selection {
+	readonly active: unknown;
+	readonly start: unknown;
+	readonly end: unknown;
+	readonly isEmpty: boolean;
+}
+
 interface TextEditor {
-	selection: { active: unknown };
-	edit(callback: (editBuilder: { insert(position: unknown, value: string): void }) => void): Thenable<boolean>;
+	selection: Selection;
+	readonly selections: readonly Selection[];
+	edit(callback: (editBuilder: {
+		insert(position: unknown, value: string): void;
+		replace(location: unknown, value: string): void;
+	}) => void): Thenable<boolean>;
 }
 
 interface Terminal {
@@ -12,6 +23,11 @@ interface Terminal {
  *
  * Priority: if {@link preferTerminal} is true and a terminal exists, sends text there;
  * otherwise inserts at the editor cursor position; falls back to terminal if no editor is open.
+ *
+ * Selection-aware behaviour:
+ * - If any selection is non-empty, the text **replaces** every selection.
+ * - If multiple cursors exist without a selection, the text is **inserted** at each cursor position.
+ * - Edits are applied in reverse document order to keep offsets stable.
  *
  * @param executeCommand - When inserting into a terminal, also submit with Enter.
  * @param preferTerminal - If true, prefer terminal over editor (used for terminal-initiated dictation).
@@ -30,10 +46,34 @@ export async function insertText(
 	}
 
 	if (editor) {
+		const selections = editor.selections;
+		const hasSelection = selections.some(s => !s.isEmpty);
+		console.log(
+			`[Verba] Inserting into editor: ${selections.length} cursor(s), ` +
+			`${selections.filter(s => !s.isEmpty).length} selection(s), ` +
+			`mode=${hasSelection ? 'replace' : 'insert'}, length=${text.length}`
+		);
+
 		let success: boolean;
 		try {
 			success = await editor.edit((editBuilder) => {
-				editBuilder.insert(editor.selection.active, text);
+				// Sort selections in reverse document order to preserve offsets
+				const sorted = [...selections].sort((a, b) => {
+					const startA = a.start as { line: number; character: number };
+					const startB = b.start as { line: number; character: number };
+					if (startA.line !== startB.line) { return startB.line - startA.line; }
+					return startB.character - startA.character;
+				});
+
+				for (const sel of sorted) {
+					if (hasSelection) {
+						// Replace each selection (sel is a vscode.Selection which extends Range)
+						editBuilder.replace(sel as any, text);
+					} else {
+						// Insert at each cursor position (multi-cursor without selection)
+						editBuilder.insert(sel.active, text);
+					}
+				}
 			});
 		} catch (err: unknown) {
 			const detail = err instanceof Error ? err.message : String(err);

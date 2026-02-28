@@ -212,10 +212,15 @@ export function activate(context: vscode.ExtensionContext) {
 
 	recorder.onUnexpectedStop = (error) => {
 		selectedTemplate = undefined;
+		capturedSelectedText = undefined;
 		statusBar.setIdle();
 		console.error('[Verba] Unexpected recording stop:', error);
 		vscode.window.showErrorMessage(`Verba: ${error.message}`);
 	};
+
+	// Text selected in the editor when recording started (captured early so it
+	// survives editor focus changes during recording).
+	let capturedSelectedText: string | undefined;
 
 	const handleDictation = async (forTerminal: boolean) => {
 		// Cancel ongoing processing if user triggers shortcut during streaming
@@ -263,9 +268,9 @@ export function activate(context: vscode.ExtensionContext) {
 					}
 				}
 
-				// Step 3: Claude post-processing
+				// Step 3: Claude post-processing (pass captured selection as context only with a template)
 				const pipelineContext: PipelineContext | undefined = selectedTemplate
-					? { templatePrompt: selectedTemplate.prompt, contextSnippets }
+					? { templatePrompt: selectedTemplate.prompt, contextSnippets, selectedText: capturedSelectedText }
 					: undefined;
 				statusBar.setProcessing();
 				const abortController = new AbortController();
@@ -287,6 +292,7 @@ export function activate(context: vscode.ExtensionContext) {
 					}
 				} catch (err: unknown) {
 					if (err instanceof Error && err.name === 'AbortError') {
+						capturedSelectedText = undefined;
 						statusBar.setIdle(selectedTemplate?.name);
 						vscode.window.showInformationMessage('Verba: Dictation cancelled.');
 						return;
@@ -306,11 +312,13 @@ export function activate(context: vscode.ExtensionContext) {
 					preferTerminal,
 				);
 
+				capturedSelectedText = undefined;
 				statusBar.setIdle(selectedTemplate?.name);
 				vscode.window.setStatusBarMessage(
 					'$(check) Verba: transcription inserted', 5000
 				);
 			} catch (err: unknown) {
+				capturedSelectedText = undefined;
 				selectedTemplate = undefined;
 				statusBar.setIdle();
 				console.error('[Verba] Transcription failed:', err);
@@ -346,10 +354,32 @@ export function activate(context: vscode.ExtensionContext) {
 				}
 				selectedTemplate = template;
 
+				// Capture selected text before recording starts (survives editor changes during recording)
+				const activeEditor = vscode.window.activeTextEditor;
+				if (activeEditor && !forTerminal) {
+					const sel = activeEditor.selection;
+					if (!sel.isEmpty) {
+						capturedSelectedText = activeEditor.document.getText(sel);
+					} else {
+						capturedSelectedText = undefined;
+					}
+				} else {
+					capturedSelectedText = undefined;
+				}
+
+				// Guard: template referencing <selection> requires actual selection
+				if (!capturedSelectedText && selectedTemplate?.prompt.includes('<selection>')) {
+					vscode.window.showWarningMessage(
+						'Verba: This template requires text to be selected in the editor.'
+					);
+					return;
+				}
+
 				let audioDevice = vscode.workspace.getConfiguration('verba').get<string>('audioDevice', '').trim() || undefined;
 				if (!audioDevice && process.platform === 'win32') {
 					audioDevice = await pickAudioDevice(true);
 					if (!audioDevice) {
+						capturedSelectedText = undefined;
 						return;
 					}
 				}
@@ -359,6 +389,7 @@ export function activate(context: vscode.ExtensionContext) {
 					`Verba: Recording started (${template.name})...`
 				);
 			} catch (err: unknown) {
+				capturedSelectedText = undefined;
 				statusBar.setIdle(selectedTemplate?.name);
 				console.error('[Verba] Start recording failed:', err);
 				const message = err instanceof Error ? err.message : String(err);

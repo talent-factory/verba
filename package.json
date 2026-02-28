@@ -173,6 +173,10 @@
               "name": "Claude Code Prompt",
               "prompt": "Convert this transcript into a precise, well-structured prompt for a Claude Code agent. Use the provided code context to reference specific files, classes, and functions by name. Structure the prompt as a clear task description: what to do, where in the codebase, and any constraints. Keep the original language. Return ONLY the prompt text, ready to paste into a terminal.",
               "contextAware": true
+            },
+            {
+              "name": "Transform Selection",
+              "prompt": "The user has selected text in their editor (provided in <selection> tags) and dictated an instruction (in <transcript> tags). Apply the spoken instruction to transform the selected text. Examples: translate it, rewrite it, add comments, simplify it, fix it, etc. Return ONLY the transformed text that should replace the selection — no explanation, no preamble."
             }
           ]
         },

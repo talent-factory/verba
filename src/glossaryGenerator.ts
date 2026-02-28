@@ -1,6 +1,9 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import * as vscode from 'vscode';
+
+// Lazy-load vscode module so pure functions remain testable outside the extension host.
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+function getVscode(): typeof import('vscode') { return require('vscode'); }
 
 export const STOPWORDS = new Set([
 	'index', 'main', 'test', 'tests', 'spec', 'App', 'app',
@@ -142,7 +145,7 @@ export class GlossaryGenerator {
 
 		// 2. Scan source files for symbols
 		const excludePattern = '{**/node_modules/**,**/dist/**,**/out/**,**/.git/**,**/.verba/**,**/__pycache__/**,**/target/**,**/build/**}';
-		const sourceFiles = await vscode.workspace.findFiles('**/*.{ts,java,py}', excludePattern);
+		const sourceFiles = await getVscode().workspace.findFiles('**/*.{ts,java,py}', excludePattern);
 
 		for (const fileUri of sourceFiles) {
 			try {

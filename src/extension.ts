@@ -71,7 +71,6 @@ export function activate(context: vscode.ExtensionContext) {
 	let preferTerminal = false;
 	let processingAbortController: AbortController | null = null;
 	let currentGlossary: string[] = [];
-	let currentExpansions: Array<{ abbreviation: string; expansion: string }> = [];
 
 	function applyTranscriptionProvider(): void {
 		const config = vscode.workspace.getConfiguration('verba.transcription');
@@ -166,18 +165,19 @@ export function activate(context: vscode.ExtensionContext) {
 			}
 		}
 
-		// Merge: workspace expansions override global ones with the same abbreviation
+		// Merge: workspace expansions override global ones with the same abbreviation.
+		// Abbreviations are lowercased for consistent prompt matching (Whisper transcripts are typically lowercase).
 		const merged = new Map<string, { abbreviation: string; expansion: string }>();
-		for (const e of globalExpansions) { merged.set(e.abbreviation.toLowerCase(), e); }
-		for (const e of workspaceExpansions) { merged.set(e.abbreviation.toLowerCase(), e); }
+		for (const e of globalExpansions) { merged.set(e.abbreviation.toLowerCase(), { ...e, abbreviation: e.abbreviation.toLowerCase() }); }
+		for (const e of workspaceExpansions) { merged.set(e.abbreviation.toLowerCase(), { ...e, abbreviation: e.abbreviation.toLowerCase() }); }
 		return [...merged.values()];
 	}
 
 	function applyExpansions(): void {
-		currentExpansions = loadExpansions();
-		cleanupService.setExpansions(currentExpansions);
-		if (currentExpansions.length > 0) {
-			console.log(`[Verba] Expansions loaded: ${currentExpansions.length} entries`);
+		const expansions = loadExpansions();
+		cleanupService.setExpansions(expansions);
+		if (expansions.length > 0) {
+			console.log(`[Verba] Expansions loaded: ${expansions.length} entries`);
 		}
 	}
 	applyExpansions();

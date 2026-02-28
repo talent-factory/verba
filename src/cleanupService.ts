@@ -159,8 +159,9 @@ export class CleanupService implements ProcessingStage {
 		const glossaryInstruction = this.glossary.length > 0
 			? `\nBehalte folgende Begriffe exakt bei (nicht uebersetzen, nicht kuerzen, nicht aendern): ${this.glossary.join(', ')}.`
 			: '';
+		const sanitize = (s: string) => s.replace(/[\r\n]+/g, ' ');
 		const expansionInstruction = this.expansions.length > 0
-			? `\nExpandiere folgende Abkuerzungen im Text (ersetze die Kurzform durch die Langform): ${this.expansions.map(e => `"${e.abbreviation}" → "${e.expansion}"`).join(', ')}.`
+			? `\nExpandiere folgende Abkuerzungen im Text (ersetze die Kurzform durch die Langform): ${this.expansions.map(e => `"${sanitize(e.abbreviation)}" → "${sanitize(e.expansion)}"`).join(', ')}.`
 			: '';
 		const systemPrompt = context?.templatePrompt
 			? TEMPLATE_FRAMING + glossaryInstruction + expansionInstruction + '\n' + context.templatePrompt

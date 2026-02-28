@@ -175,3 +175,40 @@ def __init__():
 		assert.deepStrictEqual(result, []);
 	});
 });
+
+suite('GlossaryGenerator.parseDocs', () => {
+	test('extracts markdown headings h1-h3', () => {
+		const md = `# Project Overview
+## Architecture
+### Components
+Some text here.
+`;
+		const result = GlossaryGenerator.parseDocs(md);
+		assert.ok(result.includes('Project Overview'));
+		assert.ok(result.includes('Architecture'));
+		assert.ok(result.includes('Components'));
+	});
+
+	test('extracts bold terms', () => {
+		const md = `This is about **Verba** and **Whisper API** integration.`;
+		const result = GlossaryGenerator.parseDocs(md);
+		assert.ok(result.includes('Verba'));
+		assert.ok(result.includes('Whisper API'));
+	});
+
+	test('ignores deep headings h4+', () => {
+		const md = `# Top Level
+#### Deep Heading
+##### Even Deeper
+`;
+		const result = GlossaryGenerator.parseDocs(md);
+		assert.ok(result.includes('Top Level'));
+		assert.ok(!result.includes('Deep Heading'));
+		assert.ok(!result.includes('Even Deeper'));
+	});
+
+	test('returns empty for content without headings or bold', () => {
+		const result = GlossaryGenerator.parseDocs('Just plain text without any special formatting.');
+		assert.deepStrictEqual(result, []);
+	});
+});

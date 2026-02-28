@@ -101,6 +101,22 @@ export class GlossaryGenerator {
 		return terms;
 	}
 
+	static parseDocs(content: string): string[] {
+		const terms: string[] = [];
+		// Markdown headings h1-h3
+		const headingRegex = /^#{1,3}\s+(.+)$/gm;
+		let match: RegExpExecArray | null;
+		while ((match = headingRegex.exec(content)) !== null) {
+			terms.push(match[1]);
+		}
+		// Bold terms
+		const boldRegex = /\*\*([^*]+)\*\*/g;
+		while ((match = boldRegex.exec(content)) !== null) {
+			terms.push(match[1]);
+		}
+		return terms;
+	}
+
 	async generate(workspaceRoot: string, existingTerms: string[]): Promise<string[]> {
 		return [];
 	}

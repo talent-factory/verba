@@ -155,6 +155,34 @@ suite('CleanupService', () => {
 			assert.strictEqual(result, 'raw input text');
 		});
 
+		test('returns raw input when Claude response is whitespace-only', async () => {
+			secretStorage.get.resolves('sk-ant-test-key');
+			fakeClient.messages.create.resolves({
+				content: [{ type: 'text', text: '   \n\t  ' }],
+			});
+
+			const result = await service.process('raw input text');
+
+			assert.strictEqual(result, 'raw input text');
+		});
+
+		test('throws when Claude returns whitespace-only during selection transform', async () => {
+			secretStorage.get.resolves('sk-ant-test-key');
+			fakeClient.messages.create.resolves({
+				content: [{ type: 'text', text: '   \n\t  ' }],
+			});
+
+			const context: PipelineContext = {
+				templatePrompt: 'Transform the selection.',
+				selectedText: 'const x = 42;',
+			};
+
+			await assert.rejects(
+				() => service.process('translate this to Python', context),
+				/Post-processing returned an empty response/
+			);
+		});
+
 		test('throws instead of fallback when Claude returns empty during selection transform', async () => {
 			secretStorage.get.resolves('sk-ant-test-key');
 			fakeClient.messages.create.resolves({

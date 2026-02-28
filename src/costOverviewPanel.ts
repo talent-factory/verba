@@ -38,6 +38,10 @@ function formatAudioDuration(seconds: number): string {
 	return `${minutes.toFixed(1)} min`;
 }
 
+function escapeHtml(s: string): string {
+	return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
 /**
  * Groups UsageRecords by model, summing costs, tokens, and audio duration.
  */
@@ -96,8 +100,8 @@ function buildUsageDetails(model: AggregatedModel): string {
 
 function buildModelCard(model: AggregatedModel): string {
 	return `<div class="card">
-	<div class="card-model">${model.model}</div>
-	<div class="card-category">${model.category}</div>
+	<div class="card-model">${escapeHtml(model.model)}</div>
+	<div class="card-category">${escapeHtml(model.category)}</div>
 	<div class="card-usage">${buildUsageDetails(model)}</div>
 	<div class="card-cost">${formatCost(model.totalCostUsd)}</div>
 </div>`;
@@ -243,7 +247,6 @@ ${content}
 </html>`;
 }
 
-// Lazy-load vscode module so pure functions remain testable outside the extension host.
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 function getVscode(): typeof import('vscode') { return require('vscode'); }
 
@@ -301,16 +304,21 @@ export class CostOverviewPanel {
 	}
 
 	private _update(): void {
-		const records = this._scope === 'session'
-			? this._costTracker.getSessionRecords()
-			: this._costTracker.getTotalRecords();
+		try {
+			const records = this._scope === 'session'
+				? this._costTracker.getSessionRecords()
+				: this._costTracker.getTotalRecords();
 
-		const models = aggregateRecords(records);
-		const totalCost = this._scope === 'session'
-			? this._costTracker.getSessionCosts()
-			: this._costTracker.getTotalCosts();
+			const models = aggregateRecords(records);
+			const totalCost = this._scope === 'session'
+				? this._costTracker.getSessionCosts()
+				: this._costTracker.getTotalCosts();
 
-		this._panel.webview.html = buildCostOverviewHtml(models, this._scope, totalCost);
+			this._panel.webview.html = buildCostOverviewHtml(models, this._scope, totalCost);
+		} catch (err: unknown) {
+			console.error('[Verba] Failed to update cost overview panel:', err);
+			this._panel.webview.html = '<p>Error loading cost data. Try reopening the panel.</p>';
+		}
 	}
 
 	private _dispose(): void {

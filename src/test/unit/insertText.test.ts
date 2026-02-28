@@ -207,7 +207,7 @@ suite('insertText', () => {
 		assert.deepStrictEqual(replaceStub.getCall(2).args[0].start, selections[0].start);
 	});
 
-	test('uses replace when any selection is non-empty (mixed cursors and selections)', async () => {
+	test('handles mixed cursors and selections per-selection', async () => {
 		const selections = [
 			sel(1, 0, 1, 0),   // empty cursor
 			sel(3, 0, 3, 10),  // non-empty selection
@@ -218,8 +218,8 @@ suite('insertText', () => {
 
 		const replaceStub = (editor as any)._lastReplaceStub;
 		const insertStub = (editor as any)._lastInsertStub;
-		// All should use replace when any selection is non-empty
-		assert.strictEqual(replaceStub.callCount, 2, 'both should use replace');
-		assert.strictEqual(insertStub.callCount, 0, 'insert should not be used');
+		// Non-empty selection should use replace, empty cursor should use insert
+		assert.strictEqual(replaceStub.callCount, 1, 'non-empty selection should use replace');
+		assert.strictEqual(insertStub.callCount, 1, 'empty cursor should use insert');
 	});
 });

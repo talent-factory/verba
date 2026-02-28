@@ -50,7 +50,12 @@ export class GlossaryGenerator {
 				}
 			}
 			return terms;
-		} catch {
+		} catch (err) {
+			if (err instanceof SyntaxError) {
+				console.warn('[Verba] package.json has invalid JSON:', err.message);
+			} else {
+				console.error('[Verba] Unexpected error parsing package.json:', err);
+			}
 			return [];
 		}
 	}

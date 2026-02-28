@@ -25,12 +25,13 @@ interface Terminal {
  * otherwise inserts at the editor cursor position; falls back to terminal if no editor is open.
  *
  * Selection-aware behaviour:
- * - If any selection is non-empty, the text **replaces** every selection.
- * - If multiple cursors exist without a selection, the text is **inserted** at each cursor position.
+ * - If a cursor has a non-empty selection, the text **replaces** that selection.
+ * - If a cursor has no selection, the text is **inserted** at the cursor position.
  * - Edits are applied in reverse document order to keep offsets stable.
  *
  * @param executeCommand - When inserting into a terminal, also submit with Enter.
  * @param preferTerminal - If true, prefer terminal over editor (used for terminal-initiated dictation).
+ * @throws {Error} If no editor or terminal is available, or if the editor edit operation fails.
  */
 export async function insertText(
 	text: string,
@@ -66,11 +67,9 @@ export async function insertText(
 				});
 
 				for (const sel of sorted) {
-					if (hasSelection) {
-						// Replace each selection (sel is a vscode.Selection which extends Range)
+					if (!sel.isEmpty) {
 						editBuilder.replace(sel as any, text);
 					} else {
-						// Insert at each cursor position (multi-cursor without selection)
 						editBuilder.insert(sel.active, text);
 					}
 				}

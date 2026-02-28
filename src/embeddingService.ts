@@ -1,8 +1,8 @@
 import OpenAI from 'openai';
 
 const API_KEY_STORAGE_KEY = 'openai-api-key';
-// text-embedding-3-small supports 8192 tokens; chars/token ratio varies widely (1.5–4)
-// 8000 chars stays safe even at worst-case ratios
+// text-embedding-3-small supports 8192 tokens.
+// 8000 chars provides a comfortable safety margin for typical char/token ratios.
 const MAX_EMBEDDING_CHARS = 8000;
 
 interface SecretStorage {
@@ -13,7 +13,7 @@ interface SecretStorage {
 
 /**
  * Generates text embeddings via the OpenAI `text-embedding-3-small` model.
- * Used by the {@link Indexer} to build and query the local vector index.
+ * Used for building the local vector index and for context-aware template queries.
  * API key is shared with the Whisper transcription service (stored in SecretStorage).
  */
 export class EmbeddingService {

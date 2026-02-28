@@ -6,7 +6,7 @@
 const STORAGE_KEY = 'verba.costRecords';
 
 // Pricing as of 2026-02 — verify at https://openai.com/pricing and https://www.anthropic.com/pricing
-// These rates must match the models used in cleanupService.ts and embeddingService.ts.
+// These rates must match the models used in transcriptionService.ts, cleanupService.ts and embeddingService.ts.
 const WHISPER_COST_PER_MINUTE = 0.006;        // OpenAI Whisper: $0.006/min
 const CLAUDE_INPUT_COST_PER_MILLION = 1.00;    // Claude Haiku 4.5: $1.00/1M input tokens
 const CLAUDE_OUTPUT_COST_PER_MILLION = 5.00;   // Claude Haiku 4.5: $5.00/1M output tokens
@@ -27,14 +27,25 @@ export interface GlobalState {
 	update(key: string, value: unknown): Thenable<void>;
 }
 
+// Lazy-load vscode module so CostTracker remains testable outside the extension host.
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+function getVscode(): typeof import('vscode') { return require('vscode'); }
+
 export class CostTracker {
 	private readonly _globalState: GlobalState;
 	private _previousRecords: UsageRecord[];
 	private _sessionRecords: UsageRecord[] = [];
+	private _persistFailureWarned = false;
 
 	constructor(globalState: GlobalState) {
 		this._globalState = globalState;
-		this._previousRecords = globalState.get<UsageRecord[]>(STORAGE_KEY, []);
+		const raw = globalState.get<unknown[]>(STORAGE_KEY, []);
+		this._previousRecords = (Array.isArray(raw) ? raw : []).filter(
+			(r): r is UsageRecord =>
+				typeof (r as any)?.costUsd === 'number'
+				&& typeof (r as any)?.timestamp === 'number'
+				&& typeof (r as any)?.model === 'string',
+		);
 	}
 
 	trackWhisperUsage(audioDurationSec: number): void {
@@ -93,7 +104,8 @@ export class CostTracker {
 
 	/**
 	 * Returns records from the current calendar month only.
-	 * Older records are retained in storage but excluded from the total view.
+	 * Older records are not pruned from storage but are excluded from the
+	 * returned array and from {@link getTotalCosts}.
 	 */
 	getTotalRecords(): UsageRecord[] {
 		return this._allRecords().filter(r => this._isCurrentMonth(r.timestamp));
@@ -103,7 +115,16 @@ export class CostTracker {
 		this._previousRecords = [];
 		this._sessionRecords = [];
 		Promise.resolve(this._globalState.update(STORAGE_KEY, []))
-			.catch((err: unknown) => { console.error('[Verba] Failed to reset cost records:', err); });
+			.catch((err: unknown) => {
+				console.error('[Verba] Failed to reset cost records:', err);
+				try {
+					getVscode().window.showWarningMessage('Verba: Failed to reset cost records. Cost data may be stale.');
+				} catch (vsErr: unknown) {
+					if (!(vsErr instanceof Error && vsErr.message.includes('Cannot find module'))) {
+						console.warn('[Verba] Failed to show reset-failure warning:', vsErr);
+					}
+				}
+			});
 	}
 
 	private _allRecords(): UsageRecord[] {
@@ -118,6 +139,18 @@ export class CostTracker {
 
 	private _persist(): void {
 		Promise.resolve(this._globalState.update(STORAGE_KEY, this._allRecords()))
-			.catch((err: unknown) => { console.error('[Verba] Failed to persist cost records:', err); });
+			.catch((err: unknown) => {
+				console.error('[Verba] Failed to persist cost records:', err);
+				if (!this._persistFailureWarned) {
+					this._persistFailureWarned = true;
+					try {
+						getVscode().window.showWarningMessage('Verba: Failed to save cost records. Usage data for this session may be lost.');
+					} catch (vsErr: unknown) {
+						if (!(vsErr instanceof Error && vsErr.message.includes('Cannot find module'))) {
+							console.warn('[Verba] Failed to show persist-failure warning:', vsErr);
+						}
+					}
+				}
+			});
 	}
 }

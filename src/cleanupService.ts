@@ -6,7 +6,8 @@ export interface Expansion {
 	expansion: string;
 }
 
-/** Sanitizes user-provided text before embedding it in LLM system prompts. */
+/** Strips newlines and normalizes quotes in user-provided text to prevent
+ *  formatting disruption when embedded in LLM system prompts. */
 function sanitize(s: string): string {
 	return s.replace(/[\r\n]+/g, ' ').replace(/"/g, "'");
 }
@@ -41,8 +42,9 @@ interface SecretStorage {
 
 /**
  * Cleans up a raw transcript using Claude API: removes filler words,
- * smooths sentences, corrects transcription errors, and preserves glossary terms.
- * Supports both synchronous (process) and streaming (processStreaming) modes.
+ * smooths sentences, corrects transcription errors, preserves glossary terms,
+ * expands text abbreviations, and handles selection context for transform operations.
+ * Supports both single-request (process) and streaming (processStreaming) modes.
  * API key is managed via a SecretStorage abstraction; in production, backed by VS Code's secret store.
  */
 export class CleanupService implements ProcessingStage {
@@ -81,15 +83,15 @@ export class CleanupService implements ProcessingStage {
 				messages: [{ role: 'user', content: userMessage }],
 			});
 		} catch (err: unknown) {
-			this.handleApiError(err, '[Verba] Claude API call failed:');
+			this.handleApiError(err, '[Verba] Claude API call failed:'); // always throws
 		}
 
-		this.lastUsage = response.usage
-			? { inputTokens: response.usage.input_tokens, outputTokens: response.usage.output_tokens }
+		this.lastUsage = response!.usage
+			? { inputTokens: response!.usage.input_tokens, outputTokens: response!.usage.output_tokens }
 			: undefined;
 
-		const text = response.content[0]?.type === 'text'
-			? response.content[0].text
+		const text = response!.content[0]?.type === 'text'
+			? response!.content[0].text
 			: '';
 
 		console.log(`[Verba] Claude response (${(text || '').length} chars): ${(text || '').substring(0, 200)}`);
@@ -153,7 +155,7 @@ export class CleanupService implements ProcessingStage {
 				? { inputTokens: finalMsg.usage.input_tokens, outputTokens: finalMsg.usage.output_tokens }
 				: undefined;
 		} catch (err: unknown) {
-			console.warn('[Verba] Failed to extract usage from streaming response:', err);
+			console.error('[Verba] Failed to extract usage from streaming response — Claude cost not tracked:', err);
 			this.lastUsage = undefined;
 		}
 
@@ -197,7 +199,7 @@ export class CleanupService implements ProcessingStage {
 				console.error('[Verba] Failed to remove invalid Anthropic API key from storage:', deleteErr);
 			});
 			throw new Error(
-				'Invalid Anthropic API key. It has been removed — you will be prompted again on next use.'
+				'Invalid Anthropic API key. Please update it via "Verba: Manage API Keys".'
 			);
 		}
 		if (err instanceof Error && (err as any).status === 429) {
@@ -218,6 +220,16 @@ export class CleanupService implements ProcessingStage {
 				);
 			}
 			console.warn('[Verba] Claude returned empty response; skipping cleanup and using raw transcript.');
+			try {
+				// Lazy-load vscode module so pure functions remain testable outside the extension host.
+				// eslint-disable-next-line @typescript-eslint/no-require-imports
+				const vs: typeof import('vscode') = require('vscode');
+				vs.window.showWarningMessage('Verba: Post-processing returned an empty response. Inserting raw transcript instead.');
+			} catch (err: unknown) {
+				if (!(err instanceof Error && err.message.includes('Cannot find module'))) {
+					console.warn('[Verba] Failed to show empty-response warning:', err);
+				}
+			}
 			return rawInput;
 		}
 		return text;

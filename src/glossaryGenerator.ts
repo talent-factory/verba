@@ -76,6 +76,31 @@ export class GlossaryGenerator {
 		return terms;
 	}
 
+	static parseSymbols(content: string, language: 'ts' | 'java' | 'py' | string): string[] {
+		const terms: string[] = [];
+		let regex: RegExp;
+		switch (language) {
+			case 'ts':
+				regex = /(?:export\s+)?(?:class|interface|enum|type|function)\s+(\w+)/g;
+				break;
+			case 'java':
+				regex = /(?:public|private|protected)?\s*(?:class|interface|enum)\s+(\w+)/g;
+				break;
+			case 'py':
+				regex = /^(?:class|def)\s+(\w+)/gm;
+				break;
+			default:
+				return [];
+		}
+		let match: RegExpExecArray | null;
+		while ((match = regex.exec(content)) !== null) {
+			const name = match[1];
+			if (language === 'py' && name.startsWith('_')) { continue; }
+			terms.push(name);
+		}
+		return terms;
+	}
+
 	async generate(workspaceRoot: string, existingTerms: string[]): Promise<string[]> {
 		return [];
 	}

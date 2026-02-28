@@ -113,3 +113,65 @@ dependencies = [
 		assert.deepStrictEqual(result, []);
 	});
 });
+
+suite('GlossaryGenerator.parseSymbols', () => {
+	test('extracts TypeScript classes, interfaces, enums, types, functions', () => {
+		const ts = `
+export class Pipeline {}
+interface StageContext {}
+enum Status { Active, Inactive }
+export type TemplateConfig = { name: string };
+function processAudio() {}
+export function filterTerms() {}
+`;
+		const result = GlossaryGenerator.parseSymbols(ts, 'ts');
+		assert.ok(result.includes('Pipeline'));
+		assert.ok(result.includes('StageContext'));
+		assert.ok(result.includes('Status'));
+		assert.ok(result.includes('TemplateConfig'));
+		assert.ok(result.includes('processAudio'));
+		assert.ok(result.includes('filterTerms'));
+	});
+
+	test('extracts Java classes, interfaces, enums', () => {
+		const java = `
+public class UserService {}
+private class InternalHelper {}
+protected interface Repository {}
+public enum Role { ADMIN, USER }
+class DefaultService {}
+`;
+		const result = GlossaryGenerator.parseSymbols(java, 'java');
+		assert.ok(result.includes('UserService'));
+		assert.ok(result.includes('InternalHelper'));
+		assert.ok(result.includes('Repository'));
+		assert.ok(result.includes('Role'));
+		assert.ok(result.includes('DefaultService'));
+	});
+
+	test('extracts Python top-level classes and functions, skips private and dunder', () => {
+		const py = `
+class GlossaryGenerator:
+    pass
+
+def generate_terms():
+    pass
+
+def _private_helper():
+    pass
+
+def __init__():
+    pass
+`;
+		const result = GlossaryGenerator.parseSymbols(py, 'py');
+		assert.ok(result.includes('GlossaryGenerator'));
+		assert.ok(result.includes('generate_terms'));
+		assert.ok(!result.includes('_private_helper'));
+		assert.ok(!result.includes('__init__'));
+	});
+
+	test('returns empty array for unknown language', () => {
+		const result = GlossaryGenerator.parseSymbols('some content', 'ruby');
+		assert.deepStrictEqual(result, []);
+	});
+});

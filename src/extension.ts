@@ -413,9 +413,6 @@ export function activate(context: vscode.ExtensionContext) {
 				preferTerminal = forTerminal;
 				const templates = loadTemplates();
 				const lastUsedName = context.workspaceState.get<string>('verba.lastTemplateName');
-				const lastUsedTemplate = lastUsedName
-					? templates.find(t => t.name === lastUsedName)
-					: undefined;
 
 				let template: Template | undefined;
 
@@ -429,15 +426,13 @@ export function activate(context: vscode.ExtensionContext) {
 						template = findTemplateForLanguage(templates, languageId);
 						if (template) {
 							console.log(`[Verba] Auto-selected template "${template.name}" for language "${languageId}"`);
-						} else {
-							console.log(`[Verba] No template configured for language "${languageId}", using fallback`);
 						}
 					}
 				}
 
 				// Fallback: last manually selected template
-				if (!template && lastUsedTemplate) {
-					template = lastUsedTemplate;
+				if (!template && lastUsedName) {
+					template = templates.find(t => t.name === lastUsedName);
 				}
 
 				// Final fallback: show picker

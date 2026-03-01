@@ -419,7 +419,9 @@ export function activate(context: vscode.ExtensionContext) {
 
 				let template: Template | undefined;
 
-				// Auto-select template based on active file type (if enabled)
+				// Auto-select template based on active file type (if enabled).
+				// Auto-selected templates are transient — they do not update lastTemplateName,
+				// so the user's manual template choice remains the stable fallback.
 				const autoSelect = vscode.workspace.getConfiguration('verba').get<boolean>('autoSelectTemplate', true);
 				if (autoSelect && !forTerminal) {
 					const languageId = vscode.window.activeTextEditor?.document.languageId;
@@ -427,6 +429,8 @@ export function activate(context: vscode.ExtensionContext) {
 						template = findTemplateForLanguage(templates, languageId);
 						if (template) {
 							console.log(`[Verba] Auto-selected template "${template.name}" for language "${languageId}"`);
+						} else {
+							console.log(`[Verba] No template configured for language "${languageId}", using fallback`);
 						}
 					}
 				}

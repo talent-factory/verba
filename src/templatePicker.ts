@@ -54,9 +54,10 @@ export async function selectTemplate(
 	return selected?.template;
 }
 
-/** Returns the first template whose `fileTypes` array includes the given language ID, or undefined. */
+/** Returns the first template whose `fileTypes` array includes the given language ID (case-insensitive), or undefined. */
 export function findTemplateForLanguage(templates: Template[], languageId: string): Template | undefined {
+	const id = languageId.toLowerCase();
 	return templates.find(t =>
-		Array.isArray(t.fileTypes) && t.fileTypes.includes(languageId),
+		Array.isArray(t.fileTypes) && t.fileTypes.some(ft => typeof ft === 'string' && ft.toLowerCase() === id),
 	);
 }

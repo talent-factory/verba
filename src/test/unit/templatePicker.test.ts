@@ -135,4 +135,20 @@ suite('findTemplateForLanguage', () => {
 		const result = findTemplateForLanguage(templates, 'java');
 		assert.strictEqual(result, undefined);
 	});
+
+	test('matching is case-insensitive', () => {
+		const templates: Template[] = [
+			{ name: 'JavaDoc', prompt: 'JavaDoc.', fileTypes: ['Java', 'Kotlin'] },
+		];
+		const result = findTemplateForLanguage(templates, 'java');
+		assert.strictEqual(result?.name, 'JavaDoc');
+	});
+
+	test('template with empty fileTypes array does not match any language', () => {
+		const templates: Template[] = [
+			{ name: 'Empty', prompt: 'Empty.', fileTypes: [] },
+		];
+		const result = findTemplateForLanguage(templates, 'java');
+		assert.strictEqual(result, undefined);
+	});
 });

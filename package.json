@@ -135,6 +135,13 @@
                 "type": "boolean",
                 "default": false,
                 "description": "If true, this template triggers semantic code search and includes relevant code snippets as context for Claude."
+              },
+              "fileTypes": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "VS Code language IDs that trigger automatic selection of this template (e.g. [\"java\", \"kotlin\"]). When verba.autoSelectTemplate is enabled and the active file matches, this template is used automatically."
               }
             }
           },
@@ -149,11 +156,13 @@
             },
             {
               "name": "JavaDoc",
-              "prompt": "Convert this transcript into a JavaDoc comment block (/** ... */). Structure with @param, @return, @throws tags as appropriate based on the described function. Keep the original language. Return only the JavaDoc block without explanation."
+              "prompt": "Convert this transcript into a JavaDoc comment block (/** ... */). Structure with @param, @return, @throws tags as appropriate based on the described function. Keep the original language. Return only the JavaDoc block without explanation.",
+              "fileTypes": ["java", "kotlin"]
             },
             {
               "name": "Markdown",
-              "prompt": "Convert this transcript into well-structured Markdown text. Use headings, bullet lists, numbered lists, and emphasis as appropriate. Keep the original language. Return only the Markdown without explanation."
+              "prompt": "Convert this transcript into well-structured Markdown text. Use headings, bullet lists, numbered lists, and emphasis as appropriate. Keep the original language. Return only the Markdown without explanation.",
+              "fileTypes": ["markdown"]
             },
             {
               "name": "E-Mail",
@@ -179,6 +188,11 @@
               "prompt": "The user has selected text in their editor (provided in <selection> tags) and dictated an instruction (in <transcript> tags). Apply the spoken instruction to transform the selected text. Examples: translate it, rewrite it, add comments, simplify it, fix it, etc. Return ONLY the transformed text that should replace the selection — no explanation, no preamble."
             }
           ]
+        },
+        "verba.autoSelectTemplate": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically select a matching template based on the active file type. Templates with a matching 'fileTypes' entry are preferred. If no match is found, the last manually selected template is used."
         },
         "verba.glossary": {
           "type": "array",

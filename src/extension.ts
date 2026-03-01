@@ -8,7 +8,7 @@ import { PipelineContext } from './pipeline';
 import { TranscriptionService, TranscriptionProvider } from './transcriptionService';
 import { CleanupService, Expansion } from './cleanupService';
 import { insertText } from './insertText';
-import { selectTemplate, Template } from './templatePicker';
+import { selectTemplate, findTemplateForLanguage, Template } from './templatePicker';
 import { ContextProvider } from './contextProvider';
 import { EmbeddingService } from './embeddingService';
 import { Indexer } from './indexer';
@@ -413,14 +413,30 @@ export function activate(context: vscode.ExtensionContext) {
 				preferTerminal = forTerminal;
 				const templates = loadTemplates();
 				const lastUsedName = context.workspaceState.get<string>('verba.lastTemplateName');
-				const lastUsedTemplate = lastUsedName
-					? templates.find(t => t.name === lastUsedName)
-					: undefined;
 
 				let template: Template | undefined;
-				if (lastUsedTemplate) {
-					template = lastUsedTemplate;
-				} else {
+
+				// Auto-select template based on active file type (if enabled).
+				// Auto-selected templates are transient — they do not update lastTemplateName,
+				// so the user's manual template choice remains the stable fallback.
+				const autoSelect = vscode.workspace.getConfiguration('verba').get<boolean>('autoSelectTemplate', true);
+				if (autoSelect && !forTerminal) {
+					const languageId = vscode.window.activeTextEditor?.document.languageId;
+					if (languageId) {
+						template = findTemplateForLanguage(templates, languageId);
+						if (template) {
+							console.log(`[Verba] Auto-selected template "${template.name}" for language "${languageId}"`);
+						}
+					}
+				}
+
+				// Fallback: last manually selected template
+				if (!template && lastUsedName) {
+					template = templates.find(t => t.name === lastUsedName);
+				}
+
+				// Final fallback: show picker
+				if (!template) {
 					template = await selectTemplate(
 						templates,
 						undefined,

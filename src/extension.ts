@@ -181,7 +181,7 @@ export function activate(context: vscode.ExtensionContext) {
 		}
 
 		// Merge: workspace expansions override global ones with the same abbreviation.
-		// Abbreviations are lowercased for consistent prompt matching (Whisper transcripts are typically lowercase).
+		// Abbreviations are lowercased for case-insensitive matching (the user may say "MFG", "mfg", or "Mfg").
 		const merged = new Map<string, Expansion>();
 		for (const e of [...globalExpansions, ...workspaceExpansions]) {
 			const key = e.abbreviation.toLowerCase();
@@ -336,13 +336,14 @@ export function activate(context: vscode.ExtensionContext) {
 					try {
 						contextSnippets = await contextProvider.search(rawTranscript, maxResults);
 						console.log(`[Verba] Retrieved ${contextSnippets.length} context snippets`);
-						if (embeddingService.lastUsage) {
-							costTracker.trackEmbeddingUsage(embeddingService.lastUsage.promptTokens);
-							embeddingService.lastUsage = undefined; // Consume to prevent double-counting
-						}
 					} catch (err: unknown) {
 						console.warn('[Verba] Context search failed, proceeding without context:', err);
 						vscode.window.showWarningMessage('Verba: Context search failed — proceeding without code context.');
+					} finally {
+						if (embeddingService.lastUsage) {
+							costTracker.trackEmbeddingUsage(embeddingService.lastUsage.promptTokens);
+							embeddingService.lastUsage = undefined;
+						}
 					}
 				}
 
@@ -614,7 +615,11 @@ export function activate(context: vscode.ExtensionContext) {
 				console.log(`[Verba] Re-indexed ${relativePath} (${count} chunks)`);
 			}
 		} catch (err: unknown) {
+			const message = err instanceof Error ? err.message : String(err);
 			console.warn(`[Verba] Incremental indexing failed for ${relativePath}:`, err);
+			if (err instanceof Error && ((err as any).status === 401 || (err as any).status === 429)) {
+				vscode.window.showWarningMessage(`Verba: Index update failed — ${message}`);
+			}
 		}
 	});
 

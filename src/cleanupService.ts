@@ -83,7 +83,7 @@ export class CleanupService implements ProcessingStage {
 				messages: [{ role: 'user', content: userMessage }],
 			});
 		} catch (err: unknown) {
-			this.handleApiError(err, '[Verba] Claude API call failed:'); // always throws
+			await this.handleApiError(err, '[Verba] Claude API call failed:'); // always throws
 		}
 
 		this.lastUsage = response!.usage
@@ -142,7 +142,7 @@ export class CleanupService implements ProcessingStage {
 				abortError.name = 'AbortError';
 				throw abortError;
 			}
-			this.handleApiError(err, '[Verba] Claude API streaming failed:');
+			await this.handleApiError(err, '[Verba] Claude API streaming failed:');
 		} finally {
 			if (signal) {
 				signal.removeEventListener('abort', abortHandler);
@@ -191,13 +191,15 @@ export class CleanupService implements ProcessingStage {
 		return { client, systemPrompt, userMessage };
 	}
 
-	private handleApiError(err: unknown, logPrefix: string): never {
+	private async handleApiError(err: unknown, logPrefix: string): Promise<never> {
 		console.error(logPrefix, err);
 		if (err instanceof Error && (err as any).status === 401) {
 			this._client = null;
-			Promise.resolve(this.secretStorage.delete(API_KEY_STORAGE_KEY)).catch((deleteErr: unknown) => {
+			try {
+				await this.secretStorage.delete(API_KEY_STORAGE_KEY);
+			} catch (deleteErr: unknown) {
 				console.error('[Verba] Failed to remove invalid Anthropic API key from storage:', deleteErr);
-			});
+			}
 			throw new Error(
 				'Invalid Anthropic API key. Please update it via "Verba: Manage API Keys".'
 			);

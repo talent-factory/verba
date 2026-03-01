@@ -25,7 +25,7 @@ export function getWavDurationSec(wavPath: string): number {
 		}
 		return dataSize / byteRate;
 	} catch (err: unknown) {
-		console.warn('[Verba] Failed to read WAV duration:', err);
+		console.error('[Verba] Failed to read WAV duration — Whisper cost will NOT be tracked for this recording:', err);
 		return 0;
 	} finally {
 		if (fd !== undefined) {

@@ -57,6 +57,11 @@ export class EmbeddingService {
 					'Invalid OpenAI API key. It has been removed — you will be prompted again on next use.'
 				);
 			}
+			if (err instanceof Error && (err as any).status === 429) {
+				throw new Error(
+					'OpenAI rate limit reached. Please wait a moment and try again.'
+				);
+			}
 			const detail = err instanceof Error ? err.message : String(err);
 			throw new Error(`Embedding failed: ${detail}`);
 		}

@@ -6,7 +6,8 @@
 const STORAGE_KEY = 'verba.costRecords';
 
 // Pricing as of 2026-02 — verify at https://openai.com/pricing and https://www.anthropic.com/pricing
-// These rates must match the models used in transcriptionService.ts, cleanupService.ts and embeddingService.ts.
+// These model names (whisper-1, claude-haiku-4-5-20251001, text-embedding-3-small) must match
+// the models used in transcriptionService.ts, cleanupService.ts, and embeddingService.ts.
 const WHISPER_COST_PER_MINUTE = 0.006;        // OpenAI Whisper: $0.006/min
 const CLAUDE_INPUT_COST_PER_MILLION = 1.00;    // Claude Haiku 4.5: $1.00/1M input tokens
 const CLAUDE_OUTPUT_COST_PER_MILLION = 5.00;   // Claude Haiku 4.5: $5.00/1M output tokens
@@ -44,7 +45,8 @@ export class CostTracker {
 			(r): r is UsageRecord =>
 				typeof (r as any)?.costUsd === 'number'
 				&& typeof (r as any)?.timestamp === 'number'
-				&& typeof (r as any)?.model === 'string',
+				&& typeof (r as any)?.model === 'string'
+				&& ((r as any)?.provider === 'openai' || (r as any)?.provider === 'anthropic'),
 		);
 	}
 
@@ -104,8 +106,9 @@ export class CostTracker {
 
 	/**
 	 * Returns records from the current calendar month only.
-	 * Older records are not pruned from storage but are excluded from the
-	 * returned array and from {@link getTotalCosts}.
+	 * Records older than 6 months are pruned from storage during persist.
+	 * Records between 1-6 months old are retained in storage but excluded
+	 * from the returned array and from {@link getTotalCosts}.
 	 */
 	getTotalRecords(): UsageRecord[] {
 		return this._allRecords().filter(r => this._isCurrentMonth(r.timestamp));
@@ -138,7 +141,13 @@ export class CostTracker {
 	}
 
 	private _persist(): void {
-		Promise.resolve(this._globalState.update(STORAGE_KEY, this._allRecords()))
+		// Prune records older than 6 months to prevent unbounded storage growth
+		const sixMonthsAgo = Date.now() - (6 * 30 * 24 * 60 * 60 * 1000);
+		const records = this._allRecords().filter(r => r.timestamp > sixMonthsAgo);
+		Promise.resolve(this._globalState.update(STORAGE_KEY, records))
+			.then(() => {
+				this._persistFailureWarned = false;
+			})
 			.catch((err: unknown) => {
 				console.error('[Verba] Failed to persist cost records:', err);
 				if (!this._persistFailureWarned) {

@@ -316,8 +316,9 @@ export class CostOverviewPanel {
 
 			this._panel.webview.html = buildCostOverviewHtml(models, this._scope, totalCost);
 		} catch (err: unknown) {
+			const detail = err instanceof Error ? err.message : 'Unknown error';
 			console.error('[Verba] Failed to update cost overview panel:', err);
-			this._panel.webview.html = '<p>Error loading cost data. Try reopening the panel.</p>';
+			this._panel.webview.html = `<p>Error loading cost data: ${escapeHtml(detail)}.</p><p>Try reopening the panel. If the issue persists, check "Developer: Toggle Developer Tools" for details.</p>`;
 		}
 	}
 

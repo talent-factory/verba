@@ -40,7 +40,7 @@ export async function selectTemplate(
 	}));
 
 	const lastUsedItem = lastUsedName
-		? items.find((item) => item.label === lastUsedName)
+		? items.find((item) => item.template.name === lastUsedName)
 		: undefined;
 
 	const options: { placeHolder: string; activeItems?: QuickPickItem[] } = {

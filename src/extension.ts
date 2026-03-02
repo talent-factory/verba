@@ -8,7 +8,7 @@ import { PipelineContext } from './pipeline';
 import { TranscriptionService, TranscriptionProvider } from './transcriptionService';
 import { CleanupService, Expansion } from './cleanupService';
 import { insertText, InsertionResult } from './insertText';
-import { recordDictation, clearLastDictation, getLastDictation, computeInsertedRanges } from './undoManager';
+import { recordDictation, clearLastDictation, computeInsertedRanges, executeUndo, UndoEditor, PreEditSelection } from './undoManager';
 import { selectTemplate, findTemplateForLanguage, Template } from './templatePicker';
 import { ContextProvider } from './contextProvider';
 import { EmbeddingService } from './embeddingService';
@@ -45,6 +45,19 @@ class VerbaCleanupService extends CleanupService {
 	}
 }
 
+
+function wrapVscodeEditor(editor: vscode.TextEditor): UndoEditor {
+	return {
+		getTextInRange: (startLine, startChar, endLine, endChar) =>
+			editor.document.getText(new vscode.Range(startLine, startChar, endLine, endChar)),
+		applyEdits: (edits) =>
+			editor.edit((editBuilder) => {
+				for (const e of edits) {
+					editBuilder.replace(new vscode.Range(e.startLine, e.startChar, e.endLine, e.endChar), e.newText);
+				}
+			}),
+	};
+}
 
 /** Activates the Verba extension: registers commands, wires up services, and initializes the status bar. */
 export function activate(context: vscode.ExtensionContext) {
@@ -368,11 +381,7 @@ export function activate(context: vscode.ExtensionContext) {
 
 				// Capture pre-edit state for undo tracking
 				const editorBeforeInsert = vscode.window.activeTextEditor;
-				let preEditSelections: Array<{
-					startLine: number; startCharacter: number;
-					endLine: number; endCharacter: number;
-					isEmpty: boolean; originalText: string;
-				}> | undefined;
+				let preEditSelections: PreEditSelection[] | undefined;
 				if (editorBeforeInsert && !preferTerminal) {
 					preEditSelections = editorBeforeInsert.selections
 						.map(sel => ({
@@ -413,6 +422,7 @@ export function activate(context: vscode.ExtensionContext) {
 						wasExecuted: executeCommand,
 					});
 				} else {
+					console.warn('[Verba] Editor insertion reported but pre-edit state unavailable — undo not recorded');
 					clearLastDictation();
 				}
 
@@ -1059,84 +1069,46 @@ export function activate(context: vscode.ExtensionContext) {
 	});
 
 	const undoCommand = vscode.commands.registerCommand('dictation.undo', async () => {
-		const record = getLastDictation();
-		if (!record) {
-			vscode.window.showInformationMessage('Verba: No dictation to undo.');
-			return;
-		}
+		const result = await executeUndo({
+			getActiveTerminal: () => vscode.window.activeTerminal ?? undefined,
+			findEditorForUri: (uri) => {
+				const ed = vscode.window.visibleTextEditors.find(e => e.document.uri.toString() === uri);
+				return ed ? wrapVscodeEditor(ed) : undefined;
+			},
+			openDocument: async (uri) => {
+				const doc = await vscode.workspace.openTextDocument(vscode.Uri.parse(uri));
+				return wrapVscodeEditor(await vscode.window.showTextDocument(doc));
+			},
+		});
 
-		try {
-			if (record.type === 'terminal') {
-				if (record.wasExecuted) {
-					vscode.window.showInformationMessage(
-						'Verba: Cannot undo — text was already executed in terminal.'
-					);
-					return;
-				}
-				const terminal = vscode.window.activeTerminal;
-				if (!terminal) {
-					vscode.window.showWarningMessage('Verba: No active terminal to undo in.');
-					return;
-				}
-				// Send backspace characters to delete the inserted text
-				terminal.sendText('\x7F'.repeat(record.insertedText.length), false);
-				clearLastDictation();
-				vscode.window.setStatusBarMessage('$(discard) Verba: dictation undone in terminal', 5000);
-				return;
-			}
-
-			// Editor undo: find an editor for the target document
-			let editor = vscode.window.visibleTextEditors.find(
-				e => e.document.uri.toString() === record.documentUri,
-			);
-			if (!editor) {
-				const doc = await vscode.workspace.openTextDocument(vscode.Uri.parse(record.documentUri!));
-				editor = await vscode.window.showTextDocument(doc);
-			}
-
-			// Verify the inserted text is still at the expected ranges
-			const doc = editor.document;
-			for (let i = 0; i < record.insertedRanges!.length; i++) {
-				const r = record.insertedRanges![i];
-				const range = new vscode.Range(r.startLine, r.startCharacter, r.endLine, r.endCharacter);
-				const currentText = doc.getText(range);
-				if (currentText !== record.insertedText) {
-					vscode.window.showWarningMessage(
-						'Verba: The document has changed since the last dictation. Undo may not be accurate.'
-					);
-					break;
-				}
-			}
-
-			// Apply the reverse edit: delete inserted ranges or restore original text.
-			// Process in reverse document order to keep offsets stable.
-			const sortedIndices = record.insertedRanges!
-				.map((_, i) => i)
-				.sort((a, b) => {
-					const ra = record.insertedRanges![a];
-					const rb = record.insertedRanges![b];
-					if (ra.startLine !== rb.startLine) { return rb.startLine - ra.startLine; }
-					return rb.startCharacter - ra.startCharacter;
-				});
-
-			const success = await editor.edit((editBuilder) => {
-				for (const i of sortedIndices) {
-					const r = record.insertedRanges![i];
-					const range = new vscode.Range(r.startLine, r.startCharacter, r.endLine, r.endCharacter);
-					editBuilder.replace(range, record.originalTexts![i]);
-				}
-			});
-
-			if (success) {
-				clearLastDictation();
+		switch (result.status) {
+			case 'no-record':
+				vscode.window.showInformationMessage('Verba: No dictation to undo.');
+				break;
+			case 'terminal-was-executed':
+				vscode.window.showInformationMessage('Verba: Cannot undo — text was already executed in terminal.');
+				break;
+			case 'terminal-no-terminal':
+				vscode.window.showWarningMessage('Verba: No active terminal to undo in. Undo record discarded.');
+				break;
+			case 'terminal-undone':
+				vscode.window.setStatusBarMessage('$(discard) Verba: sent undo to terminal (verify result)', 5000);
+				break;
+			case 'editor-document-unavailable':
+				vscode.window.showErrorMessage('Verba: Cannot undo — the original document could not be opened. It may have been moved, renamed, or deleted.');
+				break;
+			case 'editor-document-changed':
+				vscode.window.showWarningMessage('Verba: The document has changed since the last dictation. Undo aborted.');
+				break;
+			case 'editor-undone':
 				vscode.window.setStatusBarMessage('$(discard) Verba: dictation undone', 5000);
-			} else {
-				vscode.window.showErrorMessage('Verba: Failed to undo dictation — the document may have changed.');
-			}
-		} catch (err: unknown) {
-			console.error('[Verba] Undo dictation failed:', err);
-			const message = err instanceof Error ? err.message : String(err);
-			vscode.window.showErrorMessage(`Verba: Could not undo dictation: ${message}`);
+				break;
+			case 'editor-edit-failed':
+				vscode.window.showErrorMessage('Verba: Failed to undo dictation — the edit was rejected.');
+				break;
+			case 'error':
+				vscode.window.showErrorMessage(`Verba: Could not undo dictation: ${result.message}`);
+				break;
 		}
 	});
 

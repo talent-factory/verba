@@ -46,6 +46,7 @@ All phases are sub-issues of TF-243 (project overview). All core phases are comp
 - **TF-265: Multi-Cursor / Selection-aware Dictation** - Done. Selection replacement (dictated text replaces selected text), multi-cursor insertion (text at all cursor positions), selected text as Claude context (`<selection>` tags). "Transform Selection" default template. Selection captured at recording start.
 - **TF-262: Text Expansion / Abbreviations** - Done. User-defined abbreviations expanded during Claude post-processing. Global via `verba.expansions` setting, workspace-specific via `.verba-expansions.json`. `setExpansions()` on CleanupService. Workspace expansions override global for same abbreviation.
 - **TF-259: File-Type-Aware Templates** - Done. Automatic template selection based on active editor's `languageId`. Optional `fileTypes` array on Template interface (e.g. `["java", "kotlin"]`). `findTemplateForLanguage()` in `templatePicker.ts`. Setting `verba.autoSelectTemplate` (default: `true`). Fallback to last manually chosen template. Built-in defaults: JavaDoc → java/kotlin, Markdown → markdown.
+- **TF-264: Diktat-History mit Volltextsuche** - Done. Persistent dictation history with full-text search via globalState. Browse via Quick Pick (`dictation.showHistory`), search across raw transcript and cleaned text (`dictation.searchHistory`), re-insert or copy past dictations. Three actions: insert at cursor, copy to clipboard, show details. Configurable max entries (`verba.history.maxEntries`, default 500). Privacy: history stays local, never sent to APIs.
 
 ## Git Workflow
 
@@ -86,6 +87,9 @@ release-please cannot parse emoji-prefixed conventional commits (`✨ feat:` →
 - API key management: `dictation.manageApiKeys` — view (masked), update, or delete stored API keys
 - Cost overview: `dictation.showCostOverview` — WebView panel with per-model API usage costs (session + total)
 - Glossary generator: `dictation.generateGlossary` — scan workspace for project-specific terms, review via Quick Pick, merge into `.verba-glossary.json`
+- Dictation history: `dictation.showHistory` — Quick Pick with recent dictations, filter, re-insert or copy
+- Search history: `dictation.searchHistory` — full-text search across all dictations (raw transcript + cleaned text)
+- Clear history: `dictation.clearHistory` — delete all saved dictations (with confirmation)
 - API keys are stored exclusively via `vscode.SecretStorage` (never in plaintext)
 - TypeScript strict mode
 - Follow VS Code Extension best practices
@@ -110,3 +114,5 @@ Microphone --> ffmpeg (WAV) --> Whisper API     --> Claude API --> Editor/Termin
 | `costOverviewPanel.ts` | WebView panel for cost overview (card layout, session/total toggle) |
 | `wavDuration.ts` | WAV file duration calculation from PCM header (for Whisper cost tracking) |
 | `glossaryGenerator.ts` | Scans workspace for project-specific glossary terms (metadata, symbols, docs) |
+| `historyManager.ts` | Dictation history with globalState persistence and full-text search |
+| `historyCommands.ts` | Quick Pick UI for browsing, searching, and acting on history entries |

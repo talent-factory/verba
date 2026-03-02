@@ -17,6 +17,7 @@ import { GrepaiProvider } from './grepaiProvider';
 import { CostTracker } from './costTracker';
 import { CostOverviewPanel } from './costOverviewPanel';
 import { HistoryManager } from './historyManager';
+import { HistoryRecord } from './historyManager';
 import { buildHistoryItems, buildActionItems, HistoryQuickPickItem, ActionQuickPickItem } from './historyCommands';
 import { getWavDurationSec } from './wavDuration';
 import { GlossaryGenerator } from './glossaryGenerator';
@@ -430,15 +431,19 @@ export function activate(context: vscode.ExtensionContext) {
 					clearLastDictation();
 				}
 
-				historyManager.addRecord({
-					timestamp: Date.now(),
-					rawTranscript: rawTranscript,
-					cleanedText: transcript,
-					templateName: selectedTemplate?.name ?? 'Default Cleanup',
-					target: insertionResult.target,
-					languageId: vscode.window.activeTextEditor?.document.languageId,
-					workspaceFolder: vscode.workspace.workspaceFolders?.[0]?.name,
-				});
+				try {
+					historyManager.addRecord({
+						timestamp: Date.now(),
+						rawTranscript,
+						cleanedText: transcript,
+						templateName: selectedTemplate?.name ?? 'Default Cleanup',
+						target: insertionResult.target,
+						languageId: vscode.window.activeTextEditor?.document.languageId,
+						workspaceFolder: vscode.workspace.workspaceFolders?.[0]?.name,
+					});
+				} catch (historyErr: unknown) {
+					console.warn('[Verba] Failed to record dictation in history:', historyErr);
+				}
 
 				capturedSelectedText = undefined;
 				statusBar.setIdle(selectedTemplate?.name);
@@ -1128,45 +1133,54 @@ export function activate(context: vscode.ExtensionContext) {
 
 	// --- History Commands ---
 
-	async function handleHistoryAction(record: { cleanedText: string; rawTranscript: string; templateName: string; timestamp: number; target: string }): Promise<void> {
+	async function handleHistoryAction(record: HistoryRecord): Promise<void> {
 		const actionItems = buildActionItems();
 		const action = await vscode.window.showQuickPick<ActionQuickPickItem>(actionItems, {
 			placeHolder: 'Choose an action',
 		});
 		if (!action) { return; }
 
-		switch (action.id) {
-			case 'insert': {
-				const editor = vscode.window.activeTextEditor;
-				const terminal = vscode.window.activeTerminal;
-				if (editor) {
-					await editor.edit((editBuilder) => {
-						for (const sel of editor.selections) {
-							editBuilder.replace(sel, record.cleanedText);
+		try {
+			switch (action.id) {
+				case 'insert': {
+					const editor = vscode.window.activeTextEditor;
+					const terminal = vscode.window.activeTerminal;
+					if (editor) {
+						const success = await editor.edit((editBuilder) => {
+							for (const sel of editor.selections) {
+								editBuilder.replace(sel, record.cleanedText);
+							}
+						});
+						if (!success) {
+							vscode.window.showWarningMessage('Verba: Could not insert text. The editor may be read-only or was closed.');
 						}
-					});
-				} else if (terminal) {
-					terminal.sendText(record.cleanedText, false);
-				} else {
-					vscode.window.showWarningMessage('Verba: No active editor or terminal to insert into.');
+					} else if (terminal) {
+						terminal.sendText(record.cleanedText, false);
+					} else {
+						vscode.window.showWarningMessage('Verba: No active editor or terminal to insert into.');
+					}
+					break;
 				}
-				break;
+				case 'copy':
+					await vscode.env.clipboard.writeText(record.cleanedText);
+					vscode.window.showInformationMessage('Verba: Copied to clipboard.');
+					break;
+				case 'details':
+					vscode.window.showInformationMessage(
+						[
+							`Template: ${record.templateName}`,
+							`Time: ${new Date(record.timestamp).toLocaleString()}`,
+							`Target: ${record.target}`,
+							`Raw transcript: ${record.rawTranscript}`,
+						].join('\n'),
+						{ modal: true },
+					);
+					break;
 			}
-			case 'copy':
-				await vscode.env.clipboard.writeText(record.cleanedText);
-				vscode.window.showInformationMessage('Verba: Copied to clipboard.');
-				break;
-			case 'details':
-				vscode.window.showInformationMessage(
-					[
-						`Template: ${record.templateName}`,
-						`Time: ${new Date(record.timestamp).toLocaleString()}`,
-						`Target: ${record.target}`,
-						`Raw transcript: ${record.rawTranscript}`,
-					].join('\n'),
-					{ modal: true },
-				);
-				break;
+		} catch (err: unknown) {
+			console.error('[Verba] History action failed:', err);
+			const message = err instanceof Error ? err.message : String(err);
+			vscode.window.showErrorMessage(`Verba: History action failed: ${message}`);
 		}
 	}
 

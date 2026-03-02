@@ -92,7 +92,11 @@ export class HistoryManager {
 		this._globalState = globalState;
 		this._maxEntries = Math.max(1, maxEntries);
 		const raw = globalState.get<unknown[]>(STORAGE_KEY, []);
-		this._records = (Array.isArray(raw) ? raw : []).filter(
+		const candidates = Array.isArray(raw) ? raw : [];
+		if (!Array.isArray(raw)) {
+			console.warn(`[Verba] History storage returned non-array type (${typeof raw}), starting with empty history`);
+		}
+		this._records = candidates.filter(
 			(r): r is HistoryRecord =>
 				typeof (r as any)?.id === 'string'
 				&& typeof (r as any)?.timestamp === 'number'
@@ -101,6 +105,10 @@ export class HistoryManager {
 				&& typeof (r as any)?.templateName === 'string'
 				&& ((r as any)?.target === 'editor' || (r as any)?.target === 'terminal'),
 		);
+		const dropped = candidates.length - this._records.length;
+		if (dropped > 0) {
+			console.warn(`[Verba] Filtered out ${dropped} invalid history record(s) from storage`);
+		}
 	}
 
 	addRecord(input: Omit<HistoryRecord, 'id'>): void {

@@ -54,6 +54,26 @@ All phases are sub-issues of TF-243 (project overview). All core phases are comp
 - **Releases:** `develop` is merged into `main` when a release is due
 - **Feature Branches:** `feature/<issue-id>-<description>` (e.g. `feature/tf-250-terminal-dictation`)
 
+## Release Workflow (release-please)
+
+Releases are fully automated via [release-please](https://github.com/googleapis/release-please).
+
+### How it works
+
+1. **Feature branches → `develop`**: Use emoji-prefixed conventional commits via `/commit` (e.g. `✨ feat:`, `🐛 fix:`) — as usual
+2. **`develop` → `main`**: **Squash-merge** with a **clean conventional commit message** (no emoji prefix). Example: `feat: API Key Management, Cost Tracking, Security Fixes`
+3. release-please detects the merge and creates/updates a **Release PR** (bumps `package.json`, updates `CHANGELOG.md`)
+4. Merge the Release PR → tag, GitHub Release, and VSIX artifact are created automatically
+
+### Why squash-merge without emoji?
+
+release-please cannot parse emoji-prefixed conventional commits (`✨ feat:` → not recognized). The squash-merge onto `main` produces a single clean commit that release-please understands. All granular emoji commits remain in the `develop` history.
+
+### Configuration files
+
+- `release-please-config.json` — release type, changelog sections, bootstrap SHA
+- `.release-please-manifest.json` — current version tracker (updated automatically by release-please)
+
 ## Conventions
 
 - **CHANGELOG.md is always written in English** — all entries, descriptions, and examples must be in English

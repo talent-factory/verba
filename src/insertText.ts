@@ -18,6 +18,11 @@ interface Terminal {
 	sendText(text: string, addNewline?: boolean): void;
 }
 
+/** Indicates where the text was inserted. */
+export interface InsertionResult {
+	readonly target: 'editor' | 'terminal';
+}
+
 /**
  * Inserts transcribed text into the active editor or terminal.
  *
@@ -31,6 +36,7 @@ interface Terminal {
  *
  * @param executeCommand - When inserting into a terminal, also submit with Enter.
  * @param preferTerminal - If true, prefer terminal over editor (used for terminal-initiated dictation).
+ * @returns Which target received the text (`editor` or `terminal`).
  * @throws {Error} If no editor or terminal is available, or if the editor edit operation fails.
  */
 export async function insertText(
@@ -39,11 +45,11 @@ export async function insertText(
 	terminal: Terminal | undefined,
 	executeCommand: boolean,
 	preferTerminal: boolean = false,
-): Promise<void> {
+): Promise<InsertionResult> {
 	if (preferTerminal && terminal) {
 		console.log(`[Verba] Sending text to terminal (executeCommand=${executeCommand}, length=${text.length})`);
 		terminal.sendText(text, executeCommand);
-		return;
+		return { target: 'terminal' };
 	}
 
 	if (editor) {
@@ -85,13 +91,13 @@ export async function insertText(
 				'Failed to insert transcription — the editor may have been closed or the document changed.'
 			);
 		}
-		return;
+		return { target: 'editor' };
 	}
 
 	if (terminal) {
 		console.log(`[Verba] Sending text to terminal (executeCommand=${executeCommand}, length=${text.length})`);
 		terminal.sendText(text, executeCommand);
-		return;
+		return { target: 'terminal' };
 	}
 
 	throw new Error('No active editor or terminal. Open a file or terminal before dictating.');

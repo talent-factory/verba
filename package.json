@@ -79,6 +79,11 @@
         "command": "dictation.generateGlossary",
         "title": "Generate Glossary from Project",
         "category": "Verba"
+      },
+      {
+        "command": "dictation.undo",
+        "title": "Undo Last Dictation",
+        "category": "Verba"
       }
     ],
     "keybindings": [
@@ -98,6 +103,11 @@
         "command": "dictation.selectTemplate",
         "key": "ctrl+alt+t",
         "mac": "cmd+alt+t"
+      },
+      {
+        "command": "dictation.undo",
+        "key": "ctrl+alt+z",
+        "mac": "cmd+alt+z"
       }
     ],
     "configuration": {

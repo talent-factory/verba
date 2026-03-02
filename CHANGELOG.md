@@ -6,10 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [0.4.0](https://github.com/talent-factory/verba/compare/verba-v0.3.0...verba-v0.4.0) (2026-03-02)
 
-
 ### Added
 
-* API Key Management, Cost Tracking, Glossary Generator, Multi-Cursor Dictation, Text Expansion, File-Type-Aware Templates ([0393b2d](https://github.com/talent-factory/verba/commit/0393b2d797d703b2cee4c8b4282107748a007850))
+- **API Key Management:** `dictation.manageApiKeys` command to view (masked), update, or delete stored OpenAI and Anthropic API keys via the Command Palette.
+- **LLM Cost Tracking & Overview (TF-270):** `dictation.showCostOverview` command opens a WebView panel showing per-model API usage costs. Tracks Whisper transcription (by audio duration), Claude processing (by input/output tokens), and OpenAI Embeddings (by prompt tokens). Costs displayed per session and accumulated across all sessions, grouped by provider (OpenAI / Anthropic) in a card layout with VS Code theme support. Total costs reset automatically on the 1st of each month; older records are retained in storage.
+- **Adaptive Personal Dictionary (TF-263):** `dictation.generateGlossary` command scans workspace for project-specific terms (package names, class/interface/function names, README/CLAUDE.md headings and bold terms). Users review suggestions via Multi-Select Quick Pick before merging into `.verba-glossary.json`. Supports TypeScript, Java, and Python projects.
+- **Multi-Cursor / Selection-aware Dictation (TF-265):** Dictation now respects editor selections and multi-cursors. When text is selected, the dictated output replaces the selection; with multi-cursors, text is inserted at all cursor positions simultaneously. Selected text is passed as context to Claude post-processing via `<selection>` tags. New "Transform Selection" default template for voice-driven text transformation (e.g. translate, refactor, explain).
+- **Text Expansion / Abbreviations (TF-262):** User-defined abbreviations that are automatically expanded during post-processing. Configure via `verba.expansions` setting (e.g. `"mfg"` → `"Mit freundlichen Grüssen"`) or workspace-specific `.verba-expansions.json`. Global and workspace expansions are merged, with workspace entries taking precedence for the same abbreviation.
+- **File-Type-Aware Templates (TF-259):** Templates can now define a `fileTypes` array with VS Code language IDs (e.g. `["java", "kotlin"]`). When `verba.autoSelectTemplate` is enabled (default), the template matching the active editor's file type is automatically selected. Falls back to the last manually chosen template when no match is found. Built-in defaults: JavaDoc → java/kotlin, Markdown → markdown.
+
+### Changed
+
+- Release automation migrated from manual workflow to release-please for automatic versioning, changelog generation, and GitHub Releases
 
 ## [0.3.0] - 2026-02-26
 

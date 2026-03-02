@@ -143,8 +143,9 @@ suite('undoManager', () => {
 			assert.strictEqual(getLastDictation(), undefined);
 		});
 
-		test('stores and retrieves a dictation record', () => {
+		test('stores and retrieves an editor dictation record', () => {
 			const record = {
+				type: 'editor' as const,
 				documentUri: 'file:///test.ts',
 				insertedText: 'hello',
 				insertedRanges: [{ startLine: 0, startCharacter: 0, endLine: 0, endCharacter: 5 }],
@@ -154,18 +155,41 @@ suite('undoManager', () => {
 			assert.deepStrictEqual(getLastDictation(), record);
 		});
 
+		test('stores and retrieves a terminal dictation record', () => {
+			const record = {
+				type: 'terminal' as const,
+				insertedText: 'npm install',
+				wasExecuted: false,
+			};
+			recordDictation(record);
+			assert.deepStrictEqual(getLastDictation(), record);
+		});
+
+		test('stores terminal record with wasExecuted flag', () => {
+			const record = {
+				type: 'terminal' as const,
+				insertedText: 'ls -la',
+				wasExecuted: true,
+			};
+			recordDictation(record);
+			const retrieved = getLastDictation();
+			assert.strictEqual(retrieved?.type, 'terminal');
+			assert.strictEqual(retrieved?.wasExecuted, true);
+			assert.strictEqual(retrieved?.insertedText, 'ls -la');
+		});
+
 		test('new record replaces previous', () => {
 			recordDictation({
+				type: 'editor',
 				documentUri: 'file:///a.ts',
 				insertedText: 'first',
 				insertedRanges: [{ startLine: 0, startCharacter: 0, endLine: 0, endCharacter: 5 }],
 				originalTexts: [''],
 			});
 			const second = {
-				documentUri: 'file:///b.ts',
+				type: 'terminal' as const,
 				insertedText: 'second',
-				insertedRanges: [{ startLine: 1, startCharacter: 0, endLine: 1, endCharacter: 6 }],
-				originalTexts: [''],
+				wasExecuted: false,
 			};
 			recordDictation(second);
 			assert.deepStrictEqual(getLastDictation(), second);
@@ -173,10 +197,9 @@ suite('undoManager', () => {
 
 		test('clearLastDictation removes the record', () => {
 			recordDictation({
-				documentUri: 'file:///test.ts',
+				type: 'terminal',
 				insertedText: 'hello',
-				insertedRanges: [{ startLine: 0, startCharacter: 0, endLine: 0, endCharacter: 5 }],
-				originalTexts: [''],
+				wasExecuted: false,
 			});
 			clearLastDictation();
 			assert.strictEqual(getLastDictation(), undefined);

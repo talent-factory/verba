@@ -396,14 +396,21 @@ export function activate(context: vscode.ExtensionContext) {
 					preferTerminal,
 				);
 
-				// Record dictation for undo (editor inserts only)
+				// Record dictation for undo
 				if (insertionResult.target === 'editor' && editorBeforeInsert && preEditSelections) {
 					const insertedRanges = computeInsertedRanges(preEditSelections, transcript);
 					recordDictation({
+						type: 'editor',
 						documentUri: editorBeforeInsert.document.uri.toString(),
 						insertedText: transcript,
 						insertedRanges,
 						originalTexts: preEditSelections.map(s => s.originalText),
+					});
+				} else if (insertionResult.target === 'terminal') {
+					recordDictation({
+						type: 'terminal',
+						insertedText: transcript,
+						wasExecuted: executeCommand,
 					});
 				} else {
 					clearLastDictation();
@@ -1059,19 +1066,38 @@ export function activate(context: vscode.ExtensionContext) {
 		}
 
 		try {
-			// Find an editor for the target document
+			if (record.type === 'terminal') {
+				if (record.wasExecuted) {
+					vscode.window.showInformationMessage(
+						'Verba: Cannot undo — text was already executed in terminal.'
+					);
+					return;
+				}
+				const terminal = vscode.window.activeTerminal;
+				if (!terminal) {
+					vscode.window.showWarningMessage('Verba: No active terminal to undo in.');
+					return;
+				}
+				// Send backspace characters to delete the inserted text
+				terminal.sendText('\x7F'.repeat(record.insertedText.length), false);
+				clearLastDictation();
+				vscode.window.setStatusBarMessage('$(discard) Verba: dictation undone in terminal', 5000);
+				return;
+			}
+
+			// Editor undo: find an editor for the target document
 			let editor = vscode.window.visibleTextEditors.find(
 				e => e.document.uri.toString() === record.documentUri,
 			);
 			if (!editor) {
-				const doc = await vscode.workspace.openTextDocument(vscode.Uri.parse(record.documentUri));
+				const doc = await vscode.workspace.openTextDocument(vscode.Uri.parse(record.documentUri!));
 				editor = await vscode.window.showTextDocument(doc);
 			}
 
 			// Verify the inserted text is still at the expected ranges
 			const doc = editor.document;
-			for (let i = 0; i < record.insertedRanges.length; i++) {
-				const r = record.insertedRanges[i];
+			for (let i = 0; i < record.insertedRanges!.length; i++) {
+				const r = record.insertedRanges![i];
 				const range = new vscode.Range(r.startLine, r.startCharacter, r.endLine, r.endCharacter);
 				const currentText = doc.getText(range);
 				if (currentText !== record.insertedText) {
@@ -1084,20 +1110,20 @@ export function activate(context: vscode.ExtensionContext) {
 
 			// Apply the reverse edit: delete inserted ranges or restore original text.
 			// Process in reverse document order to keep offsets stable.
-			const sortedIndices = record.insertedRanges
+			const sortedIndices = record.insertedRanges!
 				.map((_, i) => i)
 				.sort((a, b) => {
-					const ra = record.insertedRanges[a];
-					const rb = record.insertedRanges[b];
+					const ra = record.insertedRanges![a];
+					const rb = record.insertedRanges![b];
 					if (ra.startLine !== rb.startLine) { return rb.startLine - ra.startLine; }
 					return rb.startCharacter - ra.startCharacter;
 				});
 
 			const success = await editor.edit((editBuilder) => {
 				for (const i of sortedIndices) {
-					const r = record.insertedRanges[i];
+					const r = record.insertedRanges![i];
 					const range = new vscode.Range(r.startLine, r.startCharacter, r.endLine, r.endCharacter);
-					editBuilder.replace(range, record.originalTexts[i]);
+					editBuilder.replace(range, record.originalTexts![i]);
 				}
 			});
 

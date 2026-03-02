@@ -1,7 +1,8 @@
 /**
  * Tracks the last dictation insertion and provides undo functionality.
  *
- * Only editor insertions can be undone; terminal sends are irreversible.
+ * Editor insertions are undone via reverse edits; terminal insertions
+ * (when not yet executed) are undone via backspace characters.
  * Each new dictation replaces the previous undo record (single-level undo).
  */
 
@@ -13,12 +14,16 @@ interface InsertedRange {
 }
 
 export interface DictationRecord {
-	readonly documentUri: string;
+	readonly type: 'editor' | 'terminal';
 	readonly insertedText: string;
-	/** Post-edit ranges where the inserted text now lives in the document. */
-	readonly insertedRanges: InsertedRange[];
-	/** Original text at each range before insertion (empty string for pure cursor inserts). */
-	readonly originalTexts: string[];
+	/** Document URI (editor records only). */
+	readonly documentUri?: string;
+	/** Post-edit ranges where the inserted text now lives in the document (editor records only). */
+	readonly insertedRanges?: InsertedRange[];
+	/** Original text at each range before insertion (editor records only). */
+	readonly originalTexts?: string[];
+	/** Whether the text was executed (sent with Enter) in the terminal. */
+	readonly wasExecuted?: boolean;
 }
 
 let lastDictation: DictationRecord | undefined;

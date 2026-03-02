@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.4.0](https://github.com/talent-factory/verba/compare/verba-v0.3.0...verba-v0.4.0) (2026-03-02)
+
+
+### Added
+
+* API Key Management, Cost Tracking, Glossary Generator, Multi-Cursor Dictation, Text Expansion, File-Type-Aware Templates ([0393b2d](https://github.com/talent-factory/verba/commit/0393b2d797d703b2cee4c8b4282107748a007850))
+
 ## [0.3.0] - 2026-02-26
 
 ### Added

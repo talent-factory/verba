@@ -82,6 +82,13 @@ suite('isTrustedDownloadHost', () => {
 		);
 	});
 
+	test('rejects URL with trusted host as userinfo (@ bypass attack)', () => {
+		assert.strictEqual(
+			isTrustedDownloadHost('https://huggingface.co@evil.com/path'),
+			false,
+		);
+	});
+
 	test('TRUSTED_DOWNLOAD_HOSTS includes at least huggingface.co', () => {
 		assert.ok(TRUSTED_DOWNLOAD_HOSTS.includes('huggingface.co'));
 	});
@@ -152,6 +159,10 @@ suite('isValidExpansion', () => {
 		assert.ok(!isValidExpansion({ abbreviation: 'mfg', expansion: '' }));
 	});
 
+	test('rejects whitespace-only expansion', () => {
+		assert.ok(!isValidExpansion({ abbreviation: 'mfg', expansion: '   ' }));
+	});
+
 	test('rejects null', () => {
 		assert.ok(!isValidExpansion(null));
 	});
@@ -219,21 +230,25 @@ suite('mergeGlossary', () => {
 suite('parseGlossaryFile', () => {
 	test('parses valid array of strings', () => {
 		const result = parseGlossaryFile('["TypeScript", "React"]');
-		assert.deepStrictEqual(result, ['TypeScript', 'React']);
+		assert.deepStrictEqual(result.terms, ['TypeScript', 'React']);
+		assert.strictEqual(result.warning, undefined);
 	});
 
 	test('filters out non-string entries', () => {
 		const result = parseGlossaryFile('[42, "valid", null, true, "also-valid"]');
-		assert.deepStrictEqual(result, ['valid', 'also-valid']);
+		assert.deepStrictEqual(result.terms, ['valid', 'also-valid']);
 	});
 
 	test('filters out empty strings', () => {
 		const result = parseGlossaryFile('["valid", "", "  "]');
-		assert.deepStrictEqual(result, ['valid']);
+		assert.deepStrictEqual(result.terms, ['valid']);
 	});
 
-	test('returns empty array for non-array JSON', () => {
-		assert.deepStrictEqual(parseGlossaryFile('{"not": "array"}'), []);
+	test('returns empty with warning for non-array JSON', () => {
+		const result = parseGlossaryFile('{"not": "array"}');
+		assert.deepStrictEqual(result.terms, []);
+		assert.ok(result.warning, 'should include a warning');
+		assert.ok(result.warning!.includes('array'), 'warning should mention array');
 	});
 
 	test('throws on invalid JSON', () => {
@@ -263,10 +278,12 @@ suite('parseExpansionsFile', () => {
 		assert.strictEqual(skipped, 2);
 	});
 
-	test('returns empty for non-array JSON', () => {
-		const { valid, skipped } = parseExpansionsFile('{"abbreviation": "x"}');
-		assert.strictEqual(valid.length, 0);
-		assert.strictEqual(skipped, 0);
+	test('returns empty with warning for non-array JSON', () => {
+		const result = parseExpansionsFile('{"abbreviation": "x"}');
+		assert.strictEqual(result.valid.length, 0);
+		assert.strictEqual(result.skipped, 0);
+		assert.ok(result.warning, 'should include a warning for non-array input');
+		assert.ok(result.warning!.includes('array'), 'warning should mention array');
 	});
 
 	test('throws on invalid JSON', () => {

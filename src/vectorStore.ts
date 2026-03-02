@@ -86,7 +86,14 @@ export class VectorStore {
 			return;
 		}
 		const raw = fs.readFileSync(filePath, 'utf-8');
-		const data: unknown = JSON.parse(raw);
+
+		let data: unknown;
+		try {
+			data = JSON.parse(raw);
+		} catch (err) {
+			console.warn('[Verba] index.json contains invalid JSON, starting with empty index:', err);
+			return;
+		}
 
 		if (typeof data !== 'object' || data === null || !Array.isArray((data as any).chunks)) {
 			console.warn('[Verba] index.json has unexpected format, starting with empty index');
@@ -97,6 +104,7 @@ export class VectorStore {
 			typeof c === 'object' && c !== null
 			&& typeof (c as any).file === 'string'
 			&& typeof (c as any).range === 'string'
+			&& typeof (c as any).hash === 'string'
 			&& typeof (c as any).content === 'string'
 			&& Array.isArray((c as any).vector),
 		);

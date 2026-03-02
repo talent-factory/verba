@@ -14,7 +14,8 @@ export function isTrustedDownloadHost(urlString: string): boolean {
 	try {
 		const { hostname } = new URL(urlString);
 		return TRUSTED_DOWNLOAD_HOSTS.some(h => hostname === h || hostname.endsWith('.' + h));
-	} catch {
+	} catch (err) {
+		console.warn('[Verba] Could not parse URL for trust check:', urlString, err);
 		return false;
 	}
 }
@@ -59,24 +60,24 @@ export function mergeGlossary(workspaceTerms: string[], globalTerms: string[]): 
 
 /**
  * Parses and validates a JSON glossary file content.
- * Returns an array of valid non-empty strings, or throws on parse errors.
+ * Returns valid terms and an optional warning if the format was unexpected.
  */
-export function parseGlossaryFile(content: string): string[] {
+export function parseGlossaryFile(content: string): { terms: string[]; warning?: string } {
 	const parsed = JSON.parse(content);
 	if (!Array.isArray(parsed)) {
-		return [];
+		return { terms: [], warning: 'Glossary file must be a JSON array of strings' };
 	}
-	return parsed.filter((t): t is string => typeof t === 'string' && t.trim() !== '');
+	return { terms: parsed.filter((t): t is string => typeof t === 'string' && t.trim() !== '') };
 }
 
 /**
  * Parses and validates a JSON expansions file content.
- * Returns an array of valid Expansion objects, or empty array if not an array.
+ * Returns valid expansions, skip count, and an optional warning if the format was unexpected.
  */
-export function parseExpansionsFile(content: string): { valid: Expansion[]; skipped: number } {
+export function parseExpansionsFile(content: string): { valid: Expansion[]; skipped: number; warning?: string } {
 	const parsed = JSON.parse(content);
 	if (!Array.isArray(parsed)) {
-		return { valid: [], skipped: 0 };
+		return { valid: [], skipped: 0, warning: 'Expansions file must be a JSON array of {abbreviation, expansion} objects' };
 	}
 	const valid = parsed.filter(isValidExpansion);
 	return { valid, skipped: parsed.length - valid.length };

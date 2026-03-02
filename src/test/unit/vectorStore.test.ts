@@ -105,14 +105,12 @@ suite('VectorStore', () => {
 		assert.strictEqual(results[0].content, 'nonzero', 'nonzero vector should rank higher');
 	});
 
-	test('load throws on corrupted JSON', () => {
+	test('load gracefully handles corrupted JSON', () => {
 		fs.mkdirSync(tmpDir, { recursive: true });
 		fs.writeFileSync(path.join(tmpDir, 'index.json'), 'not valid json!!!', 'utf-8');
 
-		assert.throws(
-			() => store.load(),
-			/Unexpected token/
-		);
+		assert.doesNotThrow(() => store.load());
+		assert.strictEqual(store.size, 0, 'should start with empty index on corrupt JSON');
 	});
 
 	suite('load() schema validation', () => {
@@ -201,6 +199,48 @@ suite('VectorStore', () => {
 
 			store.load();
 			assert.strictEqual(store.size, 1);
+		});
+
+		test('filters out chunks with missing hash field', () => {
+			fs.mkdirSync(tmpDir, { recursive: true });
+			const data = {
+				version: 1,
+				chunks: [
+					{ file: 'a.ts', range: '1-10', content: 'no hash', vector: [1, 0] },
+					{ file: 'b.ts', range: '1-10', hash: 'valid', content: 'ok', vector: [0, 1] },
+				],
+			};
+			fs.writeFileSync(path.join(tmpDir, 'index.json'), JSON.stringify(data), 'utf-8');
+
+			store.load();
+			assert.strictEqual(store.size, 1, 'should filter out chunk without hash');
+		});
+
+		test('filters out chunks with non-string hash', () => {
+			fs.mkdirSync(tmpDir, { recursive: true });
+			const data = {
+				version: 1,
+				chunks: [
+					{ file: 'a.ts', range: '1-10', hash: 42, content: 'bad hash', vector: [1, 0] },
+					{ file: 'b.ts', range: '1-10', hash: 'ok', content: 'valid', vector: [0, 1] },
+				],
+			};
+			fs.writeFileSync(path.join(tmpDir, 'index.json'), JSON.stringify(data), 'utf-8');
+
+			store.load();
+			assert.strictEqual(store.size, 1);
+		});
+
+		test('accepts index.json with empty chunks array', () => {
+			fs.mkdirSync(tmpDir, { recursive: true });
+			fs.writeFileSync(
+				path.join(tmpDir, 'index.json'),
+				JSON.stringify({ version: 1, chunks: [] }),
+				'utf-8',
+			);
+
+			store.load();
+			assert.strictEqual(store.size, 0);
 		});
 
 		test('accepts valid index.json with all fields present', () => {

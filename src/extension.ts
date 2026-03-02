@@ -18,9 +18,8 @@ import { CostOverviewPanel } from './costOverviewPanel';
 import { getWavDurationSec } from './wavDuration';
 import { GlossaryGenerator } from './glossaryGenerator';
 import {
-	WHISPER_MODELS, WHISPER_MODEL_BASE_URL, TRUSTED_DOWNLOAD_HOSTS,
-	isTrustedDownloadHost, cleanupFile, isValidExpansion, mergeExpansions,
-	mergeGlossary, parseGlossaryFile, parseExpansionsFile,
+	WHISPER_MODELS, WHISPER_MODEL_BASE_URL,
+	isTrustedDownloadHost, cleanupFile, isValidExpansion,
 } from './extensionHelpers';
 
 class VerbaTranscriptionService extends TranscriptionService {

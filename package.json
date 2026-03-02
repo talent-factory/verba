@@ -84,6 +84,21 @@
         "command": "dictation.undo",
         "title": "Undo Last Dictation",
         "category": "Verba"
+      },
+      {
+        "command": "dictation.showHistory",
+        "title": "Dictation History",
+        "category": "Verba"
+      },
+      {
+        "command": "dictation.searchHistory",
+        "title": "Search Dictation History",
+        "category": "Verba"
+      },
+      {
+        "command": "dictation.clearHistory",
+        "title": "Clear Dictation History",
+        "category": "Verba"
       }
     ],
     "keybindings": [
@@ -276,6 +291,13 @@
             "openai"
           ],
           "description": "Context search provider: 'auto' uses grepai if installed, otherwise OpenAI Embeddings. 'grepai' or 'openai' forces a specific provider."
+        },
+        "verba.history.maxEntries": {
+          "type": "number",
+          "default": 500,
+          "minimum": 10,
+          "maximum": 5000,
+          "description": "Maximum number of dictation history entries to keep. Oldest entries are removed when the limit is reached."
         }
       }
     }

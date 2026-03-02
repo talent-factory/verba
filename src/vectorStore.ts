@@ -86,8 +86,25 @@ export class VectorStore {
 			return;
 		}
 		const raw = fs.readFileSync(filePath, 'utf-8');
-		const data: IndexFile = JSON.parse(raw);
-		this.chunks = data.chunks;
+		const data: unknown = JSON.parse(raw);
+
+		if (typeof data !== 'object' || data === null || !Array.isArray((data as any).chunks)) {
+			console.warn('[Verba] index.json has unexpected format, starting with empty index');
+			return;
+		}
+
+		this.chunks = ((data as any).chunks as unknown[]).filter((c): c is IndexChunk =>
+			typeof c === 'object' && c !== null
+			&& typeof (c as any).file === 'string'
+			&& typeof (c as any).range === 'string'
+			&& typeof (c as any).content === 'string'
+			&& Array.isArray((c as any).vector),
+		);
+
+		const skipped = (data as any).chunks.length - this.chunks.length;
+		if (skipped > 0) {
+			console.warn(`[Verba] Skipped ${skipped} malformed chunks in index.json`);
+		}
 	}
 }
 

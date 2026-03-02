@@ -17,16 +17,11 @@ import { CostTracker } from './costTracker';
 import { CostOverviewPanel } from './costOverviewPanel';
 import { getWavDurationSec } from './wavDuration';
 import { GlossaryGenerator } from './glossaryGenerator';
-
-const WHISPER_MODELS: { name: string; file: string; size: string }[] = [
-	{ name: 'tiny', file: 'ggml-tiny.bin', size: '~75 MB' },
-	{ name: 'base', file: 'ggml-base.bin', size: '~148 MB' },
-	{ name: 'small', file: 'ggml-small.bin', size: '~488 MB' },
-	{ name: 'medium', file: 'ggml-medium.bin', size: '~1.5 GB' },
-	{ name: 'large-v3-turbo', file: 'ggml-large-v3-turbo.bin', size: '~1.6 GB' },
-];
-
-const WHISPER_MODEL_BASE_URL = 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main';
+import {
+	WHISPER_MODELS, WHISPER_MODEL_BASE_URL, TRUSTED_DOWNLOAD_HOSTS,
+	isTrustedDownloadHost, cleanupFile, isValidExpansion, mergeExpansions,
+	mergeGlossary, parseGlossaryFile, parseExpansionsFile,
+} from './extensionHelpers';
 
 class VerbaTranscriptionService extends TranscriptionService {
 	protected async promptForApiKey(): Promise<string | undefined> {
@@ -50,15 +45,6 @@ class VerbaCleanupService extends CleanupService {
 	}
 }
 
-function cleanupFile(filePath: string): void {
-	try {
-		fs.unlinkSync(filePath);
-	} catch (err: unknown) {
-		if (err instanceof Error && (err as NodeJS.ErrnoException).code !== 'ENOENT') {
-			console.error('[Verba] Failed to clean up temp file:', err);
-		}
-	}
-}
 
 /** Activates the Verba extension: registers commands, wires up services, and initializes the status bar. */
 export function activate(context: vscode.ExtensionContext) {
@@ -123,11 +109,6 @@ export function activate(context: vscode.ExtensionContext) {
 		}
 	}
 	applyGlossary();
-
-	function isValidExpansion(e: unknown): e is Expansion {
-		return typeof (e as any)?.abbreviation === 'string' && (e as any).abbreviation.trim() !== ''
-			&& typeof (e as any)?.expansion === 'string' && (e as any).expansion.trim() !== '';
-	}
 
 	function loadExpansions(): Expansion[] {
 		const rawGlobal = vscode.workspace
@@ -778,6 +759,11 @@ export function activate(context: vscode.ExtensionContext) {
 
 						if (!requestUrl.startsWith('https://')) {
 							safeReject(new Error('Download failed: only HTTPS URLs are allowed'));
+							return;
+						}
+
+						if (!isTrustedDownloadHost(requestUrl)) {
+							safeReject(new Error(`Download failed: redirect to untrusted host in URL "${requestUrl}"`));
 							return;
 						}
 

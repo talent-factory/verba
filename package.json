@@ -297,7 +297,7 @@
           "default": 500,
           "minimum": 10,
           "maximum": 5000,
-          "description": "Maximum number of dictation history entries to keep. Oldest entries are removed when the limit is reached."
+          "description": "Maximum number of dictation history entries to keep. Oldest entries are removed when the limit is reached. Takes effect after restarting VS Code."
         }
       }
     }

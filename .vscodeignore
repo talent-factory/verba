@@ -19,3 +19,5 @@ Makefile
 .claude/**
 images/.gitkeep
 **/*.mp4
+release-please-config.json
+.release-please-manifest.json

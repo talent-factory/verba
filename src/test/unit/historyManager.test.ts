@@ -1,7 +1,7 @@
 import * as assert from 'assert';
 import * as sinon from 'sinon';
 
-import { HistoryManager, HistoryRecord, GlobalState } from '../../historyManager';
+import { HistoryManager, HistoryRecord, GlobalState, formatRelativeTime } from '../../historyManager';
 
 function createFakeGlobalState(initialRecords: HistoryRecord[] = []): GlobalState & { get: sinon.SinonStub; update: sinon.SinonStub } {
 	return {
@@ -341,5 +341,87 @@ suite('HistoryManager', () => {
 			assert.notStrictEqual(records1, records2);
 			assert.deepStrictEqual(records1, records2);
 		});
+	});
+});
+
+suite('formatRelativeTime', () => {
+	let clock: sinon.SinonFakeTimers;
+
+	teardown(() => {
+		if (clock) {
+			clock.restore();
+		}
+	});
+
+	test('returns "just now" for timestamps less than 60 seconds ago', () => {
+		const now = Date.now();
+		clock = sinon.useFakeTimers(now);
+		assert.strictEqual(formatRelativeTime(now - 30_000), 'just now');
+		assert.strictEqual(formatRelativeTime(now - 1_000), 'just now');
+		assert.strictEqual(formatRelativeTime(now), 'just now');
+	});
+
+	test('returns "just now" at exactly 59 seconds ago', () => {
+		const now = Date.now();
+		clock = sinon.useFakeTimers(now);
+		assert.strictEqual(formatRelativeTime(now - 59_000), 'just now');
+	});
+
+	test('returns "N min ago" for timestamps less than 60 minutes ago', () => {
+		const now = Date.now();
+		clock = sinon.useFakeTimers(now);
+		assert.strictEqual(formatRelativeTime(now - 60_000), '1 min ago');
+		assert.strictEqual(formatRelativeTime(now - 5 * 60_000), '5 min ago');
+		assert.strictEqual(formatRelativeTime(now - 59 * 60_000), '59 min ago');
+	});
+
+	test('returns "HH:MM" for earlier today', () => {
+		// Fix "now" to 15:30 on a specific day
+		const today = new Date(2025, 5, 15, 15, 30, 0); // June 15 2025, 15:30:00
+		clock = sinon.useFakeTimers(today.getTime());
+
+		// A timestamp from 08:05 today (more than 60 min ago)
+		const morning = new Date(2025, 5, 15, 8, 5, 0).getTime();
+		assert.strictEqual(formatRelativeTime(morning), '08:05');
+	});
+
+	test('returns zero-padded "HH:MM" for single-digit hours/minutes', () => {
+		const today = new Date(2025, 5, 15, 15, 30, 0);
+		clock = sinon.useFakeTimers(today.getTime());
+
+		const earlyMorning = new Date(2025, 5, 15, 1, 3, 0).getTime();
+		assert.strictEqual(formatRelativeTime(earlyMorning), '01:03');
+	});
+
+	test('returns "Yesterday HH:MM" for timestamps from yesterday', () => {
+		const today = new Date(2025, 5, 15, 10, 0, 0); // June 15 2025, 10:00
+		clock = sinon.useFakeTimers(today.getTime());
+
+		const yesterday = new Date(2025, 5, 14, 18, 45, 0).getTime();
+		assert.strictEqual(formatRelativeTime(yesterday), 'Yesterday 18:45');
+	});
+
+	test('returns "Yesterday HH:MM" for yesterday early morning', () => {
+		const today = new Date(2025, 5, 15, 10, 0, 0); // June 15 2025, 10:00
+		clock = sinon.useFakeTimers(today.getTime());
+
+		const yesterdayEarly = new Date(2025, 5, 14, 0, 15, 0).getTime();
+		assert.strictEqual(formatRelativeTime(yesterdayEarly), 'Yesterday 00:15');
+	});
+
+	test('returns "YYYY-MM-DD" for timestamps older than yesterday', () => {
+		const today = new Date(2025, 5, 15, 10, 0, 0);
+		clock = sinon.useFakeTimers(today.getTime());
+
+		const twoDaysAgo = new Date(2025, 5, 13, 14, 30, 0).getTime();
+		assert.strictEqual(formatRelativeTime(twoDaysAgo), '2025-06-13');
+	});
+
+	test('returns "YYYY-MM-DD" with zero-padded month and day', () => {
+		const today = new Date(2025, 5, 15, 10, 0, 0);
+		clock = sinon.useFakeTimers(today.getTime());
+
+		const oldDate = new Date(2025, 0, 5, 12, 0, 0).getTime(); // Jan 5
+		assert.strictEqual(formatRelativeTime(oldDate), '2025-01-05');
 	});
 });

@@ -6,6 +6,60 @@
 const STORAGE_KEY = 'verba.history';
 const DEFAULT_MAX_ENTRIES = 500;
 
+/**
+ * Formats a timestamp into a human-readable relative time string.
+ * - <60s ago → "just now"
+ * - <60min ago → "N min ago"
+ * - Today → "HH:MM"
+ * - Yesterday → "Yesterday HH:MM"
+ * - Older → "YYYY-MM-DD"
+ */
+export function formatRelativeTime(timestamp: number): string {
+	const now = Date.now();
+	const diffMs = now - timestamp;
+	const diffSec = Math.floor(diffMs / 1000);
+	const diffMin = Math.floor(diffSec / 60);
+
+	if (diffSec < 60) {
+		return 'just now';
+	}
+
+	if (diffMin < 60) {
+		return `${diffMin} min ago`;
+	}
+
+	const date = new Date(timestamp);
+	const today = new Date(now);
+	const hh = String(date.getHours()).padStart(2, '0');
+	const mm = String(date.getMinutes()).padStart(2, '0');
+
+	// Check if same calendar day
+	if (
+		date.getFullYear() === today.getFullYear()
+		&& date.getMonth() === today.getMonth()
+		&& date.getDate() === today.getDate()
+	) {
+		return `${hh}:${mm}`;
+	}
+
+	// Check if yesterday
+	const yesterday = new Date(now);
+	yesterday.setDate(yesterday.getDate() - 1);
+	if (
+		date.getFullYear() === yesterday.getFullYear()
+		&& date.getMonth() === yesterday.getMonth()
+		&& date.getDate() === yesterday.getDate()
+	) {
+		return `Yesterday ${hh}:${mm}`;
+	}
+
+	// Older
+	const yyyy = String(date.getFullYear());
+	const mon = String(date.getMonth() + 1).padStart(2, '0');
+	const dd = String(date.getDate()).padStart(2, '0');
+	return `${yyyy}-${mon}-${dd}`;
+}
+
 export interface HistoryRecord {
 	id: string;
 	timestamp: number;

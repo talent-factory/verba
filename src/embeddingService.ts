@@ -1,8 +1,8 @@
 import OpenAI from 'openai';
 
 const API_KEY_STORAGE_KEY = 'openai-api-key';
-// text-embedding-3-small supports 8192 tokens; chars/token ratio varies widely (1.5–4)
-// 8000 chars stays safe even at worst-case ratios
+// text-embedding-3-small supports 8192 tokens.
+// 8000 chars provides a comfortable safety margin for typical char/token ratios.
 const MAX_EMBEDDING_CHARS = 8000;
 
 interface SecretStorage {
@@ -13,12 +13,14 @@ interface SecretStorage {
 
 /**
  * Generates text embeddings via the OpenAI `text-embedding-3-small` model.
- * Used by the {@link Indexer} to build and query the local vector index.
+ * Used for building the local vector index and for context-aware template queries.
  * API key is shared with the Whisper transcription service (stored in SecretStorage).
  */
 export class EmbeddingService {
 	private _client: OpenAI | null = null;
 	private secretStorage: SecretStorage;
+	/** Token usage from the most recent API call, or undefined if unavailable. */
+	lastUsage?: { promptTokens: number };
 
 	constructor(secretStorage: SecretStorage) {
 		this.secretStorage = secretStorage;
@@ -55,9 +57,18 @@ export class EmbeddingService {
 					'Invalid OpenAI API key. It has been removed — you will be prompted again on next use.'
 				);
 			}
+			if (err instanceof Error && (err as any).status === 429) {
+				throw new Error(
+					'OpenAI rate limit reached. Please wait a moment and try again.'
+				);
+			}
 			const detail = err instanceof Error ? err.message : String(err);
 			throw new Error(`Embedding failed: ${detail}`);
 		}
+
+		this.lastUsage = response.usage
+			? { promptTokens: response.usage.prompt_tokens }
+			: undefined;
 
 		return response.data.map(d => d.embedding);
 	}

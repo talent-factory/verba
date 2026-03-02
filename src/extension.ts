@@ -6,23 +6,21 @@ import { FfmpegRecorder } from './recorder';
 import { StatusBarManager } from './statusBarManager';
 import { PipelineContext } from './pipeline';
 import { TranscriptionService, TranscriptionProvider } from './transcriptionService';
-import { CleanupService } from './cleanupService';
+import { CleanupService, Expansion } from './cleanupService';
 import { insertText } from './insertText';
-import { selectTemplate, Template } from './templatePicker';
+import { selectTemplate, findTemplateForLanguage, Template } from './templatePicker';
 import { ContextProvider } from './contextProvider';
 import { EmbeddingService } from './embeddingService';
 import { Indexer } from './indexer';
 import { GrepaiProvider } from './grepaiProvider';
-
-const WHISPER_MODELS: { name: string; file: string; size: string }[] = [
-	{ name: 'tiny', file: 'ggml-tiny.bin', size: '~75 MB' },
-	{ name: 'base', file: 'ggml-base.bin', size: '~148 MB' },
-	{ name: 'small', file: 'ggml-small.bin', size: '~488 MB' },
-	{ name: 'medium', file: 'ggml-medium.bin', size: '~1.5 GB' },
-	{ name: 'large-v3-turbo', file: 'ggml-large-v3-turbo.bin', size: '~1.6 GB' },
-];
-
-const WHISPER_MODEL_BASE_URL = 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main';
+import { CostTracker } from './costTracker';
+import { CostOverviewPanel } from './costOverviewPanel';
+import { getWavDurationSec } from './wavDuration';
+import { GlossaryGenerator } from './glossaryGenerator';
+import {
+	WHISPER_MODELS, WHISPER_MODEL_BASE_URL,
+	isTrustedDownloadHost, cleanupFile, isValidExpansion,
+} from './extensionHelpers';
 
 class VerbaTranscriptionService extends TranscriptionService {
 	protected async promptForApiKey(): Promise<string | undefined> {
@@ -46,15 +44,6 @@ class VerbaCleanupService extends CleanupService {
 	}
 }
 
-function cleanupFile(filePath: string): void {
-	try {
-		fs.unlinkSync(filePath);
-	} catch (err: unknown) {
-		if (err instanceof Error && (err as NodeJS.ErrnoException).code !== 'ENOENT') {
-			console.error('[Verba] Failed to clean up temp file:', err);
-		}
-	}
-}
 
 /** Activates the Verba extension: registers commands, wires up services, and initializes the status bar. */
 export function activate(context: vscode.ExtensionContext) {
@@ -62,6 +51,7 @@ export function activate(context: vscode.ExtensionContext) {
 	const statusBar = new StatusBarManager();
 	const transcriptionService = new VerbaTranscriptionService(context.secrets);
 	const cleanupService = new VerbaCleanupService(context.secrets);
+	const costTracker = new CostTracker(context.globalState);
 	let selectedTemplate: Template | undefined;
 	let preferTerminal = false;
 	let processingAbortController: AbortController | null = null;
@@ -118,6 +108,76 @@ export function activate(context: vscode.ExtensionContext) {
 		}
 	}
 	applyGlossary();
+
+	function loadExpansions(): Expansion[] {
+		const rawGlobal = vscode.workspace
+			.getConfiguration('verba')
+			.get<unknown[]>('expansions', []);
+		const rawGlobalArr = Array.isArray(rawGlobal) ? rawGlobal : [];
+		const globalExpansions = rawGlobalArr.filter(isValidExpansion);
+		const skippedGlobal = rawGlobalArr.length - globalExpansions.length;
+		if (skippedGlobal > 0) {
+			console.warn(`[Verba] Skipped ${skippedGlobal} invalid entries in verba.expansions setting`);
+			vscode.window.showWarningMessage(
+				`Verba: ${skippedGlobal} expansion(s) in settings were skipped (each entry must have non-empty "abbreviation" and "expansion" strings).`
+			);
+		}
+
+		const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+		let workspaceExpansions: Expansion[] = [];
+		if (workspaceRoot) {
+			const expansionsPath = path.join(workspaceRoot, '.verba-expansions.json');
+			try {
+				const content = fs.readFileSync(expansionsPath, 'utf-8');
+				const parsed = JSON.parse(content);
+				if (Array.isArray(parsed)) {
+					workspaceExpansions = parsed.filter(isValidExpansion);
+					const skippedWs = parsed.length - workspaceExpansions.length;
+					if (skippedWs > 0) {
+						console.warn(`[Verba] Skipped ${skippedWs} invalid entries in .verba-expansions.json`);
+						vscode.window.showWarningMessage(
+							`Verba: ${skippedWs} expansion(s) in .verba-expansions.json were skipped (each entry must have non-empty "abbreviation" and "expansion" strings).`
+						);
+					}
+				} else {
+					console.warn('[Verba] .verba-expansions.json is not an array, ignoring');
+					vscode.window.showWarningMessage(
+						'Verba: .verba-expansions.json must be a JSON array of {abbreviation, expansion} objects. Workspace expansions ignored.'
+					);
+				}
+			} catch (err: unknown) {
+				if (err instanceof Error && (err as NodeJS.ErrnoException).code === 'ENOENT') {
+					// File doesn't exist — normal state
+				} else {
+					const detail = err instanceof SyntaxError
+						? 'Invalid JSON syntax'
+						: (err instanceof Error ? err.message : String(err));
+					console.warn('[Verba] Failed to read .verba-expansions.json:', err);
+					vscode.window.showWarningMessage(
+						`Verba: Could not load .verba-expansions.json (${detail}). Workspace expansions will not be applied.`
+					);
+				}
+			}
+		}
+
+		// Merge: workspace expansions override global ones with the same abbreviation.
+		// Abbreviations are lowercased for case-insensitive matching (the user may say "MFG", "mfg", or "Mfg").
+		const merged = new Map<string, Expansion>();
+		for (const e of [...globalExpansions, ...workspaceExpansions]) {
+			const key = e.abbreviation.toLowerCase();
+			merged.set(key, { abbreviation: key, expansion: e.expansion });
+		}
+		return [...merged.values()];
+	}
+
+	function applyExpansions(): void {
+		const expansions = loadExpansions();
+		cleanupService.setExpansions(expansions);
+		if (expansions.length > 0) {
+			console.log(`[Verba] Expansions loaded: ${expansions.length} entries`);
+		}
+	}
+	applyExpansions();
 
 	const embeddingService = new EmbeddingService(context.secrets);
 
@@ -207,10 +267,15 @@ export function activate(context: vscode.ExtensionContext) {
 
 	recorder.onUnexpectedStop = (error) => {
 		selectedTemplate = undefined;
+		capturedSelectedText = undefined;
 		statusBar.setIdle();
 		console.error('[Verba] Unexpected recording stop:', error);
 		vscode.window.showErrorMessage(`Verba: ${error.message}`);
 	};
+
+	// Text selected in the editor when recording started (captured early so it
+	// survives editor focus changes during recording).
+	let capturedSelectedText: string | undefined;
 
 	const handleDictation = async (forTerminal: boolean) => {
 		// Cancel ongoing processing if user triggers shortcut during streaming
@@ -233,6 +298,17 @@ export function activate(context: vscode.ExtensionContext) {
 				const rawTranscript = await transcriptionService.process(filePath, currentGlossary);
 				console.log(`[Verba] Whisper transcript (${rawTranscript.length} chars): ${rawTranscript.substring(0, 200)}`);
 
+				// Track Whisper usage from WAV file duration (only for OpenAI API, not local whisper.cpp)
+				const transcriptionProvider = vscode.workspace.getConfiguration('verba.transcription').get<string>('provider', 'openai');
+				if (transcriptionProvider === 'openai') {
+					const wavDurationSec = getWavDurationSec(filePath);
+					if (wavDurationSec > 0) {
+						costTracker.trackWhisperUsage(wavDurationSec);
+					} else {
+						console.warn('[Verba] WAV duration is 0 — Whisper cost tracking skipped for this recording');
+					}
+				}
+
 				// Step 2: Context retrieval (only for context-aware templates)
 				let contextSnippets: string[] | undefined;
 				if (selectedTemplate?.contextAware && contextProvider.isAvailable()) {
@@ -242,12 +318,18 @@ export function activate(context: vscode.ExtensionContext) {
 						console.log(`[Verba] Retrieved ${contextSnippets.length} context snippets`);
 					} catch (err: unknown) {
 						console.warn('[Verba] Context search failed, proceeding without context:', err);
+						vscode.window.showWarningMessage('Verba: Context search failed — proceeding without code context.');
+					} finally {
+						if (embeddingService.lastUsage) {
+							costTracker.trackEmbeddingUsage(embeddingService.lastUsage.promptTokens);
+							embeddingService.lastUsage = undefined;
+						}
 					}
 				}
 
-				// Step 3: Claude post-processing
+				// Step 3: Claude post-processing (pass captured selection as context only with a template)
 				const pipelineContext: PipelineContext | undefined = selectedTemplate
-					? { templatePrompt: selectedTemplate.prompt, contextSnippets }
+					? { templatePrompt: selectedTemplate.prompt, contextSnippets, selectedText: capturedSelectedText }
 					: undefined;
 				statusBar.setProcessing();
 				const abortController = new AbortController();
@@ -261,8 +343,16 @@ export function activate(context: vscode.ExtensionContext) {
 						(charCount) => statusBar.setProcessing(charCount),
 						abortController.signal,
 					);
+					if (cleanupService.lastUsage) {
+						costTracker.trackClaudeUsage(
+							cleanupService.lastUsage.inputTokens,
+							cleanupService.lastUsage.outputTokens,
+						);
+						cleanupService.lastUsage = undefined; // Consume to prevent double-counting
+					}
 				} catch (err: unknown) {
 					if (err instanceof Error && err.name === 'AbortError') {
+						capturedSelectedText = undefined;
 						statusBar.setIdle(selectedTemplate?.name);
 						vscode.window.showInformationMessage('Verba: Dictation cancelled.');
 						return;
@@ -282,11 +372,13 @@ export function activate(context: vscode.ExtensionContext) {
 					preferTerminal,
 				);
 
+				capturedSelectedText = undefined;
 				statusBar.setIdle(selectedTemplate?.name);
 				vscode.window.setStatusBarMessage(
 					'$(check) Verba: transcription inserted', 5000
 				);
 			} catch (err: unknown) {
+				capturedSelectedText = undefined;
 				selectedTemplate = undefined;
 				statusBar.setIdle();
 				console.error('[Verba] Transcription failed:', err);
@@ -302,14 +394,30 @@ export function activate(context: vscode.ExtensionContext) {
 				preferTerminal = forTerminal;
 				const templates = loadTemplates();
 				const lastUsedName = context.workspaceState.get<string>('verba.lastTemplateName');
-				const lastUsedTemplate = lastUsedName
-					? templates.find(t => t.name === lastUsedName)
-					: undefined;
 
 				let template: Template | undefined;
-				if (lastUsedTemplate) {
-					template = lastUsedTemplate;
-				} else {
+
+				// Auto-select template based on active file type (if enabled).
+				// Auto-selected templates are transient — they do not update lastTemplateName,
+				// so the user's manual template choice remains the stable fallback.
+				const autoSelect = vscode.workspace.getConfiguration('verba').get<boolean>('autoSelectTemplate', true);
+				if (autoSelect && !forTerminal) {
+					const languageId = vscode.window.activeTextEditor?.document.languageId;
+					if (languageId) {
+						template = findTemplateForLanguage(templates, languageId);
+						if (template) {
+							console.log(`[Verba] Auto-selected template "${template.name}" for language "${languageId}"`);
+						}
+					}
+				}
+
+				// Fallback: last manually selected template
+				if (!template && lastUsedName) {
+					template = templates.find(t => t.name === lastUsedName);
+				}
+
+				// Final fallback: show picker
+				if (!template) {
 					template = await selectTemplate(
 						templates,
 						undefined,
@@ -322,10 +430,32 @@ export function activate(context: vscode.ExtensionContext) {
 				}
 				selectedTemplate = template;
 
+				// Capture selected text before recording starts (survives editor changes during recording)
+				const activeEditor = vscode.window.activeTextEditor;
+				if (activeEditor && !forTerminal) {
+					const sel = activeEditor.selection;
+					if (!sel.isEmpty) {
+						capturedSelectedText = activeEditor.document.getText(sel);
+					} else {
+						capturedSelectedText = undefined;
+					}
+				} else {
+					capturedSelectedText = undefined;
+				}
+
+				// Guard: template referencing <selection> requires actual selection
+				if (!capturedSelectedText && selectedTemplate?.prompt.includes('<selection>')) {
+					vscode.window.showWarningMessage(
+						'Verba: This template requires text to be selected in the editor.'
+					);
+					return;
+				}
+
 				let audioDevice = vscode.workspace.getConfiguration('verba').get<string>('audioDevice', '').trim() || undefined;
 				if (!audioDevice && process.platform === 'win32') {
 					audioDevice = await pickAudioDevice(true);
 					if (!audioDevice) {
+						capturedSelectedText = undefined;
 						return;
 					}
 				}
@@ -335,6 +465,7 @@ export function activate(context: vscode.ExtensionContext) {
 					`Verba: Recording started (${template.name})...`
 				);
 			} catch (err: unknown) {
+				capturedSelectedText = undefined;
 				statusBar.setIdle(selectedTemplate?.name);
 				console.error('[Verba] Start recording failed:', err);
 				const message = err instanceof Error ? err.message : String(err);
@@ -464,31 +595,53 @@ export function activate(context: vscode.ExtensionContext) {
 				console.log(`[Verba] Re-indexed ${relativePath} (${count} chunks)`);
 			}
 		} catch (err: unknown) {
+			const message = err instanceof Error ? err.message : String(err);
 			console.warn(`[Verba] Incremental indexing failed for ${relativePath}:`, err);
+			if (err instanceof Error && ((err as any).status === 401 || (err as any).status === 429)) {
+				vscode.window.showWarningMessage(`Verba: Index update failed — ${message}`);
+			}
 		}
 	});
 
 	const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
 	if (workspaceRoot) {
-		const glossaryPattern = new vscode.RelativePattern(workspaceRoot, '.verba-glossary.json');
-		const glossaryWatcher = vscode.workspace.createFileSystemWatcher(glossaryPattern);
-		const safeApplyGlossary = () => {
-			try { applyGlossary(); } catch (err) {
-				console.error('[Verba] Failed to reload glossary:', err);
-			}
-		};
-		glossaryWatcher.onDidChange(safeApplyGlossary);
-		glossaryWatcher.onDidCreate(safeApplyGlossary);
-		glossaryWatcher.onDidDelete(safeApplyGlossary);
-		context.subscriptions.push(glossaryWatcher);
+		function watchWorkspaceFile(filename: string, callback: () => void): void {
+			const pattern = new vscode.RelativePattern(workspaceRoot!, filename);
+			const watcher = vscode.workspace.createFileSystemWatcher(pattern);
+			const safeCallback = () => {
+				try { callback(); } catch (err) {
+					console.error(`[Verba] Failed to reload ${filename}:`, err);
+					vscode.window.showWarningMessage(`Verba: Failed to reload ${filename}. Settings may be stale — try restarting VS Code.`);
+				}
+			};
+			watcher.onDidChange(safeCallback);
+			watcher.onDidCreate(safeCallback);
+			watcher.onDidDelete(safeCallback);
+			context.subscriptions.push(watcher);
+		}
+
+		watchWorkspaceFile('.verba-glossary.json', applyGlossary);
+		watchWorkspaceFile('.verba-expansions.json', applyExpansions);
 	}
 
 	const settingsWatcher = vscode.workspace.onDidChangeConfiguration((e) => {
 		if (e.affectsConfiguration('verba.glossary')) {
-			applyGlossary();
+			try { applyGlossary(); } catch (err) {
+				console.error('[Verba] Failed to reload glossary from settings:', err);
+				vscode.window.showWarningMessage('Verba: Failed to reload glossary from settings. Changes may not take effect until VS Code is restarted.');
+			}
+		}
+		if (e.affectsConfiguration('verba.expansions')) {
+			try { applyExpansions(); } catch (err) {
+				console.error('[Verba] Failed to reload expansions from settings:', err);
+				vscode.window.showWarningMessage('Verba: Failed to reload expansions from settings. Changes may not take effect until VS Code is restarted.');
+			}
 		}
 		if (e.affectsConfiguration('verba.transcription')) {
-			applyTranscriptionProvider();
+			try { applyTranscriptionProvider(); } catch (err) {
+				console.error('[Verba] Failed to reload transcription provider from settings:', err);
+				vscode.window.showWarningMessage('Verba: Failed to reload transcription settings. Changes may not take effect until VS Code is restarted.');
+			}
 			statusBar.setIdle(selectedTemplate?.name);
 		}
 	});
@@ -608,6 +761,11 @@ export function activate(context: vscode.ExtensionContext) {
 							return;
 						}
 
+						if (!isTrustedDownloadHost(requestUrl)) {
+							safeReject(new Error(`Download failed: redirect to untrusted host in URL "${requestUrl}"`));
+							return;
+						}
+
 						activeRequest = https.get(requestUrl, (res) => {
 							if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
 								res.resume();
@@ -693,12 +851,173 @@ export function activate(context: vscode.ExtensionContext) {
 		}
 	});
 
+	const manageApiKeysCommand = vscode.commands.registerCommand('dictation.manageApiKeys', async () => {
+		try {
+			const keys = [
+				{ label: 'OpenAI', storageKey: 'openai-api-key', prefix: 'sk-' },
+				{ label: 'Anthropic', storageKey: 'anthropic-api-key', prefix: 'sk-ant-' },
+			];
+
+			const items = await Promise.all(keys.map(async (k) => {
+				const stored = await context.secrets.get(k.storageKey);
+				const status = stored
+					? `${stored.slice(0, k.prefix.length + 2)}...${stored.slice(-4)}`
+					: 'Not configured';
+				return {
+					label: `$(key) ${k.label} API Key`,
+					description: status,
+					detail: stored ? 'Configured' : 'No key stored',
+					storageKey: k.storageKey,
+					hasKey: !!stored,
+					keyLabel: k.label,
+					prefix: k.prefix,
+				};
+			}));
+
+			const picked = await vscode.window.showQuickPick(items, {
+				placeHolder: 'Select an API key to manage',
+				title: 'Verba: Manage API Keys',
+			});
+			if (!picked) { return; }
+
+			const actions = picked.hasKey
+				? [
+					{ label: '$(edit) Update Key', action: 'update' as const },
+					{ label: '$(trash) Delete Key', action: 'delete' as const },
+				]
+				: [
+					{ label: '$(add) Set Key', action: 'update' as const },
+				];
+
+			const action = await vscode.window.showQuickPick(actions, {
+				placeHolder: `${picked.keyLabel} API Key`,
+				title: 'Verba: Manage API Keys',
+			});
+			if (!action) { return; }
+
+			if (action.action === 'delete') {
+				await context.secrets.delete(picked.storageKey);
+				vscode.window.showInformationMessage(`Verba: ${picked.keyLabel} API key deleted.`);
+			} else {
+				const newKey = await vscode.window.showInputBox({
+					prompt: `Enter your ${picked.keyLabel} API key`,
+					placeHolder: `${picked.prefix}...`,
+					password: true,
+					ignoreFocusOut: true,
+				});
+				if (!newKey) { return; }
+				await context.secrets.store(picked.storageKey, newKey);
+				vscode.window.showInformationMessage(`Verba: ${picked.keyLabel} API key updated.`);
+			}
+		} catch (err: unknown) {
+			console.error('[Verba] manageApiKeys failed:', err);
+			const message = err instanceof Error ? err.message : String(err);
+			vscode.window.showErrorMessage(`Verba: Could not manage API keys: ${message}`);
+		}
+	});
+
 	const editorCommand = vscode.commands.registerCommand('dictation.start', () => handleDictation(false));
 	const terminalCommand = vscode.commands.registerCommand('dictation.startFromTerminal', () => handleDictation(true));
 
+	const showCostOverviewCommand = vscode.commands.registerCommand('dictation.showCostOverview', () => {
+		try {
+			CostOverviewPanel.createOrShow(costTracker);
+		} catch (err: unknown) {
+			console.error('[Verba] Failed to open Cost Overview panel:', err);
+			const message = err instanceof Error ? err.message : String(err);
+			vscode.window.showErrorMessage(`Verba: Could not open Cost Overview: ${message}`);
+		}
+	});
+
+	const generateGlossaryCommand = vscode.commands.registerCommand('dictation.generateGlossary', async () => {
+		try {
+			const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+			if (!workspaceRoot) {
+				vscode.window.showWarningMessage('Verba: Open a workspace to generate glossary.');
+				return;
+			}
+
+			const generator = new GlossaryGenerator();
+			const suggestions = await vscode.window.withProgress(
+				{ location: vscode.ProgressLocation.Notification, title: 'Verba: Scanning project for glossary terms...' },
+				() => generator.generate(workspaceRoot, currentGlossary),
+			);
+
+			if (suggestions.length === 0) {
+				vscode.window.showInformationMessage('Verba: No new glossary terms found in this project.');
+				return;
+			}
+
+			const items = suggestions.map(term => ({ label: term, picked: true }));
+			const selected = await vscode.window.showQuickPick(items, {
+				canPickMany: true,
+				placeHolder: `${suggestions.length} terms found — deselect any you don't want`,
+				title: 'Verba: Review Glossary Suggestions',
+			});
+
+			if (!selected || selected.length === 0) {
+				return;
+			}
+
+			const selectedTerms = selected.map(s => s.label);
+
+			// Load existing glossary file
+			const glossaryPath = path.join(workspaceRoot, '.verba-glossary.json');
+			let existing: string[] = [];
+			try {
+				const content = fs.readFileSync(glossaryPath, 'utf-8');
+				const parsed = JSON.parse(content);
+				if (Array.isArray(parsed)) {
+					existing = parsed.filter((t): t is string => typeof t === 'string');
+				}
+			} catch (readErr: unknown) {
+				if (readErr instanceof Error && (readErr as NodeJS.ErrnoException).code === 'ENOENT') {
+					// File doesn't exist yet -- will be created
+				} else {
+					const detail = readErr instanceof SyntaxError
+						? 'Invalid JSON syntax'
+						: (readErr instanceof Error ? readErr.message : String(readErr));
+					console.warn('[Verba] Failed to read existing .verba-glossary.json:', readErr);
+					const action = await vscode.window.showWarningMessage(
+						`Verba: Could not read existing glossary (${detail}). Continuing will create a new file with only the selected terms.`,
+						'Continue', 'Cancel',
+					);
+					if (action !== 'Continue') { return; }
+				}
+			}
+
+			// Merge, deduplicate, sort
+			const merged = [...new Set([...existing, ...selectedTerms])].sort((a, b) => a.localeCompare(b));
+			try {
+				fs.writeFileSync(glossaryPath, JSON.stringify(merged, null, 2) + '\n', 'utf-8');
+			} catch (writeErr: unknown) {
+				const detail = writeErr instanceof Error ? writeErr.message : String(writeErr);
+				console.error('[Verba] Failed to write glossary file:', writeErr);
+				vscode.window.showErrorMessage(`Verba: Could not save glossary to .verba-glossary.json: ${detail}`);
+				return;
+			}
+
+			const added = merged.length - existing.length;
+			vscode.window.showInformationMessage(`Verba: ${added} term${added !== 1 ? 's' : ''} added to glossary (${merged.length} total).`);
+
+			// Reload glossary so Whisper + Claude pick it up immediately
+			try {
+				applyGlossary();
+			} catch (reloadErr: unknown) {
+				console.warn('[Verba] Glossary saved but reload failed:', reloadErr);
+				vscode.window.showWarningMessage('Verba: Glossary file saved, but live reload failed. Restart VS Code to apply the new terms.');
+			}
+		} catch (err: unknown) {
+			console.error('[Verba] generateGlossary failed:', err);
+			const message = err instanceof Error ? err.message : String(err);
+			vscode.window.showErrorMessage(`Verba: Could not generate glossary: ${message}`);
+		}
+	});
+
 	context.subscriptions.push(
 		editorCommand, terminalCommand, selectDeviceCommand, selectTemplateCommand,
-		indexProjectCommand, downloadModelCommand, saveWatcher,
+		indexProjectCommand, downloadModelCommand, manageApiKeysCommand, showCostOverviewCommand,
+		generateGlossaryCommand, saveWatcher,
 		{ dispose: () => recorder.dispose() }, statusBar,
 	);
 }

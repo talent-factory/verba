@@ -31,7 +31,7 @@ suite('StatusBarManager', () => {
 	test('initializes in idle state', () => {
 		const item = spy.firstCall.returnValue;
 		assert.strictEqual(item.text, '$(mic) Verba');
-		assert.strictEqual(item.tooltip, 'Click to start dictation');
+		assert.strictEqual(item.tooltip, 'Provider: OpenAI Whisper — Click to start dictation');
 	});
 
 	test('switches to recording state', () => {
@@ -47,7 +47,7 @@ suite('StatusBarManager', () => {
 		const item = spy.firstCall.returnValue;
 		assert.strictEqual(item.text, '$(loading~spin) Transcribing...');
 		assert.strictEqual(item.backgroundColor, undefined);
-		assert.strictEqual(item.tooltip, 'Transcribing audio...');
+		assert.strictEqual(item.tooltip, 'Transcribing audio via OpenAI Whisper...');
 	});
 
 	test('switches back to idle state', () => {
@@ -56,7 +56,7 @@ suite('StatusBarManager', () => {
 		const item = spy.firstCall.returnValue;
 		assert.strictEqual(item.text, '$(mic) Verba');
 		assert.strictEqual(item.backgroundColor, undefined);
-		assert.strictEqual(item.tooltip, 'Click to start dictation');
+		assert.strictEqual(item.tooltip, 'Provider: OpenAI Whisper — Click to start dictation');
 	});
 
 	test('switches to processing state without char count', () => {

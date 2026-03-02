@@ -1,9 +1,11 @@
 /** Metadata passed through the pipeline to each processing stage. */
 export interface PipelineContext {
-	/** The prompt template selected by the user (e.g. "Freitext", "Commit Message"). */
+	/** The system prompt text from the user's selected template, sent to Claude for post-processing. */
 	templatePrompt?: string;
 	/** Code snippets retrieved via semantic search for context-aware templates. */
 	contextSnippets?: string[];
+	/** Text that was selected in the editor when recording started. */
+	selectedText?: string;
 }
 
 /** A single step in the dictation processing pipeline. */

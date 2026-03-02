@@ -1,7 +1,7 @@
 import * as assert from 'assert';
 import * as sinon from 'sinon';
 
-import { selectTemplate, Template } from '../../templatePicker';
+import { selectTemplate, findTemplateForLanguage, Template } from '../../templatePicker';
 
 const DEFAULT_TEMPLATES: Template[] = [
 	{ name: 'Freitext', prompt: 'Clean up the transcript.' },
@@ -72,7 +72,7 @@ suite('selectTemplate', () => {
 		assert.strictEqual(items[1].label, '$(search) Code Comment');
 	});
 
-	test('does not preselect context-aware template when lastUsedName lacks icon prefix', async () => {
+	test('preselects context-aware template by name despite icon prefix in label', async () => {
 		const templates: Template[] = [
 			{ name: 'Code Comment', prompt: 'Generate comment.', contextAware: true },
 		];
@@ -81,7 +81,74 @@ suite('selectTemplate', () => {
 		await selectTemplate(templates, 'Code Comment', showQuickPick);
 
 		const options = showQuickPick.firstCall.args[1];
-		assert.strictEqual(options?.activeItems, undefined,
-			'lastUsedName "Code Comment" should not match label "$(search) Code Comment"');
+		assert.ok(options?.activeItems, 'should set activeItems for context-aware template');
+		assert.strictEqual(options.activeItems[0].template.name, 'Code Comment');
+	});
+});
+
+suite('findTemplateForLanguage', () => {
+	const TEMPLATES_WITH_FILE_TYPES: Template[] = [
+		{ name: 'Freitext', prompt: 'Clean up.' },
+		{ name: 'JavaDoc', prompt: 'Generate JavaDoc.', fileTypes: ['java', 'kotlin'] },
+		{ name: 'Markdown', prompt: 'Convert to Markdown.', fileTypes: ['markdown'] },
+		{ name: 'Code Comment', prompt: 'Generate comment.', contextAware: true },
+	];
+
+	test('returns template matching the language ID', () => {
+		const result = findTemplateForLanguage(TEMPLATES_WITH_FILE_TYPES, 'java');
+		assert.strictEqual(result?.name, 'JavaDoc');
+	});
+
+	test('matches second entry in fileTypes array', () => {
+		const result = findTemplateForLanguage(TEMPLATES_WITH_FILE_TYPES, 'kotlin');
+		assert.strictEqual(result?.name, 'JavaDoc');
+	});
+
+	test('returns undefined when no template matches', () => {
+		const result = findTemplateForLanguage(TEMPLATES_WITH_FILE_TYPES, 'python');
+		assert.strictEqual(result, undefined);
+	});
+
+	test('returns undefined for templates without fileTypes', () => {
+		const result = findTemplateForLanguage(TEMPLATES_WITH_FILE_TYPES, 'plaintext');
+		assert.strictEqual(result, undefined);
+	});
+
+	test('returns first matching template when multiple match', () => {
+		const templates: Template[] = [
+			{ name: 'First', prompt: 'First.', fileTypes: ['typescript'] },
+			{ name: 'Second', prompt: 'Second.', fileTypes: ['typescript'] },
+		];
+		const result = findTemplateForLanguage(templates, 'typescript');
+		assert.strictEqual(result?.name, 'First');
+	});
+
+	test('returns undefined for empty templates array', () => {
+		const result = findTemplateForLanguage([], 'java');
+		assert.strictEqual(result, undefined);
+	});
+
+	test('ignores templates with non-array fileTypes', () => {
+		const templates: Template[] = [
+			{ name: 'Bad', prompt: 'Bad.', fileTypes: 'java' as any },
+		];
+		const result = findTemplateForLanguage(templates, 'java');
+		assert.strictEqual(result, undefined);
+	});
+
+	test('matching is case-insensitive', () => {
+		const templates: Template[] = [
+			{ name: 'JavaDoc', prompt: 'JavaDoc.', fileTypes: ['Java', 'Kotlin'] },
+		];
+		const result = findTemplateForLanguage(templates, 'java');
+		assert.strictEqual(result?.name, 'JavaDoc');
+	});
+
+	test('template with empty fileTypes array does not match any language', () => {
+		const templates: Template[] = [
+			{ name: 'Empty', prompt: 'Empty.', fileTypes: [] },
+		];
+		const result = findTemplateForLanguage(templates, 'java');
+		assert.strictEqual(result, undefined);
 	});
 });

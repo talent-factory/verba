@@ -1,6 +1,17 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { ProcessingStage, PipelineContext } from './pipeline';
 
+export interface Expansion {
+	abbreviation: string;
+	expansion: string;
+}
+
+/** Strips newlines and normalizes quotes in user-provided text to prevent
+ *  formatting disruption when embedded in LLM system prompts. */
+function sanitize(s: string): string {
+	return s.replace(/[\r\n]+/g, ' ').replace(/"/g, "'");
+}
+
 const API_KEY_STORAGE_KEY = 'anthropic-api-key';
 
 const COURSE_CORRECTION_INSTRUCTION = 'Erkenne und entferne Selbstkorrekturen (z.B. "nein warte", "ich meinte", "also doch", "beziehungsweise", "korrektur"). Behalte nur die finale, korrigierte Aussage.';
@@ -31,8 +42,9 @@ interface SecretStorage {
 
 /**
  * Cleans up a raw transcript using Claude API: removes filler words,
- * smooths sentences, corrects transcription errors, and preserves glossary terms.
- * Supports both synchronous (process) and streaming (processStreaming) modes.
+ * smooths sentences, corrects transcription errors, preserves glossary terms,
+ * expands text abbreviations, and handles selection context for transform operations.
+ * Supports both single-request (process) and streaming (processStreaming) modes.
  * API key is managed via a SecretStorage abstraction; in production, backed by VS Code's secret store.
  */
 export class CleanupService implements ProcessingStage {
@@ -40,10 +52,18 @@ export class CleanupService implements ProcessingStage {
 	private _client: Anthropic | null = null;
 	private secretStorage: SecretStorage;
 	private glossary: string[] = [];
+	private expansions: Expansion[] = [];
+	/** Token usage from the most recent API call, or undefined if unavailable. */
+	lastUsage?: { inputTokens: number; outputTokens: number };
 
 	/** Sets the glossary terms that must be preserved verbatim during cleanup. */
 	setGlossary(terms: string[]): void {
 		this.glossary = [...terms];
+	}
+
+	/** Sets the text expansions (abbreviation → full text) applied during cleanup. */
+	setExpansions(expansions: Expansion[]): void {
+		this.expansions = [...expansions];
 	}
 
 	constructor(secretStorage: SecretStorage) {
@@ -63,16 +83,20 @@ export class CleanupService implements ProcessingStage {
 				messages: [{ role: 'user', content: userMessage }],
 			});
 		} catch (err: unknown) {
-			this.handleApiError(err, '[Verba] Claude API call failed:');
+			await this.handleApiError(err, '[Verba] Claude API call failed:'); // always throws
 		}
 
-		const text = response.content[0]?.type === 'text'
-			? response.content[0].text
+		this.lastUsage = response!.usage
+			? { inputTokens: response!.usage.input_tokens, outputTokens: response!.usage.output_tokens }
+			: undefined;
+
+		const text = response!.content[0]?.type === 'text'
+			? response!.content[0].text
 			: '';
 
 		console.log(`[Verba] Claude response (${(text || '').length} chars): ${(text || '').substring(0, 200)}`);
 
-		return this.fallbackIfEmpty(text, input);
+		return this.fallbackIfEmpty(text, input, !!context?.selectedText);
 	}
 
 	/**
@@ -118,16 +142,26 @@ export class CleanupService implements ProcessingStage {
 				abortError.name = 'AbortError';
 				throw abortError;
 			}
-			this.handleApiError(err, '[Verba] Claude API streaming failed:');
+			await this.handleApiError(err, '[Verba] Claude API streaming failed:');
 		} finally {
 			if (signal) {
 				signal.removeEventListener('abort', abortHandler);
 			}
 		}
 
+		try {
+			const finalMsg = await stream.finalMessage();
+			this.lastUsage = finalMsg.usage
+				? { inputTokens: finalMsg.usage.input_tokens, outputTokens: finalMsg.usage.output_tokens }
+				: undefined;
+		} catch (err: unknown) {
+			console.error('[Verba] Failed to extract usage from streaming response — Claude cost not tracked:', err);
+			this.lastUsage = undefined;
+		}
+
 		console.log(`[Verba] Claude streaming response (${accumulated.length} chars): ${accumulated.substring(0, 200)}`);
 
-		return this.fallbackIfEmpty(accumulated, input);
+		return this.fallbackIfEmpty(accumulated, input, !!context?.selectedText);
 	}
 
 	private async prepareRequest(
@@ -137,29 +171,37 @@ export class CleanupService implements ProcessingStage {
 		const glossaryInstruction = this.glossary.length > 0
 			? `\nBehalte folgende Begriffe exakt bei (nicht uebersetzen, nicht kuerzen, nicht aendern): ${this.glossary.join(', ')}.`
 			: '';
+		const expansionInstruction = this.expansions.length > 0
+			? `\nExpandiere folgende Abkuerzungen im Text (ersetze die Kurzform durch die Langform): ${this.expansions.map(e => `"${sanitize(e.abbreviation)}" → "${sanitize(e.expansion)}"`).join(', ')}.`
+			: '';
 		const systemPrompt = context?.templatePrompt
-			? TEMPLATE_FRAMING + glossaryInstruction + '\n' + context.templatePrompt
-			: CLEANUP_SYSTEM_PROMPT + glossaryInstruction;
+			? TEMPLATE_FRAMING + glossaryInstruction + expansionInstruction + '\n' + context.templatePrompt
+			: CLEANUP_SYSTEM_PROMPT + glossaryInstruction + expansionInstruction;
 		const apiKey = await this.getApiKey();
 		const client = this.getClient(apiKey);
 
 		const contextBlock = context?.contextSnippets?.length
 			? `<context>\n${context.contextSnippets.join('\n\n')}\n</context>\n\n`
 			: '';
-		const userMessage = `${contextBlock}<transcript>\n${input}\n</transcript>`;
+		const selectionBlock = context?.selectedText
+			? `<selection>\n${context.selectedText}\n</selection>\n\n`
+			: '';
+		const userMessage = `${contextBlock}${selectionBlock}<transcript>\n${input}\n</transcript>`;
 
 		return { client, systemPrompt, userMessage };
 	}
 
-	private handleApiError(err: unknown, logPrefix: string): never {
+	private async handleApiError(err: unknown, logPrefix: string): Promise<never> {
 		console.error(logPrefix, err);
 		if (err instanceof Error && (err as any).status === 401) {
 			this._client = null;
-			Promise.resolve(this.secretStorage.delete(API_KEY_STORAGE_KEY)).catch((deleteErr: unknown) => {
+			try {
+				await this.secretStorage.delete(API_KEY_STORAGE_KEY);
+			} catch (deleteErr: unknown) {
 				console.error('[Verba] Failed to remove invalid Anthropic API key from storage:', deleteErr);
-			});
+			}
 			throw new Error(
-				'Invalid Anthropic API key. It has been removed — you will be prompted again on next use.'
+				'Invalid Anthropic API key. Please update it via "Verba: Manage API Keys".'
 			);
 		}
 		if (err instanceof Error && (err as any).status === 429) {
@@ -171,9 +213,25 @@ export class CleanupService implements ProcessingStage {
 		throw new Error(`Post-processing failed: ${detail}`);
 	}
 
-	private fallbackIfEmpty(text: string, rawInput: string): string {
+	private fallbackIfEmpty(text: string, rawInput: string, hasSelection: boolean): string {
 		if (!text || text.trim() === '') {
+			if (hasSelection) {
+				console.error('[Verba] Claude returned empty response during selection transform.');
+				throw new Error(
+					'Post-processing returned an empty response. Your selection was not modified. Try again or check your API key.'
+				);
+			}
 			console.warn('[Verba] Claude returned empty response; skipping cleanup and using raw transcript.');
+			try {
+				// Lazy-load vscode module so pure functions remain testable outside the extension host.
+				// eslint-disable-next-line @typescript-eslint/no-require-imports
+				const vs: typeof import('vscode') = require('vscode');
+				vs.window.showWarningMessage('Verba: Post-processing returned an empty response. Inserting raw transcript instead.');
+			} catch (err: unknown) {
+				if (!(err instanceof Error && err.message.includes('Cannot find module'))) {
+					console.warn('[Verba] Failed to show empty-response warning:', err);
+				}
+			}
 			return rawInput;
 		}
 		return text;

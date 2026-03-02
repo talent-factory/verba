@@ -64,6 +64,21 @@
         "command": "dictation.downloadModel",
         "title": "Download Whisper Model",
         "category": "Verba"
+      },
+      {
+        "command": "dictation.manageApiKeys",
+        "title": "Manage API Keys",
+        "category": "Verba"
+      },
+      {
+        "command": "dictation.showCostOverview",
+        "title": "Show Cost Overview",
+        "category": "Verba"
+      },
+      {
+        "command": "dictation.generateGlossary",
+        "title": "Generate Glossary from Project",
+        "category": "Verba"
       }
     ],
     "keybindings": [
@@ -120,6 +135,13 @@
                 "type": "boolean",
                 "default": false,
                 "description": "If true, this template triggers semantic code search and includes relevant code snippets as context for Claude."
+              },
+              "fileTypes": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "VS Code language IDs that trigger automatic selection of this template (e.g. [\"java\", \"kotlin\"]). When verba.autoSelectTemplate is enabled and the active file matches, this template is used automatically."
               }
             }
           },
@@ -134,11 +156,13 @@
             },
             {
               "name": "JavaDoc",
-              "prompt": "Convert this transcript into a JavaDoc comment block (/** ... */). Structure with @param, @return, @throws tags as appropriate based on the described function. Keep the original language. Return only the JavaDoc block without explanation."
+              "prompt": "Convert this transcript into a JavaDoc comment block (/** ... */). Structure with @param, @return, @throws tags as appropriate based on the described function. Keep the original language. Return only the JavaDoc block without explanation.",
+              "fileTypes": ["java", "kotlin"]
             },
             {
               "name": "Markdown",
-              "prompt": "Convert this transcript into well-structured Markdown text. Use headings, bullet lists, numbered lists, and emphasis as appropriate. Keep the original language. Return only the Markdown without explanation."
+              "prompt": "Convert this transcript into well-structured Markdown text. Use headings, bullet lists, numbered lists, and emphasis as appropriate. Keep the original language. Return only the Markdown without explanation.",
+              "fileTypes": ["markdown"]
             },
             {
               "name": "E-Mail",
@@ -158,8 +182,17 @@
               "name": "Claude Code Prompt",
               "prompt": "Convert this transcript into a precise, well-structured prompt for a Claude Code agent. Use the provided code context to reference specific files, classes, and functions by name. Structure the prompt as a clear task description: what to do, where in the codebase, and any constraints. Keep the original language. Return ONLY the prompt text, ready to paste into a terminal.",
               "contextAware": true
+            },
+            {
+              "name": "Transform Selection",
+              "prompt": "The user has selected text in their editor (provided in <selection> tags) and dictated an instruction (in <transcript> tags). Apply the spoken instruction to transform the selected text. Examples: translate it, rewrite it, add comments, simplify it, fix it, etc. Return ONLY the transformed text that should replace the selection — no explanation, no preamble."
             }
           ]
+        },
+        "verba.autoSelectTemplate": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically select a matching template based on the active file type. Templates with a matching 'fileTypes' entry are preferred. If no match is found, the last manually selected template is used."
         },
         "verba.glossary": {
           "type": "array",
@@ -168,6 +201,25 @@
             "type": "string"
           },
           "description": "Terms that must be preserved exactly during transcription and cleanup (e.g. product names, technical terms). These terms are sent as hints to Whisper and as protection instructions to Claude. Recommended limit: ~80 terms (~224 Whisper prompt tokens)."
+        },
+        "verba.expansions": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "object",
+            "required": ["abbreviation", "expansion"],
+            "properties": {
+              "abbreviation": {
+                "type": "string",
+                "description": "The short form spoken during dictation (e.g. 'mfg', 'br')."
+              },
+              "expansion": {
+                "type": "string",
+                "description": "The full text to replace it with (e.g. 'Mit freundlichen Grüssen')."
+              }
+            }
+          },
+          "description": "Text expansions: abbreviations that are automatically expanded during post-processing. Define abbreviation/expansion pairs (e.g. 'mfg' → 'Mit freundlichen Grüssen'). Workspace-specific expansions can be added via '.verba-expansions.json'."
         },
         "verba.transcription.provider": {
           "type": "string",

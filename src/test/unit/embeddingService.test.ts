@@ -104,6 +104,43 @@ suite('EmbeddingService', () => {
 		assert.strictEqual(callArgs.input[0].length, 8000);
 	});
 
+	test('exposes lastUsage after successful API call', async () => {
+		fakeClient.embeddings.create.resolves({
+			data: [{ embedding: [0.1, 0.2] }],
+			usage: { prompt_tokens: 42, total_tokens: 42 },
+		});
+
+		await service.embed('hello');
+
+		assert.deepStrictEqual(service.lastUsage, { promptTokens: 42 });
+	});
+
+	test('lastUsage is undefined when response has no usage field', async () => {
+		fakeClient.embeddings.create.resolves({
+			data: [{ embedding: [0.1, 0.2] }],
+		});
+
+		await service.embed('hello');
+
+		assert.strictEqual(service.lastUsage, undefined);
+	});
+
+	test('lastUsage updates on each call', async () => {
+		fakeClient.embeddings.create.resolves({
+			data: [{ embedding: [0.1] }],
+			usage: { prompt_tokens: 10, total_tokens: 10 },
+		});
+		await service.embed('first');
+		assert.deepStrictEqual(service.lastUsage, { promptTokens: 10 });
+
+		fakeClient.embeddings.create.resolves({
+			data: [{ embedding: [0.2] }],
+			usage: { prompt_tokens: 20, total_tokens: 20 },
+		});
+		await service.embed('second');
+		assert.deepStrictEqual(service.lastUsage, { promptTokens: 20 });
+	});
+
 	test('throws when no API key is stored', async () => {
 		secretStorage.get.resolves(undefined);
 		const freshService = new EmbeddingService(secretStorage as any);

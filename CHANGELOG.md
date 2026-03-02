@@ -6,24 +6,33 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+### Added
+
+- **API Key Management:** `dictation.manageApiKeys` command to view (masked), update, or delete stored OpenAI and Anthropic API keys via the Command Palette.
+- **LLM Cost Tracking & Overview (TF-270):** `dictation.showCostOverview` command opens a WebView panel showing per-model API usage costs. Tracks Whisper transcription (by audio duration), Claude processing (by input/output tokens), and OpenAI Embeddings (by prompt tokens). Costs displayed per session and accumulated across all sessions, grouped by provider (OpenAI / Anthropic) in a card layout with VS Code theme support. Total costs reset automatically on the 1st of each month; older records are retained in storage.
+- **Adaptive Personal Dictionary (TF-263):** `dictation.generateGlossary` command scans workspace for project-specific terms (package names, class/interface/function names, README/CLAUDE.md headings and bold terms). Users review suggestions via Multi-Select Quick Pick before merging into `.verba-glossary.json`. Supports TypeScript, Java, and Python projects.
+- **Multi-Cursor / Selection-aware Dictation (TF-265):** Dictation now respects editor selections and multi-cursors. When text is selected, the dictated output replaces the selection; with multi-cursors, text is inserted at all cursor positions simultaneously. Selected text is passed as context to Claude post-processing via `<selection>` tags. New "Transform Selection" default template for voice-driven text transformation (e.g. translate, refactor, explain).
+- **Text Expansion / Abbreviations (TF-262):** User-defined abbreviations that are automatically expanded during post-processing. Configure via `verba.expansions` setting (e.g. `"mfg"` → `"Mit freundlichen Grüssen"`) or workspace-specific `.verba-expansions.json`. Global and workspace expansions are merged, with workspace entries taking precedence for the same abbreviation.
+- **File-Type-Aware Templates (TF-259):** Templates can now define a `fileTypes` array with VS Code language IDs (e.g. `["java", "kotlin"]`). When `verba.autoSelectTemplate` is enabled (default), the template matching the active editor's file type is automatically selected. Falls back to the last manually chosen template when no match is found. Built-in defaults: JavaDoc → java/kotlin, Markdown → markdown.
+
 ## [0.3.0] - 2026-02-26
 
 ### Added
 
-- **Offline-Transkription (TF-257):** Lokale Transkription via whisper.cpp CLI als Alternative zur OpenAI Whisper API. Audio verlässt nie den Rechner. Strategy-Pattern auf `TranscriptionService` mit `setProvider('openai'|'local')`.
-- **Model-Download:** GGML-Modelle von Hugging Face via `dictation.downloadModel` Command mit Fortschrittsanzeige und Abbruchmoeglichkeit. Modellauswahl: tiny, base, small, medium, large.
-- **Provider-Anzeige in Statuszeile:** Tooltip zeigt aktiven Provider (OpenAI Whisper / Local whisper.cpp), Transcribing-State zeigt Provider explizit an.
-- **Streaming Post-Processing:** Claude-Antworten werden per Streaming empfangen mit Echtzeit-Fortschrittsanzeige in der Statusbar (z.B. "Processing... 182 chars"). Diktat kann waehrend der Verarbeitung per erneutem Tastendruck abgebrochen werden.
-- **Course Correction:** Selbstkorrekturen im Diktat werden automatisch erkannt und entfernt (z.B. "nein warte, doch Freitag" → "Freitag"). Aktiv in allen Modi (Freitext und Templates).
-- **Voice Commands:** Gesprochene Formatierungsbefehle werden erkannt und umgesetzt (z.B. "Neuer Absatz", "Punkt", "Aufzaehlung"). Funktioniert sprachunabhaengig in allen Modi.
-- **Glossar/Dictionary:** Begriffe (Produktnamen, Fachbegriffe, Abkuerzungen) werden bei Transkription und Bereinigung exakt beibehalten. Globale Begriffe via `verba.glossary` Setting, projektspezifische via `.verba-glossary.json`.
-- **JSDoc-Dokumentation:** Alle oeffentlichen APIs ueber 13 Source-Dateien dokumentiert.
+- **Offline Transcription (TF-257):** Local transcription via whisper.cpp CLI as an alternative to OpenAI Whisper API. Audio never leaves the machine. Strategy pattern on `TranscriptionService` with `setProvider('openai'|'local')`.
+- **Model Download:** GGML models from Hugging Face via `dictation.downloadModel` command with progress indicator and cancellation support. Model selection: tiny, base, small, medium, large.
+- **Provider Display in Status Bar:** Tooltip shows active provider (OpenAI Whisper / Local whisper.cpp), transcribing state displays provider explicitly.
+- **Streaming Post-Processing:** Claude responses are received via streaming with real-time progress display in the status bar (e.g. "Processing... 182 chars"). Dictation can be cancelled during processing by pressing the shortcut again.
+- **Course Correction:** Self-corrections in dictation are automatically detected and removed (e.g. "no wait, actually Friday" → "Friday"). Active in all modes (freeform and templates).
+- **Voice Commands:** Spoken formatting commands are recognized and applied (e.g. "New paragraph", "Period", "Bullet point"). Works language-independently in all modes.
+- **Glossary/Dictionary:** Terms (product names, technical terms, abbreviations) are preserved exactly during transcription and cleanup. Global terms via `verba.glossary` setting, project-specific via `.verba-glossary.json`.
+- **JSDoc Documentation:** All public APIs across 13 source files documented.
 
 ### Fixed
 
-- SIGKILL-Eskalation bei haengenden whisper-cli Prozessen
-- Provider-Validierung mit Fallback bei ungueltigem Setting
-- Minimale Dateigroesse-Pruefung nach Model-Download
+- SIGKILL escalation for hanging whisper-cli processes
+- Provider validation with fallback for invalid settings
+- Minimum file size check after model download
 
 ### Changed
 
@@ -34,7 +43,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Added
 
-- **Configurable Prompt Templates (TF-248):** 5 default templates (Freitext, Commit Message, JavaDoc, Markdown, E-Mail) with full customization via `verba.templates` setting
+- **Configurable Prompt Templates (TF-248):** 5 default templates (Freeform, Commit Message, JavaDoc, Markdown, Email) with full customization via `verba.templates` setting
 - Context-Aware Dictation with semantic code search via grepai or OpenAI Embeddings
 - 3 context-aware templates: Code Comment, Explain Code, Claude Code Prompt
 - `dictation.indexProject` command to build a local embeddings index for context search

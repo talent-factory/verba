@@ -155,6 +155,51 @@ suite('CleanupService', () => {
 			assert.strictEqual(result, 'raw input text');
 		});
 
+		test('returns raw input when Claude response is whitespace-only', async () => {
+			secretStorage.get.resolves('sk-ant-test-key');
+			fakeClient.messages.create.resolves({
+				content: [{ type: 'text', text: '   \n\t  ' }],
+			});
+
+			const result = await service.process('raw input text');
+
+			assert.strictEqual(result, 'raw input text');
+		});
+
+		test('throws when Claude returns whitespace-only during selection transform', async () => {
+			secretStorage.get.resolves('sk-ant-test-key');
+			fakeClient.messages.create.resolves({
+				content: [{ type: 'text', text: '   \n\t  ' }],
+			});
+
+			const context: PipelineContext = {
+				templatePrompt: 'Transform the selection.',
+				selectedText: 'const x = 42;',
+			};
+
+			await assert.rejects(
+				() => service.process('translate this to Python', context),
+				/Post-processing returned an empty response/
+			);
+		});
+
+		test('throws instead of fallback when Claude returns empty during selection transform', async () => {
+			secretStorage.get.resolves('sk-ant-test-key');
+			fakeClient.messages.create.resolves({
+				content: [{ type: 'text', text: '' }],
+			});
+
+			const context: PipelineContext = {
+				templatePrompt: 'Transform the selection.',
+				selectedText: 'const x = 42;',
+			};
+
+			await assert.rejects(
+				() => service.process('translate this to Python', context),
+				/Post-processing returned an empty response/
+			);
+		});
+
 		test('clears stored key, resets client, and throws on 401 error', async () => {
 			secretStorage.get.resolves('sk-ant-bad-key');
 			const authError = new Error('Invalid API key');
@@ -334,6 +379,61 @@ suite('CleanupService', () => {
 			assert.ok(!userContent.includes('<context>'), 'should not contain context tags when undefined');
 		});
 
+		test('includes selection block before transcript when selectedText is provided', async () => {
+			secretStorage.get.resolves('sk-ant-test-key');
+			fakeClient.messages.create.resolves({
+				content: [{ type: 'text', text: 'transformed text' }],
+			});
+
+			const context: PipelineContext = {
+				templatePrompt: 'Transform the selection.',
+				selectedText: 'const x = 42;',
+			};
+			await service.process('translate this to Python', context);
+
+			const userContent = fakeClient.messages.create.firstCall.args[0].messages[0].content;
+			assert.ok(userContent.includes('<selection>'), 'should contain selection tags');
+			assert.ok(userContent.includes('const x = 42;'), 'should contain selected text');
+			assert.ok(userContent.includes('</selection>'), 'should close selection tags');
+			assert.ok(userContent.indexOf('<selection>') < userContent.indexOf('<transcript>'),
+				'selection should appear before transcript');
+		});
+
+		test('omits selection block when selectedText is undefined', async () => {
+			secretStorage.get.resolves('sk-ant-test-key');
+			fakeClient.messages.create.resolves({
+				content: [{ type: 'text', text: 'cleaned' }],
+			});
+
+			const context: PipelineContext = { templatePrompt: 'Clean up.' };
+			await service.process('test input', context);
+
+			const userContent = fakeClient.messages.create.firstCall.args[0].messages[0].content;
+			assert.ok(!userContent.includes('<selection>'), 'should not contain selection tags when undefined');
+		});
+
+		test('includes both context and selection blocks when both provided', async () => {
+			secretStorage.get.resolves('sk-ant-test-key');
+			fakeClient.messages.create.resolves({
+				content: [{ type: 'text', text: 'result' }],
+			});
+
+			const context: PipelineContext = {
+				templatePrompt: 'Process.',
+				contextSnippets: ['// code context'],
+				selectedText: 'selected code',
+			};
+			await service.process('do something', context);
+
+			const userContent = fakeClient.messages.create.firstCall.args[0].messages[0].content;
+			assert.ok(userContent.includes('<context>'), 'should contain context');
+			assert.ok(userContent.includes('<selection>'), 'should contain selection');
+			assert.ok(userContent.indexOf('<context>') < userContent.indexOf('<selection>'),
+				'context should appear before selection');
+			assert.ok(userContent.indexOf('<selection>') < userContent.indexOf('<transcript>'),
+				'selection should appear before transcript');
+		});
+
 		test('default system prompt includes glossary instruction when glossary is set', async () => {
 			service.setGlossary(['Visual Studio Code', 'Kubernetes']);
 			secretStorage.get.resolves('sk-ant-test-key');
@@ -485,6 +585,202 @@ suite('CleanupService', () => {
 				'system prompt should not include mutated term');
 		});
 
+		// --- Text Expansion tests ---
+
+		test('default system prompt includes expansion instruction when expansions are set', async () => {
+			service.setExpansions([
+				{ abbreviation: 'mfg', expansion: 'Mit freundlichen Grüssen' },
+				{ abbreviation: 'br', expansion: 'Best regards' },
+			]);
+			secretStorage.get.resolves('sk-ant-test-key');
+			fakeClient.messages.create.resolves({
+				content: [{ type: 'text', text: 'cleaned' }],
+			});
+
+			await service.process('test input');
+
+			const callArgs = fakeClient.messages.create.firstCall.args[0];
+			assert.ok(callArgs.system.includes('"mfg"'),
+				'system prompt should include abbreviation');
+			assert.ok(callArgs.system.includes('Mit freundlichen Grüssen'),
+				'system prompt should include expansion');
+			assert.ok(callArgs.system.includes('"br"'),
+				'system prompt should include second abbreviation');
+		});
+
+		test('default system prompt has no expansion instruction when expansions are empty', async () => {
+			service.setExpansions([]);
+			secretStorage.get.resolves('sk-ant-test-key');
+			fakeClient.messages.create.resolves({
+				content: [{ type: 'text', text: 'cleaned' }],
+			});
+
+			await service.process('test input');
+
+			const callArgs = fakeClient.messages.create.firstCall.args[0];
+			assert.ok(!callArgs.system.includes('Expandiere'),
+				'system prompt should not include expansion instruction when empty');
+		});
+
+		test('template system prompt includes expansion instruction', async () => {
+			service.setExpansions([{ abbreviation: 'lg', expansion: 'Liebe Grüsse' }]);
+			secretStorage.get.resolves('sk-ant-test-key');
+			fakeClient.messages.create.resolves({
+				content: [{ type: 'text', text: 'cleaned' }],
+			});
+
+			const context: PipelineContext = {
+				templatePrompt: 'Convert to an email.',
+			};
+			await service.process('test input', context);
+
+			const callArgs = fakeClient.messages.create.firstCall.args[0];
+			assert.ok(callArgs.system.includes('"lg"'),
+				'template prompt should include expansion abbreviation');
+			assert.ok(callArgs.system.includes('Liebe Grüsse'),
+				'template prompt should include expansion text');
+		});
+
+		test('setExpansions replaces previous expansions completely', async () => {
+			service.setExpansions([{ abbreviation: 'old', expansion: 'OldExpansion' }]);
+			service.setExpansions([{ abbreviation: 'new', expansion: 'NewExpansion' }]);
+			secretStorage.get.resolves('sk-ant-test-key');
+			fakeClient.messages.create.resolves({
+				content: [{ type: 'text', text: 'cleaned' }],
+			});
+
+			await service.process('test input');
+
+			const callArgs = fakeClient.messages.create.firstCall.args[0];
+			assert.ok(callArgs.system.includes('NewExpansion'),
+				'system prompt should include new expansion');
+			assert.ok(!callArgs.system.includes('OldExpansion'),
+				'system prompt should not include old expansion');
+		});
+
+		test('setExpansions makes a defensive copy', async () => {
+			const expansions = [{ abbreviation: 'orig', expansion: 'Original' }];
+			service.setExpansions(expansions);
+			expansions.push({ abbreviation: 'mut', expansion: 'Mutated' });
+
+			secretStorage.get.resolves('sk-ant-test-key');
+			fakeClient.messages.create.resolves({
+				content: [{ type: 'text', text: 'cleaned' }],
+			});
+
+			await service.process('test input');
+
+			const callArgs = fakeClient.messages.create.firstCall.args[0];
+			assert.ok(callArgs.system.includes('Original'),
+				'system prompt should include original expansion');
+			assert.ok(!callArgs.system.includes('Mutated'),
+				'system prompt should not include mutated expansion');
+		});
+
+		test('sanitizes newlines in expansion values before injecting into prompt', async () => {
+			service.setExpansions([
+				{ abbreviation: 'ab\nc', expansion: 'line1\r\nline2\nline3' },
+			]);
+			secretStorage.get.resolves('sk-ant-test-key');
+			fakeClient.messages.create.resolves({
+				content: [{ type: 'text', text: 'cleaned' }],
+			});
+
+			await service.process('test input');
+
+			const callArgs = fakeClient.messages.create.firstCall.args[0];
+			assert.ok(callArgs.system.includes('ab c'),
+				'newlines in abbreviation should be replaced with spaces');
+			assert.ok(callArgs.system.includes('line1 line2 line3'),
+				'newlines in expansion should be replaced with spaces');
+			assert.ok(!callArgs.system.match(/"ab\nc"/),
+				'raw newlines should not appear in quoted abbreviation');
+		});
+
+		test('sanitizes double quotes in expansion values to prevent prompt injection', async () => {
+			service.setExpansions([
+				{ abbreviation: 'test', expansion: 'say "hello" world' },
+			]);
+			secretStorage.get.resolves('sk-ant-test-key');
+			fakeClient.messages.create.resolves({
+				content: [{ type: 'text', text: 'cleaned' }],
+			});
+
+			await service.process('test input');
+
+			const callArgs = fakeClient.messages.create.firstCall.args[0];
+			assert.ok(callArgs.system.includes("say 'hello' world"),
+				'double quotes in expansion should be replaced with single quotes');
+			assert.ok(!callArgs.system.includes('say "hello"'),
+				'raw double quotes should not appear in expansion text');
+		});
+
+		test('expansion instruction appears after glossary and before template prompt', async () => {
+			service.setGlossary(['TestTerm']);
+			service.setExpansions([{ abbreviation: 'tt', expansion: 'TestTerm Expansion' }]);
+			secretStorage.get.resolves('sk-ant-test-key');
+			fakeClient.messages.create.resolves({
+				content: [{ type: 'text', text: 'cleaned' }],
+			});
+
+			const context: PipelineContext = {
+				templatePrompt: 'Convert to a commit message.',
+			};
+			await service.process('test input', context);
+
+			const callArgs = fakeClient.messages.create.firstCall.args[0];
+			const glossaryIdx = callArgs.system.indexOf('Behalte folgende Begriffe');
+			const expansionIdx = callArgs.system.indexOf('Expandiere folgende Abkuerzungen');
+			const templateIdx = callArgs.system.indexOf('Convert to a commit message.');
+			assert.ok(glossaryIdx > 0, 'glossary instruction should be present');
+			assert.ok(expansionIdx > glossaryIdx,
+				'expansion instruction should appear after glossary instruction');
+			assert.ok(templateIdx > expansionIdx,
+				'template prompt should appear after expansion instruction');
+		});
+
+		test('glossary and expansions coexist in system prompt', async () => {
+			service.setGlossary(['Kubernetes']);
+			service.setExpansions([{ abbreviation: 'k8s', expansion: 'Kubernetes Cluster' }]);
+			secretStorage.get.resolves('sk-ant-test-key');
+			fakeClient.messages.create.resolves({
+				content: [{ type: 'text', text: 'cleaned' }],
+			});
+
+			await service.process('test input');
+
+			const callArgs = fakeClient.messages.create.firstCall.args[0];
+			assert.ok(callArgs.system.includes('Kubernetes'),
+				'system prompt should include glossary');
+			assert.ok(callArgs.system.includes('"k8s"'),
+				'system prompt should include expansion abbreviation');
+			assert.ok(callArgs.system.includes('Kubernetes Cluster'),
+				'system prompt should include expansion text');
+		});
+
+		test('exposes lastUsage after successful API call', async () => {
+			secretStorage.get.resolves('sk-ant-test-key');
+			fakeClient.messages.create.resolves({
+				content: [{ type: 'text', text: 'cleaned' }],
+				usage: { input_tokens: 150, output_tokens: 42 },
+			});
+
+			await service.process('test input');
+
+			assert.deepStrictEqual(service.lastUsage, { inputTokens: 150, outputTokens: 42 });
+		});
+
+		test('lastUsage is undefined when response has no usage field', async () => {
+			secretStorage.get.resolves('sk-ant-test-key');
+			fakeClient.messages.create.resolves({
+				content: [{ type: 'text', text: 'cleaned' }],
+			});
+
+			await service.process('test input');
+
+			assert.strictEqual(service.lastUsage, undefined);
+		});
+
 	});
 
 	suite('processStreaming()', () => {
@@ -499,6 +795,7 @@ suite('CleanupService', () => {
 					}
 				},
 				abort: sinon.stub(),
+				finalMessage: sinon.stub().resolves({}),
 			};
 		}
 
@@ -611,12 +908,78 @@ suite('CleanupService', () => {
 				'streaming template prompt should include glossary term');
 		});
 
+		test('streaming uses expansions in default prompt', async () => {
+			service.setExpansions([{ abbreviation: 'mfg', expansion: 'Mit freundlichen Gruessen' }]);
+			secretStorage.get.resolves('sk-ant-test-key');
+			fakeClient.messages.stream.returns(createFakeStream(['cleaned']));
+
+			await service.processStreaming('test input', undefined, sinon.stub());
+
+			const callArgs = fakeClient.messages.stream.firstCall.args[0];
+			assert.ok(callArgs.system.includes('"mfg"'),
+				'streaming default prompt should include expansion abbreviation');
+			assert.ok(callArgs.system.includes('Mit freundlichen Gruessen'),
+				'streaming default prompt should include expansion text');
+		});
+
+		test('streaming uses expansions in template prompt', async () => {
+			service.setExpansions([{ abbreviation: 'br', expansion: 'Best regards' }]);
+			secretStorage.get.resolves('sk-ant-test-key');
+			fakeClient.messages.stream.returns(createFakeStream(['cleaned']));
+
+			const context: PipelineContext = {
+				templatePrompt: 'Convert to email.',
+			};
+			await service.processStreaming('test input', context, sinon.stub());
+
+			const callArgs = fakeClient.messages.stream.firstCall.args[0];
+			assert.ok(callArgs.system.includes('"br"'),
+				'streaming template prompt should include expansion abbreviation');
+			assert.ok(callArgs.system.includes('Best regards'),
+				'streaming template prompt should include expansion text');
+		});
+
 		test('returns raw input when stream produces empty text', async () => {
 			secretStorage.get.resolves('sk-ant-test-key');
 			fakeClient.messages.stream.returns(createFakeStream([]));
 
 			const result = await service.processStreaming('raw input', undefined, sinon.stub());
 			assert.strictEqual(result, 'raw input');
+		});
+
+		test('streaming throws instead of fallback when stream is empty during selection transform', async () => {
+			secretStorage.get.resolves('sk-ant-test-key');
+			fakeClient.messages.stream.returns(createFakeStream([]));
+
+			const context: PipelineContext = {
+				templatePrompt: 'Transform the selection.',
+				selectedText: 'const x = 42;',
+			};
+
+			await assert.rejects(
+				() => service.processStreaming('translate this to Python', context, sinon.stub()),
+				/Post-processing returned an empty response/
+			);
+		});
+
+		test('streaming includes selection block before transcript when selectedText is provided', async () => {
+			secretStorage.get.resolves('sk-ant-test-key');
+			fakeClient.messages.stream.returns(createFakeStream(['transformed']));
+
+			const context: PipelineContext = {
+				templatePrompt: 'Transform the selection.',
+				selectedText: 'function foo() {}',
+			};
+			await service.processStreaming('rename to bar', context, sinon.stub());
+
+			const callArgs = fakeClient.messages.stream.firstCall.args[0];
+			const userContent = callArgs.messages[0].content;
+			assert.ok(userContent.includes('<selection>'), 'streaming should contain selection tags');
+			assert.ok(userContent.includes('function foo() {}'), 'streaming should contain selected text');
+			assert.ok(
+				userContent.indexOf('<selection>') < userContent.indexOf('<transcript>'),
+				'selection should appear before transcript in streaming'
+			);
 		});
 
 		test('aborts stream and throws AbortError when signal fires', async () => {
@@ -632,6 +995,7 @@ suite('CleanupService', () => {
 					throw new Error('Request was aborted.');
 				},
 				abort: sinon.stub(),
+				finalMessage: sinon.stub().resolves({}),
 			};
 			fakeClient.messages.stream.returns(fakeStream);
 
@@ -702,6 +1066,7 @@ suite('CleanupService', () => {
 					yield { type: 'content_block_stop', index: 0 };
 				},
 				abort: sinon.stub(),
+				finalMessage: sinon.stub().resolves({}),
 			};
 			fakeClient.messages.stream.returns(fakeStream);
 
@@ -722,6 +1087,41 @@ suite('CleanupService', () => {
 			await service.processStreaming('test', undefined, sinon.stub(), abortController.signal);
 
 			assert.ok(removeSpy.calledOnce, 'removeEventListener should be called in finally block');
+		});
+
+		test('exposes lastUsage after streaming completes', async () => {
+			secretStorage.get.resolves('sk-ant-test-key');
+			const fakeStream = createFakeStream(['Hello', ' world']);
+			fakeStream.finalMessage = sinon.stub().resolves({
+				usage: { input_tokens: 200, output_tokens: 80 },
+			});
+			fakeClient.messages.stream.returns(fakeStream);
+
+			await service.processStreaming('raw input', undefined, sinon.stub());
+
+			assert.deepStrictEqual(service.lastUsage, { inputTokens: 200, outputTokens: 80 });
+		});
+
+		test('lastUsage is undefined when finalMessage has no usage', async () => {
+			secretStorage.get.resolves('sk-ant-test-key');
+			const fakeStream = createFakeStream(['Hello']);
+			fakeStream.finalMessage = sinon.stub().resolves({});
+			fakeClient.messages.stream.returns(fakeStream);
+
+			await service.processStreaming('raw input', undefined, sinon.stub());
+
+			assert.strictEqual(service.lastUsage, undefined);
+		});
+
+		test('lastUsage is undefined when finalMessage throws', async () => {
+			secretStorage.get.resolves('sk-ant-test-key');
+			const fakeStream = createFakeStream(['Hello']);
+			fakeStream.finalMessage = sinon.stub().rejects(new Error('stream ended'));
+			fakeClient.messages.stream.returns(fakeStream);
+
+			await service.processStreaming('raw input', undefined, sinon.stub());
+
+			assert.strictEqual(service.lastUsage, undefined);
 		});
 	});
 });

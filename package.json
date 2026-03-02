@@ -2,7 +2,7 @@
   "name": "verba",
   "displayName": "Verba",
   "description": "The Developer's Dictation Extension – Voice dictation with AI-powered post-processing for VS Code",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "publisher": "talent-factory",
   "repository": {
     "type": "git",
@@ -157,12 +157,17 @@
             {
               "name": "JavaDoc",
               "prompt": "Convert this transcript into a JavaDoc comment block (/** ... */). Structure with @param, @return, @throws tags as appropriate based on the described function. Keep the original language. Return only the JavaDoc block without explanation.",
-              "fileTypes": ["java", "kotlin"]
+              "fileTypes": [
+                "java",
+                "kotlin"
+              ]
             },
             {
               "name": "Markdown",
               "prompt": "Convert this transcript into well-structured Markdown text. Use headings, bullet lists, numbered lists, and emphasis as appropriate. Keep the original language. Return only the Markdown without explanation.",
-              "fileTypes": ["markdown"]
+              "fileTypes": [
+                "markdown"
+              ]
             },
             {
               "name": "E-Mail",
@@ -207,7 +212,10 @@
           "default": [],
           "items": {
             "type": "object",
-            "required": ["abbreviation", "expansion"],
+            "required": [
+              "abbreviation",
+              "expansion"
+            ],
             "properties": {
               "abbreviation": {
                 "type": "string",
@@ -224,13 +232,22 @@
         "verba.transcription.provider": {
           "type": "string",
           "default": "openai",
-          "enum": ["openai", "local"],
+          "enum": [
+            "openai",
+            "local"
+          ],
           "description": "Transcription provider: 'openai' uses the Whisper API (requires API key), 'local' uses whisper.cpp CLI for offline transcription (requires whisper-cpp installed)."
         },
         "verba.transcription.localModel": {
           "type": "string",
           "default": "base",
-          "enum": ["tiny", "base", "small", "medium", "large-v3-turbo"],
+          "enum": [
+            "tiny",
+            "base",
+            "small",
+            "medium",
+            "large-v3-turbo"
+          ],
           "description": "Whisper model to use for local transcription. Larger models are more accurate but slower. Run 'Verba: Download Whisper Model' to download a model."
         },
         "verba.contextSearch.maxResults": {
@@ -243,7 +260,11 @@
         "verba.contextSearch.provider": {
           "type": "string",
           "default": "auto",
-          "enum": ["auto", "grepai", "openai"],
+          "enum": [
+            "auto",
+            "grepai",
+            "openai"
+          ],
           "description": "Context search provider: 'auto' uses grepai if installed, otherwise OpenAI Embeddings. 'grepai' or 'openai' forces a specific provider."
         }
       }

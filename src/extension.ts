@@ -7,7 +7,8 @@ import { StatusBarManager } from './statusBarManager';
 import { PipelineContext } from './pipeline';
 import { TranscriptionService, TranscriptionProvider } from './transcriptionService';
 import { CleanupService, Expansion } from './cleanupService';
-import { insertText } from './insertText';
+import { insertText, InsertionResult } from './insertText';
+import { recordDictation, clearLastDictation, getLastDictation, computeInsertedRanges } from './undoManager';
 import { selectTemplate, findTemplateForLanguage, Template } from './templatePicker';
 import { ContextProvider } from './contextProvider';
 import { EmbeddingService } from './embeddingService';
@@ -364,13 +365,49 @@ export function activate(context: vscode.ExtensionContext) {
 				console.log(`[Verba] Final text (${transcript.length} chars): ${transcript.substring(0, 200)}`);
 
 				const executeCommand = vscode.workspace.getConfiguration('verba.terminal').get<boolean>('executeCommand', false);
-				await insertText(
+
+				// Capture pre-edit state for undo tracking
+				const editorBeforeInsert = vscode.window.activeTextEditor;
+				let preEditSelections: Array<{
+					startLine: number; startCharacter: number;
+					endLine: number; endCharacter: number;
+					isEmpty: boolean; originalText: string;
+				}> | undefined;
+				if (editorBeforeInsert && !preferTerminal) {
+					preEditSelections = editorBeforeInsert.selections
+						.map(sel => ({
+							startLine: sel.start.line,
+							startCharacter: sel.start.character,
+							endLine: sel.end.line,
+							endCharacter: sel.end.character,
+							isEmpty: sel.isEmpty,
+							originalText: sel.isEmpty ? '' : editorBeforeInsert.document.getText(sel),
+						}))
+						.sort((a, b) => a.startLine !== b.startLine
+							? a.startLine - b.startLine
+							: a.startCharacter - b.startCharacter);
+				}
+
+				const insertionResult = await insertText(
 					transcript,
 					vscode.window.activeTextEditor,
 					vscode.window.activeTerminal,
 					executeCommand,
 					preferTerminal,
 				);
+
+				// Record dictation for undo (editor inserts only)
+				if (insertionResult.target === 'editor' && editorBeforeInsert && preEditSelections) {
+					const insertedRanges = computeInsertedRanges(preEditSelections, transcript);
+					recordDictation({
+						documentUri: editorBeforeInsert.document.uri.toString(),
+						insertedText: transcript,
+						insertedRanges,
+						originalTexts: preEditSelections.map(s => s.originalText),
+					});
+				} else {
+					clearLastDictation();
+				}
 
 				capturedSelectedText = undefined;
 				statusBar.setIdle(selectedTemplate?.name);
@@ -1014,10 +1051,73 @@ export function activate(context: vscode.ExtensionContext) {
 		}
 	});
 
+	const undoCommand = vscode.commands.registerCommand('dictation.undo', async () => {
+		const record = getLastDictation();
+		if (!record) {
+			vscode.window.showInformationMessage('Verba: No dictation to undo.');
+			return;
+		}
+
+		try {
+			// Find an editor for the target document
+			let editor = vscode.window.visibleTextEditors.find(
+				e => e.document.uri.toString() === record.documentUri,
+			);
+			if (!editor) {
+				const doc = await vscode.workspace.openTextDocument(vscode.Uri.parse(record.documentUri));
+				editor = await vscode.window.showTextDocument(doc);
+			}
+
+			// Verify the inserted text is still at the expected ranges
+			const doc = editor.document;
+			for (let i = 0; i < record.insertedRanges.length; i++) {
+				const r = record.insertedRanges[i];
+				const range = new vscode.Range(r.startLine, r.startCharacter, r.endLine, r.endCharacter);
+				const currentText = doc.getText(range);
+				if (currentText !== record.insertedText) {
+					vscode.window.showWarningMessage(
+						'Verba: The document has changed since the last dictation. Undo may not be accurate.'
+					);
+					break;
+				}
+			}
+
+			// Apply the reverse edit: delete inserted ranges or restore original text.
+			// Process in reverse document order to keep offsets stable.
+			const sortedIndices = record.insertedRanges
+				.map((_, i) => i)
+				.sort((a, b) => {
+					const ra = record.insertedRanges[a];
+					const rb = record.insertedRanges[b];
+					if (ra.startLine !== rb.startLine) { return rb.startLine - ra.startLine; }
+					return rb.startCharacter - ra.startCharacter;
+				});
+
+			const success = await editor.edit((editBuilder) => {
+				for (const i of sortedIndices) {
+					const r = record.insertedRanges[i];
+					const range = new vscode.Range(r.startLine, r.startCharacter, r.endLine, r.endCharacter);
+					editBuilder.replace(range, record.originalTexts[i]);
+				}
+			});
+
+			if (success) {
+				clearLastDictation();
+				vscode.window.setStatusBarMessage('$(discard) Verba: dictation undone', 5000);
+			} else {
+				vscode.window.showErrorMessage('Verba: Failed to undo dictation — the document may have changed.');
+			}
+		} catch (err: unknown) {
+			console.error('[Verba] Undo dictation failed:', err);
+			const message = err instanceof Error ? err.message : String(err);
+			vscode.window.showErrorMessage(`Verba: Could not undo dictation: ${message}`);
+		}
+	});
+
 	context.subscriptions.push(
 		editorCommand, terminalCommand, selectDeviceCommand, selectTemplateCommand,
 		indexProjectCommand, downloadModelCommand, manageApiKeysCommand, showCostOverviewCommand,
-		generateGlossaryCommand, saveWatcher,
+		generateGlossaryCommand, undoCommand, saveWatcher,
 		{ dispose: () => recorder.dispose() }, statusBar,
 	);
 }

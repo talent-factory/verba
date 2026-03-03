@@ -42,6 +42,19 @@ export class StatusBarManager {
 		this.item.tooltip = 'Click to stop dictation';
 	}
 
+	/** Shows continuous recording state with optional segment count and processing indicator. */
+	setRecordingContinuous(segmentsInserted?: number, processingSegment?: boolean): void {
+		if (processingSegment && segmentsInserted !== undefined) {
+			this.item.text = `$(circle-filled) Recording | Processing seg ${segmentsInserted + 1}...`;
+		} else if (segmentsInserted !== undefined && segmentsInserted > 0) {
+			this.item.text = `$(circle-filled) Recording (${segmentsInserted} segments inserted)`;
+		} else {
+			this.item.text = '$(circle-filled) Continuous Recording...';
+		}
+		this.item.backgroundColor = new vscode.ThemeColor('statusBarItem.errorBackground');
+		this.item.tooltip = 'Click to stop continuous dictation';
+	}
+
 	/** Shows a spinner while transcription is in progress, indicating the active provider. */
 	setTranscribing(): void {
 		const suffix = this._provider === 'local' ? ' (local)' : '';

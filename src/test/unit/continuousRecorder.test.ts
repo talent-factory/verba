@@ -120,7 +120,7 @@ suite('ContinuousRecorder', () => {
 	let spawnStub: sinon.SinonStub;
 
 	setup(() => {
-		cr = new ContinuousRecorder('/tmp/verba-continuous-123.raw');
+		cr = new ContinuousRecorder('/tmp/verba-continuous-123.wav');
 		fakeProcess = createFakeProcess();
 		findFfmpegStub = sinon.stub(recorder, 'findFfmpeg').returns('/opt/homebrew/bin/ffmpeg');
 		spawnStub = sinon.stub(child_process, 'spawn').returns(
@@ -134,7 +134,7 @@ suite('ContinuousRecorder', () => {
 
 	suite('constructor and properties', () => {
 		test('outputPath returns the path passed to constructor', () => {
-			assert.strictEqual(cr.outputPath, '/tmp/verba-continuous-123.raw');
+			assert.strictEqual(cr.outputPath, '/tmp/verba-continuous-123.wav');
 		});
 
 		test('isRecording is false initially', () => {
@@ -148,23 +148,38 @@ suite('ContinuousRecorder', () => {
 		setup(() => {
 			// Create a real raw PCM file with 3 seconds of sine wave data
 			// (16kHz, mono, 16-bit = 32000 bytes/sec = 96000 bytes for 3s)
-			rawFilePath = path.join(os.tmpdir(), `verba-test-extract-${Date.now()}.raw`);
+			rawFilePath = path.join(os.tmpdir(), `verba-test-extract-${Date.now()}.wav`);
 			const bytesPerSec = 32000;
 			const durationSec = 3;
-			const totalBytes = bytesPerSec * durationSec;
-			const buf = Buffer.alloc(totalBytes);
-			for (let i = 0; i < totalBytes; i += 2) {
+			const pcmBytes = bytesPerSec * durationSec;
+			const pcmBuf = Buffer.alloc(pcmBytes);
+			for (let i = 0; i < pcmBytes; i += 2) {
 				const sample = Math.floor(Math.sin(i / 10) * 10000);
-				buf.writeInt16LE(sample, i);
+				pcmBuf.writeInt16LE(sample, i);
 			}
-			fs.writeFileSync(rawFilePath, buf);
+			// Write WAV file with proper header (44 bytes) + PCM data
+			const wavHeader = Buffer.alloc(44);
+			wavHeader.write('RIFF', 0);
+			wavHeader.writeUInt32LE(36 + pcmBytes, 4);
+			wavHeader.write('WAVE', 8);
+			wavHeader.write('fmt ', 12);
+			wavHeader.writeUInt32LE(16, 16);
+			wavHeader.writeUInt16LE(1, 20);
+			wavHeader.writeUInt16LE(1, 22);
+			wavHeader.writeUInt32LE(16000, 24);
+			wavHeader.writeUInt32LE(32000, 28);
+			wavHeader.writeUInt16LE(2, 32);
+			wavHeader.writeUInt16LE(16, 34);
+			wavHeader.write('data', 36);
+			wavHeader.writeUInt32LE(pcmBytes, 40);
+			fs.writeFileSync(rawFilePath, Buffer.concat([wavHeader, pcmBuf]));
 			cr = new ContinuousRecorder(rawFilePath);
 		});
 
 		teardown(() => {
 			try { fs.unlinkSync(rawFilePath); } catch { /* ignore */ }
 			for (let i = 0; i < 10; i++) {
-				try { fs.unlinkSync(rawFilePath.replace(/\.raw$/, `-seg-${i}.wav`)); } catch { /* ignore */ }
+				try { fs.unlinkSync(rawFilePath.replace(/\.wav$/, `-seg-${i}.wav`)); } catch { /* ignore */ }
 			}
 		});
 
@@ -192,7 +207,7 @@ suite('ContinuousRecorder', () => {
 		});
 
 		test('emits error for non-existent file', async () => {
-			const badCr = new ContinuousRecorder('/tmp/nonexistent-file.raw');
+			const badCr = new ContinuousRecorder('/tmp/nonexistent-file.wav');
 			const errorEvents: Error[] = [];
 			badCr.on('error', (evt: Error) => errorEvents.push(evt));
 			await badCr.extractSegment(0, 2);
@@ -443,7 +458,7 @@ suite('ContinuousRecorder lifecycle', () => {
 			await startRecording(cr);
 
 			assert.ok(cr.outputPath.includes('verba-continuous-'), `Expected verba-continuous- in path, got ${cr.outputPath}`);
-			assert.ok(cr.outputPath.endsWith('.raw'), `Expected .raw extension, got ${cr.outputPath}`);
+			assert.ok(cr.outputPath.endsWith('.wav'), `Expected .wav extension, got ${cr.outputPath}`);
 		});
 
 		test('emits error and stopped when ffmpeg crashes mid-recording', async () => {
@@ -469,7 +484,7 @@ suite('ContinuousRecorder lifecycle', () => {
 		});
 
 		test('resets segment count on start', async () => {
-			cr = new ContinuousRecorder('/tmp/verba-continuous-test.raw');
+			cr = new ContinuousRecorder('/tmp/verba-continuous-test.wav');
 			const extractStub = sinon.stub(cr, 'extractSegment').resolves();
 
 			await startRecording(cr);
@@ -567,7 +582,7 @@ suite('ContinuousRecorder lifecycle', () => {
 			const result = await stopPromise;
 
 			assert.ok(result.includes('verba-continuous-'), `Expected path to contain verba-continuous-, got ${result}`);
-			assert.ok(result.endsWith('.raw'), `Expected path to end with .raw, got ${result}`);
+			assert.ok(result.endsWith('.wav'), `Expected path to end with .wav, got ${result}`);
 		});
 
 		test('extracts final segment on stop', async () => {
@@ -735,20 +750,29 @@ suite('ContinuousRecorder lifecycle', () => {
 
 		test('dispose cleans up segment files', async () => {
 			// Create a real raw PCM file and extract segments from it
-			const rawPath = path.join(os.tmpdir(), `verba-test-dispose-${Date.now()}.raw`);
-			const buf = Buffer.alloc(96000); // 3 seconds
-			for (let i = 0; i < buf.length; i += 2) {
-				buf.writeInt16LE(Math.floor(Math.sin(i / 10) * 10000), i);
+			const rawPath = path.join(os.tmpdir(), `verba-test-dispose-${Date.now()}.wav`);
+			const pcmBytes = 96000; // 3 seconds at 32000 bytes/sec
+			const pcmBuf = Buffer.alloc(pcmBytes);
+			for (let i = 0; i < pcmBytes; i += 2) {
+				pcmBuf.writeInt16LE(Math.floor(Math.sin(i / 10) * 10000), i);
 			}
-			fs.writeFileSync(rawPath, buf);
+			const hdr = Buffer.alloc(44);
+			hdr.write('RIFF', 0); hdr.writeUInt32LE(36 + pcmBytes, 4);
+			hdr.write('WAVE', 8); hdr.write('fmt ', 12);
+			hdr.writeUInt32LE(16, 16); hdr.writeUInt16LE(1, 20);
+			hdr.writeUInt16LE(1, 22); hdr.writeUInt32LE(16000, 24);
+			hdr.writeUInt32LE(32000, 28); hdr.writeUInt16LE(2, 32);
+			hdr.writeUInt16LE(16, 34); hdr.write('data', 36);
+			hdr.writeUInt32LE(pcmBytes, 40);
+			fs.writeFileSync(rawPath, Buffer.concat([hdr, pcmBuf]));
 
 			const cr2 = new ContinuousRecorder(rawPath);
 			await cr2.extractSegment(0, 1.0);
 			await cr2.extractSegment(1.0, 2.0);
 
 			// Verify segment files exist
-			const seg0 = rawPath.replace(/\.raw$/, '-seg-0.wav');
-			const seg1 = rawPath.replace(/\.raw$/, '-seg-1.wav');
+			const seg0 = rawPath.replace(/\.wav$/, '-seg-0.wav');
+			const seg1 = rawPath.replace(/\.wav$/, '-seg-1.wav');
 			assert.ok(fs.existsSync(seg0), 'seg-0 should exist before dispose');
 			assert.ok(fs.existsSync(seg1), 'seg-1 should exist before dispose');
 

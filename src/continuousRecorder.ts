@@ -124,7 +124,7 @@ export class ContinuousRecorder extends EventEmitter {
 		// Generate output path if not set via constructor
 		if (!this._outputPath) {
 			const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-			this._outputPath = path.join(os.tmpdir(), `verba-continuous-${timestamp}.raw`);
+			this._outputPath = path.join(os.tmpdir(), `verba-continuous-${timestamp}.wav`);
 		}
 
 		// Reset state for new recording session
@@ -140,13 +140,14 @@ export class ContinuousRecorder extends EventEmitter {
 			'-af', `silencedetect=n=${this.silenceLevel}dB:d=${this.silenceThreshold}`,
 			'-ar', '16000',
 			'-ac', '1',
-			// Output raw PCM (s16le) instead of WAV. This is critical for
-			// continuous dictation because segment extraction reads from this
-			// file while recording is still in progress. WAV headers contain
-			// the total data size which is only finalized on close, causing
-			// extraction to fail with exit code 183. Raw PCM has no headers,
-			// so the file is always in a consistent, readable state.
-			'-f', 's16le',
+			// Output WAV format. ffmpeg MUST flush all buffered audio and
+			// update the WAV header before exiting, which guarantees the file
+			// contains the complete recording after stop(). The Node.js
+			// segment extraction reads PCM data directly at byte offsets
+			// (skipping the 44-byte WAV header), which works reliably even
+			// while the file is being written — WAV PCM data is identical
+			// to raw s16le after the header.
+			'-acodec', 'pcm_s16le',
 			// Flush every packet immediately to disk. Without this, ffmpeg
 			// buffers audio data internally, and the last spoken sentence
 			// may still be in the buffer when 'q' is sent to stop recording,
@@ -365,42 +366,44 @@ export class ContinuousRecorder extends EventEmitter {
 	 */
 	async extractSegment(startTime: number, endTime: number): Promise<void> {
 		const segmentIndex = this._segmentCount++;
-		const segmentPath = this._outputPath.replace(/\.raw$/, `-seg-${segmentIndex}.wav`);
+		const segmentPath = this._outputPath.replace(/\.wav$/, `-seg-${segmentIndex}.wav`);
 		this.segmentPaths.push(segmentPath);
 
 		try {
-			// Raw PCM format: 16-bit signed LE, 16kHz, mono
+			// PCM format: 16-bit signed LE, 16kHz, mono
 			const SAMPLE_RATE = 16000;
 			const CHANNELS = 1;
 			const BITS_PER_SAMPLE = 16;
 			const BYTES_PER_SAMPLE = BITS_PER_SAMPLE / 8;
 			const BYTE_RATE = SAMPLE_RATE * CHANNELS * BYTES_PER_SAMPLE; // 32000
+			const WAV_HEADER_SIZE = 44; // Standard PCM WAV header
 
+			// Calculate byte offsets within the PCM data (after WAV header)
 			const startByte = Math.floor(startTime * BYTE_RATE);
-			// Align to sample boundary (2 bytes per sample)
 			const alignedStart = startByte - (startByte % BYTES_PER_SAMPLE);
 
-			// Wait for the raw file to have enough data. The silencedetect filter
-			// reports timestamps in real-time, but the file writing lags ~2-4s behind
-			// due to ffmpeg's internal audio processing pipeline. We poll the file
-			// size until it's large enough, or timeout after 5 seconds.
+			// Wait for the file to have enough data. The silencedetect filter
+			// reports timestamps in real-time, but file writing can lag behind
+			// due to ffmpeg's internal buffering. We poll until data is available.
 			let fileSize = fs.statSync(this._outputPath).size;
-			const minRequired = alignedStart + BYTE_RATE; // Need at least 1s of audio past start
+			const pcmDataSize = Math.max(0, fileSize - WAV_HEADER_SIZE);
+			const minRequired = WAV_HEADER_SIZE + alignedStart + BYTE_RATE;
 			if (fileSize < minRequired && this._isRecording) {
 				for (let retry = 0; retry < 10 && fileSize < minRequired; retry++) {
 					await new Promise(r => setTimeout(r, 500));
 					try {
 						fileSize = fs.statSync(this._outputPath).size;
 					} catch {
-						break; // File might have been deleted
+						break;
 					}
 				}
 				console.log(`[Verba] Segment ${segmentIndex}: waited for file to grow (now ${fileSize} bytes, need ${minRequired})`);
 			}
-			const maxEndByte = fileSize;
+
+			const maxPcmEndByte = Math.max(0, fileSize - WAV_HEADER_SIZE);
 			const endByte = endTime >= 999999
-				? maxEndByte
-				: Math.min(Math.floor(endTime * BYTE_RATE), maxEndByte);
+				? maxPcmEndByte
+				: Math.min(Math.floor(endTime * BYTE_RATE), maxPcmEndByte);
 			const alignedEnd = endByte - (endByte % BYTES_PER_SAMPLE);
 
 			const pcmLength = alignedEnd - alignedStart;
@@ -410,10 +413,10 @@ export class ContinuousRecorder extends EventEmitter {
 				return;
 			}
 
-			// Read PCM data from raw file at exact byte offset
+			// Read PCM data from WAV file, skipping the 44-byte header
 			const fd = fs.openSync(this._outputPath, 'r');
 			const pcmBuffer = Buffer.alloc(pcmLength);
-			const bytesRead = fs.readSync(fd, pcmBuffer, 0, pcmLength, alignedStart);
+			const bytesRead = fs.readSync(fd, pcmBuffer, 0, pcmLength, WAV_HEADER_SIZE + alignedStart);
 			fs.closeSync(fd);
 
 			if (bytesRead <= 0) {

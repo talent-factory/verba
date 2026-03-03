@@ -47,6 +47,7 @@ All phases are sub-issues of TF-243 (project overview). All core phases are comp
 - **TF-262: Text Expansion / Abbreviations** - Done. User-defined abbreviations expanded during Claude post-processing. Global via `verba.expansions` setting, workspace-specific via `.verba-expansions.json`. `setExpansions()` on CleanupService. Workspace expansions override global for same abbreviation.
 - **TF-259: File-Type-Aware Templates** - Done. Automatic template selection based on active editor's `languageId`. Optional `fileTypes` array on Template interface (e.g. `["java", "kotlin"]`). `findTemplateForLanguage()` in `templatePicker.ts`. Setting `verba.autoSelectTemplate` (default: `true`). Fallback to last manually chosen template. Built-in defaults: JavaDoc → java/kotlin, Markdown → markdown.
 - **TF-264: Dictation History with Full-Text Search** - Done. Persistent dictation history with full-text search via globalState. Browse via Quick Pick (`dictation.showHistory`), search across raw transcript and cleaned text (`dictation.searchHistory`), re-insert or copy past dictations. Three actions: insert at cursor, copy to clipboard, show details. Configurable max entries (`verba.history.maxEntries`, default 500). Privacy: history stays local, never sent to APIs.
+- **TF-260: Continuous Dictation** - Done. Longer dictation sessions with automatic pause detection via ffmpeg `silencedetect` filter. Each pause-delimited segment is independently transcribed (Whisper), cleaned (Claude), and inserted. New command `dictation.startContinuous` (`Cmd+Shift+Alt+D`). Configurable silence threshold (`verba.continuous.silenceThreshold`, default 1.5s) and level (`verba.continuous.silenceLevel`, default -30dB). Segments processed via FIFO queue while recording continues. Per-segment undo and history records. Existing single-shot mode unchanged.
 
 ## Git Workflow
 
@@ -90,6 +91,7 @@ release-please cannot parse emoji-prefixed conventional commits (`✨ feat:` →
 - Dictation history: `dictation.showHistory` — Quick Pick with recent dictations, filter, re-insert or copy
 - Search history: `dictation.searchHistory` — full-text search across all dictations (raw transcript + cleaned text)
 - Clear history: `dictation.clearHistory` — delete all saved dictations (with confirmation)
+- Continuous dictation: `dictation.startContinuous` (`Cmd+Shift+Alt+D` / `Ctrl+Shift+Alt+D`) — start/stop continuous mode with automatic pause segmentation
 - API keys are stored exclusively via `vscode.SecretStorage` (never in plaintext)
 - TypeScript strict mode
 - Follow VS Code Extension best practices
@@ -116,3 +118,4 @@ Microphone --> ffmpeg (WAV) --> Whisper API     --> Claude API --> Editor/Termin
 | `glossaryGenerator.ts` | Scans workspace for project-specific glossary terms (metadata, symbols, docs) |
 | `historyManager.ts` | Dictation history with globalState persistence and full-text search |
 | `historyCommands.ts` | Quick Pick UI for browsing, searching, and acting on history entries |
+| `continuousRecorder.ts` | ffmpeg with silencedetect filter, segment extraction, EventEmitter |

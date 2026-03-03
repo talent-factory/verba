@@ -380,7 +380,23 @@ export class ContinuousRecorder extends EventEmitter {
 			// Align to sample boundary (2 bytes per sample)
 			const alignedStart = startByte - (startByte % BYTES_PER_SAMPLE);
 
-			const fileSize = fs.statSync(this._outputPath).size;
+			// Wait for the raw file to have enough data. The silencedetect filter
+			// reports timestamps in real-time, but the file writing lags ~2-4s behind
+			// due to ffmpeg's internal audio processing pipeline. We poll the file
+			// size until it's large enough, or timeout after 5 seconds.
+			let fileSize = fs.statSync(this._outputPath).size;
+			const minRequired = alignedStart + BYTE_RATE; // Need at least 1s of audio past start
+			if (fileSize < minRequired && this._isRecording) {
+				for (let retry = 0; retry < 10 && fileSize < minRequired; retry++) {
+					await new Promise(r => setTimeout(r, 500));
+					try {
+						fileSize = fs.statSync(this._outputPath).size;
+					} catch {
+						break; // File might have been deleted
+					}
+				}
+				console.log(`[Verba] Segment ${segmentIndex}: waited for file to grow (now ${fileSize} bytes, need ${minRequired})`);
+			}
 			const maxEndByte = fileSize;
 			const endByte = endTime >= 999999
 				? maxEndByte

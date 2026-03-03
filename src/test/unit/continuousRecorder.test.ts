@@ -371,6 +371,57 @@ suite('ContinuousRecorder lifecycle', () => {
 			assert.strictEqual(extractStub.firstCall.args[1], 3.5, 'endTime should be 3.5 (lastSilenceStart)');
 		});
 
+		test('silence_end without prior silence_start does not trigger extractSegment', async () => {
+			cr = freshRecorder();
+			const extractStub = sinon.stub(cr, 'extractSegment').resolves();
+
+			await startRecording(cr);
+
+			// Emit only silence_end (no preceding silence_start)
+			fakeProcess.stderr.emit('data', Buffer.from(
+				'[silencedetect @ 0x7f8] silence_end: 5.0 | silence_duration: 1.5\n'
+			));
+
+			assert.strictEqual(extractStub.callCount, 0, 'extractSegment should NOT be called when silence_end has no prior silence_start');
+		});
+
+		test('processes multiple silence cycles with correct segment boundaries', async () => {
+			cr = freshRecorder();
+			const extractStub = sinon.stub(cr, 'extractSegment').resolves();
+
+			await startRecording(cr);
+
+			// Cycle 1: speech 0-3s, silence 3-5s
+			fakeProcess.stderr.emit('data', Buffer.from(
+				'[silencedetect @ 0x7f8] silence_start: 3.0\n'
+				+ '[silencedetect @ 0x7f8] silence_end: 5.0 | silence_duration: 2.0\n'
+			));
+
+			assert.strictEqual(extractStub.callCount, 1, 'Cycle 1: extractSegment should be called once');
+			assert.strictEqual(extractStub.firstCall.args[0], 0, 'Cycle 1: startTime should be 0');
+			assert.strictEqual(extractStub.firstCall.args[1], 3.0, 'Cycle 1: endTime should be 3.0 (silence_start)');
+
+			// Cycle 2: speech 5-8s, silence 8-10s
+			fakeProcess.stderr.emit('data', Buffer.from(
+				'[silencedetect @ 0x7f8] silence_start: 8.0\n'
+				+ '[silencedetect @ 0x7f8] silence_end: 10.0 | silence_duration: 2.0\n'
+			));
+
+			assert.strictEqual(extractStub.callCount, 2, 'Cycle 2: extractSegment should be called twice total');
+			assert.strictEqual(extractStub.secondCall.args[0], 5.0, 'Cycle 2: startTime should be 5.0 (lastSegmentEnd)');
+			assert.strictEqual(extractStub.secondCall.args[1], 8.0, 'Cycle 2: endTime should be 8.0 (silence_start)');
+
+			// Stop recording — final segment should start at 10.0
+			extractStub.resetHistory();
+			const stopPromise = cr.stop();
+			fakeProcess.emit('close', 0);
+			await stopPromise;
+
+			assert.strictEqual(extractStub.callCount, 1, 'Final: extractSegment should be called once for final segment');
+			assert.strictEqual(extractStub.firstCall.args[0], 10.0, 'Final: startTime should be 10.0 (lastSegmentEnd after cycle 2)');
+			assert.ok(extractStub.firstCall.args[1] >= 99999, 'Final: endTime should be a large number');
+		});
+
 		test('buffers incomplete stderr lines across data events', async () => {
 			cr = freshRecorder();
 			const extractStub = sinon.stub(cr, 'extractSegment').resolves();
@@ -421,6 +472,28 @@ suite('ContinuousRecorder lifecycle', () => {
 
 			assert.ok(cr.outputPath.includes('verba-continuous-'), `Expected verba-continuous- in path, got ${cr.outputPath}`);
 			assert.ok(cr.outputPath.endsWith('.wav'), `Expected .wav extension, got ${cr.outputPath}`);
+		});
+
+		test('emits error and stopped when ffmpeg crashes mid-recording', async () => {
+			cr = freshRecorder();
+			await startRecording(cr);
+
+			const errorEvents: Error[] = [];
+			const stoppedSpy = sinon.spy();
+			cr.on('error', (err: Error) => errorEvents.push(err));
+			cr.on('stopped', stoppedSpy);
+
+			// Simulate ffmpeg crash: emit 'close' with code 1
+			fakeProcess.emit('close', 1);
+
+			assert.strictEqual(cr.isRecording, false, 'isRecording should be false after crash');
+			assert.strictEqual(errorEvents.length, 1, 'Should emit one error event');
+			assert.ok(errorEvents[0] instanceof Error);
+			assert.ok(
+				errorEvents[0].message.includes('unexpectedly'),
+				`Error message should mention unexpected stop, got: ${errorEvents[0].message}`
+			);
+			assert.ok(stoppedSpy.calledOnce, 'Should emit stopped event after crash');
 		});
 
 		test('resets segment count on start', async () => {
@@ -576,6 +649,45 @@ suite('ContinuousRecorder lifecycle', () => {
 			);
 		});
 
+		test('rejects after 5s if process never exits even after SIGKILL', async () => {
+			cr = freshRecorder();
+			sinon.stub(cr, 'extractSegment').resolves();
+			await startRecording(cr);
+
+			// Make kill() a no-op so the process never actually closes
+			fakeProcess.kill = sinon.stub().returns(true);
+
+			const stopPromise = cr.stop();
+			await clock.tickAsync(5000);
+
+			await assert.rejects(
+				stopPromise,
+				/Failed to stop recording.*5 seconds/
+			);
+		});
+
+		test('falls back to SIGKILL when stdin is destroyed', async () => {
+			cr = freshRecorder();
+			sinon.stub(cr, 'extractSegment').resolves();
+			await startRecording(cr);
+
+			// Mark stdin as destroyed before stopping
+			(fakeProcess.stdin as any).destroyed = true;
+
+			const stopPromise = cr.stop();
+			fakeProcess.emit('close', 0);
+			await stopPromise;
+
+			assert.ok(
+				fakeProcess.kill.calledWith('SIGKILL'),
+				'Expected SIGKILL fallback when stdin is destroyed'
+			);
+			assert.ok(
+				!fakeProcess.stdin.write.called,
+				'Expected stdin.write NOT to be called when stdin is destroyed'
+			);
+		});
+
 		test('final segment uses updated lastSegmentEnd after silence events', async () => {
 			cr = freshRecorder();
 			const extractStub = sinon.stub(cr, 'extractSegment').resolves();
@@ -647,6 +759,62 @@ suite('ContinuousRecorder lifecycle', () => {
 			sinon.stub(fs, 'unlinkSync').throws(new Error('EPERM'));
 
 			assert.doesNotThrow(() => cr.dispose());
+		});
+
+		test('dispose cleans up segment files', async () => {
+			cr = freshRecorder();
+			const extractStub = sinon.stub(cr, 'extractSegment').resolves();
+			await startRecording(cr);
+
+			// Simulate silence events to create segment paths
+			fakeProcess.stderr.emit('data', Buffer.from(
+				'[silencedetect @ 0x7f8] silence_start: 2.0\n'
+				+ '[silencedetect @ 0x7f8] silence_end: 4.0 | silence_duration: 2.0\n'
+			));
+			fakeProcess.stderr.emit('data', Buffer.from(
+				'[silencedetect @ 0x7f8] silence_start: 6.0\n'
+				+ '[silencedetect @ 0x7f8] silence_end: 8.0 | silence_duration: 2.0\n'
+			));
+
+			// extractSegment was stubbed, but the real code pushes to segmentPaths.
+			// Since we stub extractSegment, we need to manually set segmentPaths via
+			// the internal state. We access it through a real extractSegment call path.
+			// Instead, restore the stub and use the real extractSegment which pushes paths.
+			extractStub.restore();
+
+			// Create a new recorder with known output path to control segment names
+			const cr2 = new ContinuousRecorder('/tmp/verba-test-segments.wav');
+			// Manually trigger extractSegment calls to populate segmentPaths
+			// (these will spawn ffmpeg but we have spawn stubbed)
+			const extractProc1 = createWritableFakeProcess();
+			spawnStub.returns(extractProc1 as unknown as child_process.ChildProcess);
+			const p1 = cr2.extractSegment(0, 2.0);
+			extractProc1.emit('close', 0);
+			await p1;
+
+			const extractProc2 = createWritableFakeProcess();
+			spawnStub.returns(extractProc2 as unknown as child_process.ChildProcess);
+			const p2 = cr2.extractSegment(4.0, 6.0);
+			extractProc2.emit('close', 0);
+			await p2;
+
+			const unlinkStub = sinon.stub(fs, 'unlinkSync');
+			cr2.dispose();
+
+			// Should delete both segment files + the main recording file
+			const deletedPaths = unlinkStub.args.map(args => args[0] as string);
+			assert.ok(
+				deletedPaths.includes('/tmp/verba-test-segments-seg-0.wav'),
+				`Expected seg-0 to be deleted, got: ${deletedPaths.join(', ')}`
+			);
+			assert.ok(
+				deletedPaths.includes('/tmp/verba-test-segments-seg-1.wav'),
+				`Expected seg-1 to be deleted, got: ${deletedPaths.join(', ')}`
+			);
+			assert.ok(
+				deletedPaths.includes('/tmp/verba-test-segments.wav'),
+				`Expected main recording to be deleted, got: ${deletedPaths.join(', ')}`
+			);
 		});
 	});
 });

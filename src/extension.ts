@@ -1375,7 +1375,7 @@ export function activate(context: vscode.ExtensionContext) {
 						// Silence-only segments cause Whisper to hallucinate ("Thank you
 						// for watching!", "Microsoft Office Word Document", etc.).
 						const meanVolume = detectMeanVolume(event.segmentPath);
-						if (meanVolume !== null && meanVolume < -40) {
+						if (meanVolume !== null && meanVolume < -35) {
 							console.log(`[Verba] Skipping silence-only segment (mean volume: ${meanVolume.toFixed(1)} dB)`);
 							return;
 						}

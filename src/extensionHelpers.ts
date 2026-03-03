@@ -28,28 +28,17 @@ export function isTrustedDownloadHost(urlString: string): boolean {
  * mostly silence or very short speech fragments. These are well-documented
  * artifacts of the Whisper model and never represent genuine dictation.
  */
+// CONSERVATIVE list — only patterns that NEVER appear in genuine dictation.
+// Kept minimal to avoid discarding real speech that Whisper mangled.
+// The primary defense against hallucinations is the VAD check (volume level),
+// not this pattern filter.
 const WHISPER_HALLUCINATION_PATTERNS: RegExp[] = [
 	/Microsoft\s+Office\s+Word/i,
 	/MSWordDoc/i,
 	/Word\.Document/i,
-	/Amara\.org/i,
-	/MBC\s*뉴스/,
-	/Soutien-nous/i,
-	/sous-titres/i,
-	/Sous-titrage/i,
 	/^\.+$/,            // Only dots
 	/^[\s.…♪,]+$/,     // Only punctuation, whitespace, music notes
-	/www\.\w+\.\w+/,   // URL-like hallucinations
-	/^\s*you\s*$/i,     // Single "you" (common short-segment hallucination)
 	/^\s*\.{3,}\s*$/,   // Multiple dots/ellipsis only
-	// YouTube-style outro hallucinations (common on silence at end of recording)
-	/thank\s*you\s*(for\s*watching|for\s*listening)/i,
-	/thanks\s*for\s*(watching|listening)/i,
-	/please\s*subscribe/i,
-	/like\s*and\s*subscribe/i,
-	/^\s*bye[\s.!]*$/i,
-	/Untertitel/i,              // German subtitle hallucination
-	/Vielen\s*Dank\s*f.rs?\s*Zuschauen/i, // German "Thanks for watching"
 ];
 
 /** Returns true if the transcript looks like a Whisper hallucination. */

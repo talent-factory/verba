@@ -328,14 +328,6 @@ suite('isWhisperHallucination', () => {
 		assert.strictEqual(isWhisperHallucination('Word.Document.8'), true);
 	});
 
-	test('detects Amara.org hallucination', () => {
-		assert.strictEqual(isWhisperHallucination('Amara.org'), true);
-	});
-
-	test('detects MBC news hallucination', () => {
-		assert.strictEqual(isWhisperHallucination('MBC 뉴스'), true);
-	});
-
 	test('detects only-dots hallucination', () => {
 		assert.strictEqual(isWhisperHallucination('...'), true);
 	});
@@ -345,29 +337,17 @@ suite('isWhisperHallucination', () => {
 		assert.strictEqual(isWhisperHallucination('♪♪♪'), true);
 	});
 
-	test('detects URL-like hallucination', () => {
-		assert.strictEqual(isWhisperHallucination('www.example.com'), true);
-	});
-
-	test('detects single "you" hallucination', () => {
-		assert.strictEqual(isWhisperHallucination(' you '), true);
-	});
-
 	test('treats empty string as hallucination', () => {
 		assert.strictEqual(isWhisperHallucination(''), true);
 		assert.strictEqual(isWhisperHallucination('   '), true);
 	});
 
-	test('detects "Thank you for watching" hallucination', () => {
-		assert.strictEqual(isWhisperHallucination('Thank you for watching!'), true);
-		assert.strictEqual(isWhisperHallucination('Thanks for watching'), true);
-		assert.strictEqual(isWhisperHallucination('Thank you for listening.'), true);
-		assert.strictEqual(isWhisperHallucination('Please subscribe'), true);
-	});
-
-	test('detects German hallucination patterns', () => {
-		assert.strictEqual(isWhisperHallucination('Untertitel'), true);
-		assert.strictEqual(isWhisperHallucination('Vielen Dank fürs Zuschauen'), true);
+	test('does NOT flag patterns removed from conservative filter', () => {
+		// These were removed to avoid discarding real speech Whisper mangled
+		assert.strictEqual(isWhisperHallucination('Thank you for watching!'), false);
+		assert.strictEqual(isWhisperHallucination('www.example.com'), false);
+		assert.strictEqual(isWhisperHallucination('Amara.org'), false);
+		assert.strictEqual(isWhisperHallucination(' you '), false);
 	});
 
 	test('does NOT flag genuine dictation text', () => {

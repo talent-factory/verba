@@ -1359,7 +1359,7 @@ export function activate(context: vscode.ExtensionContext) {
 			continuousRecorder = new ContinuousRecorder(undefined, silenceThreshold, silenceLevel);
 			continuousSegmentsInserted = 0;
 			continuousSegmentQueue = Promise.resolve();
-			let lastSegmentTranscript = '';
+			
 
 			// Continuous dictation targets the editor
 			const executeCommand = vscode.workspace.getConfiguration('verba.terminal').get<boolean>('executeCommand', false);
@@ -1371,13 +1371,20 @@ export function activate(context: vscode.ExtensionContext) {
 					try {
 						statusBar.setRecordingContinuous(continuousSegmentsInserted, true);
 
-						// Transcribe — pass previous segment's transcript as Whisper prompt
-						// context. This dramatically reduces hallucinations at segment
-						// boundaries because Whisper knows what was said before.
-						const whisperContext = lastSegmentTranscript
-							? [...(currentGlossary || []), lastSegmentTranscript]
-							: currentGlossary;
-						const rawTranscript = await transcriptionService.process(event.segmentPath, whisperContext);
+						// Transcribe — skip segments that are too short for Whisper
+						let rawTranscript: string;
+						try {
+							rawTranscript = await transcriptionService.process(event.segmentPath, currentGlossary);
+						} catch (transcriptionErr: unknown) {
+							const msg = transcriptionErr instanceof Error ? transcriptionErr.message : String(transcriptionErr);
+							// Whisper returns 400 for audio < 0.1s — this is normal for
+							// edge segments (final segment when user stops right after a pause).
+							if (msg.includes('too short') || msg.includes('400')) {
+								console.log(`[Verba] Skipping too-short segment: ${msg}`);
+								return;
+							}
+							throw transcriptionErr;
+						}
 
 						// Guard: skip Whisper hallucinations on short/silent segments.
 						// Whisper produces characteristic garbage text when given very
@@ -1483,8 +1490,7 @@ export function activate(context: vscode.ExtensionContext) {
 							console.warn('[Verba] Failed to record segment in history:', historyErr);
 						}
 
-						lastSegmentTranscript = transcript;
-						continuousSegmentsInserted++;
+												continuousSegmentsInserted++;
 						statusBar.setRecordingContinuous(continuousSegmentsInserted);
 					} catch (err: unknown) {
 						console.error('[Verba] Segment processing failed:', err);

@@ -1263,7 +1263,7 @@ export function activate(context: vscode.ExtensionContext) {
 		if (continuousAbortController) {
 			continuousAbortController.abort();
 			continuousAbortController = null;
-			return;
+			// Fall through to stop recording (don't return)
 		}
 
 		// Stop continuous recording if already active
@@ -1284,6 +1284,10 @@ export function activate(context: vscode.ExtensionContext) {
 				statusBar.setIdle();
 				const message = err instanceof Error ? err.message : String(err);
 				vscode.window.showErrorMessage(`Verba: ${message}`);
+				if (continuousRecorder) {
+					continuousRecorder.dispose();
+					continuousRecorder = null;
+				}
 			}
 			return;
 		}
@@ -1323,7 +1327,8 @@ export function activate(context: vscode.ExtensionContext) {
 				await context.workspaceState.update('verba.lastTemplateName', template.name);
 			}
 
-			selectedTemplate = template;
+			// Capture template locally — don't mutate shared selectedTemplate
+			const continuousTemplate = template;
 
 			// Capture selected text (once at recording start, shared across all segments)
 			const activeEditor = vscode.window.activeTextEditor;
@@ -1336,7 +1341,7 @@ export function activate(context: vscode.ExtensionContext) {
 			}
 
 			// Guard: template referencing <selection> requires actual selection
-			if (!capturedText && selectedTemplate?.prompt.includes('<selection>')) {
+			if (!capturedText && continuousTemplate.prompt.includes('<selection>')) {
 				vscode.window.showWarningMessage(
 					'Verba: This template requires text to be selected in the editor.'
 				);
@@ -1373,8 +1378,8 @@ export function activate(context: vscode.ExtensionContext) {
 						}
 
 						// Claude cleanup
-						const pipelineContext = selectedTemplate
-							? { templatePrompt: selectedTemplate.prompt, selectedText: capturedText }
+						const pipelineContext = continuousTemplate
+							? { templatePrompt: continuousTemplate.prompt, selectedText: capturedText }
 							: undefined;
 						const abortController = new AbortController();
 						continuousAbortController = abortController;
@@ -1395,11 +1400,26 @@ export function activate(context: vscode.ExtensionContext) {
 								cleanupService.lastUsage = undefined;
 							}
 						} catch (err: unknown) {
-							if (err instanceof Error && err.name === 'AbortError') {
-								return; // Cancelled
+							if (err instanceof Error && (
+								err.name === 'AbortError'
+								|| err.message.includes('aborted')
+								|| err.message.includes('cancelled')
+								|| err.message.includes('canceled')
+							)) {
+								return; // Cancelled by user
 							}
-							// Fallback: insert raw transcript
-							console.warn('[Verba] Claude cleanup failed for segment, inserting raw:', err);
+							const message = err instanceof Error ? err.message : String(err);
+							console.error('[Verba] Claude cleanup failed for segment:', err);
+
+							if (message.includes('401') || message.includes('authentication') || message.includes('403')) {
+								vscode.window.showErrorMessage(
+									'Verba: Claude API key invalid or expired. Raw transcript inserted. Fix via "Verba: Manage API Keys".'
+								);
+							} else {
+								vscode.window.showWarningMessage(
+									`Verba: Post-processing failed for segment. Raw transcript inserted. (${message})`
+								);
+							}
 							transcript = rawTranscript;
 						} finally {
 							continuousAbortController = null;
@@ -1431,7 +1451,7 @@ export function activate(context: vscode.ExtensionContext) {
 								timestamp: Date.now(),
 								rawTranscript,
 								cleanedText: transcript,
-								templateName: selectedTemplate?.name ?? 'Default Cleanup',
+								templateName: continuousTemplate.name ?? 'Default Cleanup',
 								target: insertionResult.target,
 								languageId: vscode.window.activeTextEditor?.document.languageId,
 								workspaceFolder: vscode.workspace.workspaceFolders?.[0]?.name,
@@ -1442,28 +1462,34 @@ export function activate(context: vscode.ExtensionContext) {
 
 						continuousSegmentsInserted++;
 						statusBar.setRecordingContinuous(continuousSegmentsInserted);
-
-						// Cleanup segment file
-						cleanupFile(event.segmentPath);
 					} catch (err: unknown) {
 						console.error('[Verba] Segment processing failed:', err);
 						const message = err instanceof Error ? err.message : String(err);
 						vscode.window.showWarningMessage(`Verba: Segment failed: ${message}`);
 						statusBar.setRecordingContinuous(continuousSegmentsInserted);
+					} finally {
+						cleanupFile(event.segmentPath);
 					}
 				});
 			});
 
+			let lastRecorderErrorTime = 0;
 			continuousRecorder.on('error', (err: Error) => {
 				console.error('[Verba] Continuous recorder error:', err);
+				const now = Date.now();
+				if (now - lastRecorderErrorTime > 10_000) {
+					lastRecorderErrorTime = now;
+					vscode.window.showWarningMessage(`Verba: Recording issue: ${err.message}`);
+				}
 			});
 
 			// Start recording
 			const preferredDevice = vscode.workspace.getConfiguration('verba').get<string>('audioDevice', '').trim() || undefined;
 			await continuousRecorder.start(preferredDevice);
 			statusBar.setRecordingContinuous();
+			selectedTemplate = continuousTemplate;
 			vscode.window.showInformationMessage(
-				`Verba: Continuous recording started (${template.name})...`
+				`Verba: Continuous recording started (${continuousTemplate.name})...`
 			);
 		} catch (err: unknown) {
 			continuousRecorder = null;

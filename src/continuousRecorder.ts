@@ -74,6 +74,9 @@ export class ContinuousRecorder extends EventEmitter {
 	private silenceThreshold: number;
 	private silenceLevel: number;
 	private stderrBuffer: string = '';
+	private segmentPaths: string[] = [];
+	private extractionRunning: boolean = false;
+	private extractionPending: Array<() => Promise<void>> = [];
 
 	/**
 	 * @param outputPath - Explicit path for the continuous recording WAV file.
@@ -131,6 +134,9 @@ export class ContinuousRecorder extends EventEmitter {
 		this.lastSegmentEnd = 0;
 		this.lastSilenceStart = null;
 		this.stderrBuffer = '';
+		this.segmentPaths = [];
+		this.extractionRunning = false;
+		this.extractionPending = [];
 
 		this.process = spawn(ffmpegPath, [
 			'-f', inputFormat,
@@ -214,6 +220,20 @@ export class ContinuousRecorder extends EventEmitter {
 				}
 			});
 		});
+
+		// Register post-startup crash handler (replaces startup handler)
+		this.process!.removeAllListeners('close');
+		this.process!.on('close', (code) => {
+			if (this._isRecording) {
+				this._isRecording = false;
+				this.process = null;
+				this.emit('error', new Error(
+					`Recording stopped unexpectedly (ffmpeg exited with code ${code}). `
+					+ 'Check microphone connection and disk space.'
+				));
+				this.emit('stopped');
+			}
+		});
 	}
 
 	/**
@@ -236,8 +256,11 @@ export class ContinuousRecorder extends EventEmitter {
 			const killTimeout = setTimeout(() => {
 				try {
 					proc.kill('SIGKILL');
-				} catch {
-					// Process already exited
+				} catch (err: unknown) {
+					const code = (err as NodeJS.ErrnoException)?.code;
+					if (code !== 'ESRCH') {
+						console.warn(`[Verba] Unexpected error killing ffmpeg: ${err instanceof Error ? err.message : String(err)}`);
+					}
 				}
 			}, 3000);
 
@@ -268,8 +291,11 @@ export class ContinuousRecorder extends EventEmitter {
 						);
 						try {
 							proc.kill('SIGKILL');
-						} catch {
-							// Process already exited
+						} catch (killErr: unknown) {
+							const code = (killErr as NodeJS.ErrnoException)?.code;
+							if (code !== 'ESRCH') {
+								console.warn(`[Verba] Unexpected error killing ffmpeg: ${killErr instanceof Error ? killErr.message : String(killErr)}`);
+							}
 						}
 					}
 				});
@@ -277,8 +303,11 @@ export class ContinuousRecorder extends EventEmitter {
 				console.warn('[Verba] ffmpeg stdin unavailable, forcing kill.');
 				try {
 					proc.kill('SIGKILL');
-				} catch {
-					// Process already exited
+				} catch (err: unknown) {
+					const code = (err as NodeJS.ErrnoException)?.code;
+					if (code !== 'ESRCH') {
+						console.warn(`[Verba] Unexpected error killing ffmpeg: ${err instanceof Error ? err.message : String(err)}`);
+					}
 				}
 			}
 		});
@@ -297,8 +326,18 @@ export class ContinuousRecorder extends EventEmitter {
 
 	/**
 	 * Extracts a time-range from the continuous WAV file into a separate
-	 * segment file. The extraction spawns a second ffmpeg process that copies
-	 * PCM data (very fast, ~50ms).
+	 * segment file. The extraction spawns a second ffmpeg process that re-muxes
+	 * raw PCM data (very fast, ~50ms).
+	 *
+	 * Extractions are serialized via an internal queue so that overlapping calls
+	 * (e.g. from rapid silence events) do not spawn concurrent ffmpeg processes.
+	 * The first call in the queue runs immediately; subsequent calls wait for
+	 * the previous extraction to finish.
+	 *
+	 * Note: This reads from the WAV file while ffmpeg is still writing to it.
+	 * Empirical testing confirms ffmpeg handles this gracefully for PCM data —
+	 * the extraction re-muxes raw samples (no `-c copy`), so partial writes
+	 * at the file tail do not corrupt the output segment.
 	 *
 	 * On success, emits a 'segment' event with the SegmentEvent payload.
 	 * On failure, emits an 'error' event. The returned promise always resolves
@@ -316,8 +355,9 @@ export class ContinuousRecorder extends EventEmitter {
 
 		const segmentIndex = this._segmentCount++;
 		const segmentPath = this._outputPath.replace(/\.wav$/, `-seg-${segmentIndex}.wav`);
+		this.segmentPaths.push(segmentPath);
 
-		return new Promise<void>((resolve) => {
+		const doWork = (): Promise<void> => new Promise<void>((resolve) => {
 			const proc = spawn(ffmpegPath, [
 				'-i', this._outputPath,
 				'-ss', String(startTime),
@@ -340,7 +380,8 @@ export class ContinuousRecorder extends EventEmitter {
 					this.emit('segment', event);
 				} else {
 					this.emit('error', new Error(
-						`Segment extraction failed with exit code ${code}`
+						`Segment ${segmentIndex} extraction failed (ffmpeg exit code ${code}). `
+						+ `Time range ${startTime.toFixed(1)}s-${endTime.toFixed(1)}s may be lost.`
 					));
 				}
 				resolve();
@@ -351,9 +392,42 @@ export class ContinuousRecorder extends EventEmitter {
 				resolve();
 			});
 		});
+
+		// Serialize: if no extraction is running, start immediately.
+		// Otherwise, queue and wait for the current one to finish first.
+		if (!this.extractionRunning) {
+			this.extractionRunning = true;
+			try {
+				await doWork();
+			} finally {
+				this.drainExtractionQueue();
+			}
+		} else {
+			return new Promise<void>((resolve) => {
+				this.extractionPending.push(async () => {
+					try {
+						await doWork();
+					} finally {
+						resolve();
+					}
+				});
+			});
+		}
 	}
 
-	/** Kills any active ffmpeg process and removes the temporary recording file. */
+	/**
+	 * Drains the pending extraction queue sequentially.
+	 * Called after each extraction completes.
+	 */
+	private async drainExtractionQueue(): Promise<void> {
+		while (this.extractionPending.length > 0) {
+			const next = this.extractionPending.shift()!;
+			await next();
+		}
+		this.extractionRunning = false;
+	}
+
+	/** Kills any active ffmpeg process and removes the temporary recording and segment files. */
 	dispose(): void {
 		if (this.process) {
 			try {
@@ -365,6 +439,17 @@ export class ContinuousRecorder extends EventEmitter {
 			this.process = null;
 		}
 		this._isRecording = false;
+		// Clean up segment temp files
+		for (const segPath of this.segmentPaths) {
+			try {
+				fs.unlinkSync(segPath);
+			} catch (err: unknown) {
+				const detail = err instanceof Error ? err.message : String(err);
+				console.warn(`[Verba] Failed to clean up segment file ${segPath}: ${detail}`);
+			}
+		}
+		this.segmentPaths = [];
+		// Clean up main recording file
 		if (this._outputPath) {
 			try {
 				fs.unlinkSync(this._outputPath);

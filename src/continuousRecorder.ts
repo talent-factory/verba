@@ -75,8 +75,6 @@ export class ContinuousRecorder extends EventEmitter {
 	private silenceLevel: number;
 	private stderrBuffer: string = '';
 	private segmentPaths: string[] = [];
-	private extractionRunning: boolean = false;
-	private extractionPending: Array<() => Promise<void>> = [];
 
 	/**
 	 * @param outputPath - Explicit path for the continuous recording WAV file.
@@ -135,8 +133,6 @@ export class ContinuousRecorder extends EventEmitter {
 		this.lastSilenceStart = null;
 		this.stderrBuffer = '';
 		this.segmentPaths = [];
-		this.extractionRunning = false;
-		this.extractionPending = [];
 
 		this.process = spawn(ffmpegPath, [
 			'-f', inputFormat,
@@ -368,93 +364,84 @@ export class ContinuousRecorder extends EventEmitter {
 	 * @param endTime End time in seconds within the continuous recording
 	 */
 	async extractSegment(startTime: number, endTime: number): Promise<void> {
-		const ffmpegPath = findFfmpeg();
-		if (!ffmpegPath) {
-			this.emit('error', new Error('ffmpeg not found — cannot extract segment'));
-			return;
-		}
-
 		const segmentIndex = this._segmentCount++;
 		const segmentPath = this._outputPath.replace(/\.raw$/, `-seg-${segmentIndex}.wav`);
 		this.segmentPaths.push(segmentPath);
 
-		const duration = endTime - startTime;
-		const doWork = (): Promise<void> => new Promise<void>((resolve) => {
-			const proc = spawn(ffmpegPath, [
-				// Input format and seeking BEFORE -i for byte-level seeking.
-				// With raw PCM, ffmpeg calculates byte offset directly:
-				// offset = time * sample_rate * channels * bytes_per_sample
-				// This is fast and precise, unlike post-input seeking which
-				// decodes sequentially and fails with actively-written files.
-				'-f', 's16le',
-				'-ar', '16000',
-				'-ac', '1',
-				'-ss', String(startTime),
-				'-i', this._outputPath,
-				// Use -t (duration) not -to (absolute time), because with
-				// input seeking, -to would be relative to file start, not seek point.
-				'-t', String(duration),
-				'-acodec', 'pcm_s16le',
-				'-y',
-				segmentPath,
-			]);
+		try {
+			// Raw PCM format: 16-bit signed LE, 16kHz, mono
+			const SAMPLE_RATE = 16000;
+			const CHANNELS = 1;
+			const BITS_PER_SAMPLE = 16;
+			const BYTES_PER_SAMPLE = BITS_PER_SAMPLE / 8;
+			const BYTE_RATE = SAMPLE_RATE * CHANNELS * BYTES_PER_SAMPLE; // 32000
 
-			proc.on('close', (code: number | null) => {
-				if (code === 0) {
-					const event: SegmentEvent = {
-						segmentPath,
-						segmentIndex,
-						startTime,
-						endTime,
-					};
-					this.emit('segment', event);
-				} else {
-					this.emit('error', new Error(
-						`Segment ${segmentIndex} extraction failed (ffmpeg exit code ${code}). `
-						+ `Time range ${startTime.toFixed(1)}s-${endTime.toFixed(1)}s may be lost.`
-					));
-				}
-				resolve();
-			});
+			const startByte = Math.floor(startTime * BYTE_RATE);
+			// Align to sample boundary (2 bytes per sample)
+			const alignedStart = startByte - (startByte % BYTES_PER_SAMPLE);
 
-			proc.on('error', (err: Error) => {
-				this.emit('error', err);
-				resolve();
-			});
-		});
+			const fileSize = fs.statSync(this._outputPath).size;
+			const maxEndByte = fileSize;
+			const endByte = endTime >= 999999
+				? maxEndByte
+				: Math.min(Math.floor(endTime * BYTE_RATE), maxEndByte);
+			const alignedEnd = endByte - (endByte % BYTES_PER_SAMPLE);
 
-		// Serialize: if no extraction is running, start immediately.
-		// Otherwise, queue and wait for the current one to finish first.
-		if (!this.extractionRunning) {
-			this.extractionRunning = true;
-			try {
-				await doWork();
-			} finally {
-				this.drainExtractionQueue();
+			const pcmLength = alignedEnd - alignedStart;
+			if (pcmLength <= 0) {
+				console.log(`[Verba] Segment ${segmentIndex}: no audio data (${alignedStart}-${alignedEnd} in ${fileSize} byte file)`);
+				this.emit('error', new Error(`Segment ${segmentIndex}: no audio data at ${startTime.toFixed(1)}s`));
+				return;
 			}
-		} else {
-			return new Promise<void>((resolve) => {
-				this.extractionPending.push(async () => {
-					try {
-						await doWork();
-					} finally {
-						resolve();
-					}
-				});
-			});
-		}
-	}
 
-	/**
-	 * Drains the pending extraction queue sequentially.
-	 * Called after each extraction completes.
-	 */
-	private async drainExtractionQueue(): Promise<void> {
-		while (this.extractionPending.length > 0) {
-			const next = this.extractionPending.shift()!;
-			await next();
+			// Read PCM data from raw file at exact byte offset
+			const fd = fs.openSync(this._outputPath, 'r');
+			const pcmBuffer = Buffer.alloc(pcmLength);
+			const bytesRead = fs.readSync(fd, pcmBuffer, 0, pcmLength, alignedStart);
+			fs.closeSync(fd);
+
+			if (bytesRead <= 0) {
+				console.log(`[Verba] Segment ${segmentIndex}: read 0 bytes at offset ${alignedStart}`);
+				this.emit('error', new Error(`Segment ${segmentIndex}: no data read at ${startTime.toFixed(1)}s`));
+				return;
+			}
+
+			// Write WAV file (44-byte header + PCM data)
+			const dataSize = bytesRead;
+			const wavHeader = Buffer.alloc(44);
+			wavHeader.write('RIFF', 0);                                    // ChunkID
+			wavHeader.writeUInt32LE(36 + dataSize, 4);                     // ChunkSize
+			wavHeader.write('WAVE', 8);                                    // Format
+			wavHeader.write('fmt ', 12);                                   // Subchunk1ID
+			wavHeader.writeUInt32LE(16, 16);                               // Subchunk1Size (PCM)
+			wavHeader.writeUInt16LE(1, 20);                                // AudioFormat (PCM=1)
+			wavHeader.writeUInt16LE(CHANNELS, 22);                         // NumChannels
+			wavHeader.writeUInt32LE(SAMPLE_RATE, 24);                      // SampleRate
+			wavHeader.writeUInt32LE(BYTE_RATE, 28);                        // ByteRate
+			wavHeader.writeUInt16LE(CHANNELS * BYTES_PER_SAMPLE, 32);      // BlockAlign
+			wavHeader.writeUInt16LE(BITS_PER_SAMPLE, 34);                  // BitsPerSample
+			wavHeader.write('data', 36);                                   // Subchunk2ID
+			wavHeader.writeUInt32LE(dataSize, 40);                         // Subchunk2Size
+
+			fs.writeFileSync(segmentPath, Buffer.concat([wavHeader, pcmBuffer.subarray(0, bytesRead)]));
+
+			const durationSec = (bytesRead / BYTE_RATE).toFixed(1);
+			console.log(`[Verba] Segment ${segmentIndex}: ${bytesRead} bytes (${durationSec}s) extracted at ${startTime.toFixed(1)}s`);
+
+			this.emit('segment', {
+				segmentPath,
+				segmentIndex,
+				startTime,
+				endTime,
+			} as SegmentEvent);
+		} catch (err: unknown) {
+			const detail = err instanceof Error ? err.message : String(err);
+			console.error(`[Verba] Segment ${segmentIndex} extraction failed:`, err);
+			this.emit('error', new Error(
+				`Segment ${segmentIndex} extraction failed: ${detail}. `
+				+ `Time range ${startTime.toFixed(1)}s-${endTime.toFixed(1)}s may be lost.`
+			));
 		}
-		this.extractionRunning = false;
 	}
 
 	/** Kills any active ffmpeg process and removes the temporary recording and segment files. */

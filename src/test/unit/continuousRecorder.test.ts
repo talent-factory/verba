@@ -2,6 +2,8 @@ import * as assert from 'assert';
 import * as sinon from 'sinon';
 import * as child_process from 'child_process';
 import * as fs from 'fs';
+import * as path from 'path';
+import * as os from 'os';
 import { EventEmitter } from 'events';
 
 import { parseSilenceEvent, SilenceEvent, SegmentEvent, ContinuousRecorder } from '../../continuousRecorder';
@@ -141,127 +143,91 @@ suite('ContinuousRecorder', () => {
 	});
 
 	suite('extractSegment()', () => {
-		test('spawns ffmpeg with correct -ss and -t arguments for input seeking', async () => {
-			const promise = cr.extractSegment(1.5, 4.2);
-			fakeProcess.emit('close', 0);
-			await promise;
+		let rawFilePath: string;
 
-			assert.ok(spawnStub.calledOnce, 'Expected spawn to be called once');
-			const args = spawnStub.firstCall.args[1] as string[];
-			// -ss must be BEFORE -i for byte-level input seeking with raw PCM
-			const ssIndex = args.indexOf('-ss');
-			const iIndex = args.indexOf('-i');
-			assert.ok(ssIndex >= 0, 'Expected -ss in args');
-			assert.ok(ssIndex < iIndex, 'Expected -ss before -i for input seeking');
-			assert.ok(args.includes('1.5'), 'Expected start time 1.5 in args');
-			// -t (duration) not -to (absolute time)
-			assert.ok(args.includes('-t'), 'Expected -t (duration) in args');
-			const duration = 4.2 - 1.5;
-			assert.ok(args.includes(String(duration)), `Expected duration ${duration} in args`);
-			assert.ok(args.includes('-i'), 'Expected -i in args');
-			assert.ok(args.includes('/tmp/verba-continuous-123.raw'), 'Expected input file in args');
-			assert.ok(args.includes('-ar'), 'Expected -ar in args');
-			assert.ok(args.includes('16000'), 'Expected 16000 sample rate in args');
-			assert.ok(args.includes('-ac'), 'Expected -ac in args');
-			assert.ok(args.includes('1'), 'Expected mono channel in args');
-			assert.ok(args.includes('-acodec'), 'Expected -acodec in args');
-			assert.ok(args.includes('pcm_s16le'), 'Expected pcm_s16le codec in args');
-			assert.ok(args.includes('-y'), 'Expected -y overwrite flag in args');
+		setup(() => {
+			// Create a real raw PCM file with 3 seconds of sine wave data
+			// (16kHz, mono, 16-bit = 32000 bytes/sec = 96000 bytes for 3s)
+			rawFilePath = path.join(os.tmpdir(), `verba-test-extract-${Date.now()}.raw`);
+			const bytesPerSec = 32000;
+			const durationSec = 3;
+			const totalBytes = bytesPerSec * durationSec;
+			const buf = Buffer.alloc(totalBytes);
+			for (let i = 0; i < totalBytes; i += 2) {
+				const sample = Math.floor(Math.sin(i / 10) * 10000);
+				buf.writeInt16LE(sample, i);
+			}
+			fs.writeFileSync(rawFilePath, buf);
+			cr = new ContinuousRecorder(rawFilePath);
 		});
 
-		test('on close code 0 emits segment event with correct payload', async () => {
+		teardown(() => {
+			try { fs.unlinkSync(rawFilePath); } catch { /* ignore */ }
+			for (let i = 0; i < 10; i++) {
+				try { fs.unlinkSync(rawFilePath.replace(/\.raw$/, `-seg-${i}.wav`)); } catch { /* ignore */ }
+			}
+		});
+
+		test('emits segment event with correct payload and creates valid WAV', async () => {
 			const segmentEvents: SegmentEvent[] = [];
 			cr.on('segment', (evt: SegmentEvent) => segmentEvents.push(evt));
 
-			const promise = cr.extractSegment(2.0, 5.5);
-			fakeProcess.emit('close', 0);
-			await promise;
+			await cr.extractSegment(0.5, 2.0);
 
 			assert.strictEqual(segmentEvents.length, 1);
-			assert.strictEqual(segmentEvents[0].startTime, 2.0);
-			assert.strictEqual(segmentEvents[0].endTime, 5.5);
+			assert.strictEqual(segmentEvents[0].startTime, 0.5);
+			assert.strictEqual(segmentEvents[0].endTime, 2.0);
 			assert.strictEqual(segmentEvents[0].segmentIndex, 0);
 			assert.ok(segmentEvents[0].segmentPath.endsWith('-seg-0.wav'));
-			assert.ok(segmentEvents[0].segmentPath.includes('verba-continuous-123'));
+
+			const wavData = fs.readFileSync(segmentEvents[0].segmentPath);
+			assert.ok(wavData.length > 44, 'WAV file should have header + data');
+			assert.strictEqual(wavData.toString('ascii', 0, 4), 'RIFF');
+			assert.strictEqual(wavData.toString('ascii', 8, 12), 'WAVE');
+			assert.strictEqual(wavData.readUInt32LE(24), 16000);
+			assert.strictEqual(wavData.readUInt16LE(22), 1);
+			assert.strictEqual(wavData.readUInt16LE(34), 16);
+			const dataSize = wavData.readUInt32LE(40);
+			assert.strictEqual(dataSize, 48000, 'Data size should be 1.5s * 32000');
 		});
 
-		test('on close code != 0 emits error event, no segment event', async () => {
-			const segmentEvents: SegmentEvent[] = [];
+		test('emits error for non-existent file', async () => {
+			const badCr = new ContinuousRecorder('/tmp/nonexistent-file.raw');
 			const errorEvents: Error[] = [];
-			cr.on('segment', (evt: SegmentEvent) => segmentEvents.push(evt));
-			cr.on('error', (evt: Error) => errorEvents.push(evt));
-
-			const promise = cr.extractSegment(1.0, 3.0);
-			fakeProcess.emit('close', 1);
-			await promise;
-
-			assert.strictEqual(segmentEvents.length, 0, 'Should not emit segment on error');
-			assert.strictEqual(errorEvents.length, 1, 'Should emit one error event');
-			assert.ok(errorEvents[0] instanceof Error);
-			assert.ok(errorEvents[0].message.includes('1'), 'Error message should include exit code');
-		});
-
-		test('on spawn error emits error event', async () => {
-			const errorEvents: Error[] = [];
-			cr.on('error', (evt: Error) => errorEvents.push(evt));
-
-			const promise = cr.extractSegment(0, 2.0);
-			fakeProcess.emit('error', new Error('spawn ENOENT'));
-			await promise;
-
+			badCr.on('error', (evt: Error) => errorEvents.push(evt));
+			await badCr.extractSegment(0, 2);
 			assert.strictEqual(errorEvents.length, 1);
-			assert.ok(errorEvents[0] instanceof Error);
-			assert.ok(errorEvents[0].message.includes('ENOENT'));
+			assert.ok(errorEvents[0].message.includes('extraction failed'));
+		});
+
+		test('emits error when start offset is past end of file', async () => {
+			const errorEvents: Error[] = [];
+			cr.on('error', (evt: Error) => errorEvents.push(evt));
+			await cr.extractSegment(10.0, 15.0);
+			assert.strictEqual(errorEvents.length, 1);
+			assert.ok(errorEvents[0].message.includes('no audio data'));
 		});
 
 		test('increments segment index across multiple extractions', async () => {
 			const segmentEvents: SegmentEvent[] = [];
 			cr.on('segment', (evt: SegmentEvent) => segmentEvents.push(evt));
-
-			// First extraction
-			const p1 = cr.extractSegment(0, 1.0);
-			fakeProcess.emit('close', 0);
-			await p1;
-
-			// Reset fakeProcess for second call
-			fakeProcess = createFakeProcess();
-			spawnStub.returns(fakeProcess as unknown as child_process.ChildProcess);
-
-			// Second extraction
-			const p2 = cr.extractSegment(2.0, 3.0);
-			fakeProcess.emit('close', 0);
-			await p2;
-
-			// Reset fakeProcess for third call
-			fakeProcess = createFakeProcess();
-			spawnStub.returns(fakeProcess as unknown as child_process.ChildProcess);
-
-			// Third extraction
-			const p3 = cr.extractSegment(4.0, 5.0);
-			fakeProcess.emit('close', 0);
-			await p3;
-
+			await cr.extractSegment(0.0, 1.0);
+			await cr.extractSegment(1.0, 2.0);
+			await cr.extractSegment(2.0, 3.0);
 			assert.strictEqual(segmentEvents.length, 3);
 			assert.strictEqual(segmentEvents[0].segmentIndex, 0);
 			assert.strictEqual(segmentEvents[1].segmentIndex, 1);
 			assert.strictEqual(segmentEvents[2].segmentIndex, 2);
-			assert.ok(segmentEvents[0].segmentPath.endsWith('-seg-0.wav'));
-			assert.ok(segmentEvents[1].segmentPath.endsWith('-seg-1.wav'));
-			assert.ok(segmentEvents[2].segmentPath.endsWith('-seg-2.wav'));
 		});
 
-		test('if findFfmpeg returns null emits error and returns without spawning', async () => {
-			findFfmpegStub.returns(null);
-
-			const errorEvents: Error[] = [];
-			cr.on('error', (evt: Error) => errorEvents.push(evt));
-
-			await cr.extractSegment(0, 1.0);
-
-			assert.strictEqual(spawnStub.called, false, 'Should not spawn ffmpeg');
-			assert.strictEqual(errorEvents.length, 1);
-			assert.ok(errorEvents[0] instanceof Error);
-			assert.ok(errorEvents[0].message.toLowerCase().includes('ffmpeg'));
+		test('handles endTime=999999 by reading to end of file', async () => {
+			const segmentEvents: SegmentEvent[] = [];
+			cr.on('segment', (evt: SegmentEvent) => segmentEvents.push(evt));
+			await cr.extractSegment(1.0, 999999);
+			assert.strictEqual(segmentEvents.length, 1);
+			const wavData = fs.readFileSync(segmentEvents[0].segmentPath);
+			const dataSize = wavData.readUInt32LE(40);
+			assert.strictEqual(dataSize, 64000, '2.0s * 32000 bytes/s');
 		});
 	});
 });
@@ -768,59 +734,30 @@ suite('ContinuousRecorder lifecycle', () => {
 		});
 
 		test('dispose cleans up segment files', async () => {
-			cr = freshRecorder();
-			const extractStub = sinon.stub(cr, 'extractSegment').resolves();
-			await startRecording(cr);
+			// Create a real raw PCM file and extract segments from it
+			const rawPath = path.join(os.tmpdir(), `verba-test-dispose-${Date.now()}.raw`);
+			const buf = Buffer.alloc(96000); // 3 seconds
+			for (let i = 0; i < buf.length; i += 2) {
+				buf.writeInt16LE(Math.floor(Math.sin(i / 10) * 10000), i);
+			}
+			fs.writeFileSync(rawPath, buf);
 
-			// Simulate silence events to create segment paths
-			fakeProcess.stderr.emit('data', Buffer.from(
-				'[silencedetect @ 0x7f8] silence_start: 2.0\n'
-				+ '[silencedetect @ 0x7f8] silence_end: 4.0 | silence_duration: 2.0\n'
-			));
-			fakeProcess.stderr.emit('data', Buffer.from(
-				'[silencedetect @ 0x7f8] silence_start: 6.0\n'
-				+ '[silencedetect @ 0x7f8] silence_end: 8.0 | silence_duration: 2.0\n'
-			));
+			const cr2 = new ContinuousRecorder(rawPath);
+			await cr2.extractSegment(0, 1.0);
+			await cr2.extractSegment(1.0, 2.0);
 
-			// extractSegment was stubbed, but the real code pushes to segmentPaths.
-			// Since we stub extractSegment, we need to manually set segmentPaths via
-			// the internal state. We access it through a real extractSegment call path.
-			// Instead, restore the stub and use the real extractSegment which pushes paths.
-			extractStub.restore();
+			// Verify segment files exist
+			const seg0 = rawPath.replace(/\.raw$/, '-seg-0.wav');
+			const seg1 = rawPath.replace(/\.raw$/, '-seg-1.wav');
+			assert.ok(fs.existsSync(seg0), 'seg-0 should exist before dispose');
+			assert.ok(fs.existsSync(seg1), 'seg-1 should exist before dispose');
 
-			// Create a new recorder with known output path to control segment names
-			const cr2 = new ContinuousRecorder('/tmp/verba-test-segments.raw');
-			// Manually trigger extractSegment calls to populate segmentPaths
-			// (these will spawn ffmpeg but we have spawn stubbed)
-			const extractProc1 = createWritableFakeProcess();
-			spawnStub.returns(extractProc1 as unknown as child_process.ChildProcess);
-			const p1 = cr2.extractSegment(0, 2.0);
-			extractProc1.emit('close', 0);
-			await p1;
-
-			const extractProc2 = createWritableFakeProcess();
-			spawnStub.returns(extractProc2 as unknown as child_process.ChildProcess);
-			const p2 = cr2.extractSegment(4.0, 6.0);
-			extractProc2.emit('close', 0);
-			await p2;
-
-			const unlinkStub = sinon.stub(fs, 'unlinkSync');
 			cr2.dispose();
 
-			// Should delete both segment files + the main recording file
-			const deletedPaths = unlinkStub.args.map(args => args[0] as string);
-			assert.ok(
-				deletedPaths.includes('/tmp/verba-test-segments-seg-0.wav'),
-				`Expected seg-0 to be deleted, got: ${deletedPaths.join(', ')}`
-			);
-			assert.ok(
-				deletedPaths.includes('/tmp/verba-test-segments-seg-1.wav'),
-				`Expected seg-1 to be deleted, got: ${deletedPaths.join(', ')}`
-			);
-			assert.ok(
-				deletedPaths.includes('/tmp/verba-test-segments.raw'),
-				`Expected main recording to be deleted, got: ${deletedPaths.join(', ')}`
-			);
+			// All files should be cleaned up
+			assert.ok(!fs.existsSync(seg0), 'seg-0 should be deleted after dispose');
+			assert.ok(!fs.existsSync(seg1), 'seg-1 should be deleted after dispose');
+			assert.ok(!fs.existsSync(rawPath), 'raw file should be deleted after dispose');
 		});
 	});
 });

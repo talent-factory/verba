@@ -151,6 +151,11 @@ export class ContinuousRecorder extends EventEmitter {
 			// extraction to fail with exit code 183. Raw PCM has no headers,
 			// so the file is always in a consistent, readable state.
 			'-f', 's16le',
+			// Flush every packet immediately to disk. Without this, ffmpeg
+			// buffers audio data internally, and the last spoken sentence
+			// may still be in the buffer when 'q' is sent to stop recording,
+			// causing the final segment to contain silence instead of speech.
+			'-flush_packets', '1',
 			'-y',
 			this._outputPath,
 		], {

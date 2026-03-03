@@ -1379,8 +1379,8 @@ export function activate(context: vscode.ExtensionContext) {
 							const msg = transcriptionErr instanceof Error ? transcriptionErr.message : String(transcriptionErr);
 							// Whisper returns 400 for audio < 0.1s — this is normal for
 							// edge segments (final segment when user stops right after a pause).
-							if (msg.includes('too short') || msg.includes('400')) {
-								console.log(`[Verba] Skipping too-short segment: ${msg}`);
+							if (msg.includes('too short') || msg.includes('400') || msg.includes('No speech detected')) {
+								console.log(`[Verba] Skipping silent/short segment: ${msg}`);
 								return;
 							}
 							throw transcriptionErr;

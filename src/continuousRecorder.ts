@@ -126,7 +126,7 @@ export class ContinuousRecorder extends EventEmitter {
 		// Generate output path if not set via constructor
 		if (!this._outputPath) {
 			const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-			this._outputPath = path.join(os.tmpdir(), `verba-continuous-${timestamp}.wav`);
+			this._outputPath = path.join(os.tmpdir(), `verba-continuous-${timestamp}.raw`);
 		}
 
 		// Reset state for new recording session
@@ -144,7 +144,13 @@ export class ContinuousRecorder extends EventEmitter {
 			'-af', `silencedetect=n=${this.silenceLevel}dB:d=${this.silenceThreshold}`,
 			'-ar', '16000',
 			'-ac', '1',
-			'-acodec', 'pcm_s16le',
+			// Output raw PCM (s16le) instead of WAV. This is critical for
+			// continuous dictation because segment extraction reads from this
+			// file while recording is still in progress. WAV headers contain
+			// the total data size which is only finalized on close, causing
+			// extraction to fail with exit code 183. Raw PCM has no headers,
+			// so the file is always in a consistent, readable state.
+			'-f', 's16le',
 			'-y',
 			this._outputPath,
 		], {
@@ -364,16 +370,19 @@ export class ContinuousRecorder extends EventEmitter {
 		}
 
 		const segmentIndex = this._segmentCount++;
-		const segmentPath = this._outputPath.replace(/\.wav$/, `-seg-${segmentIndex}.wav`);
+		const segmentPath = this._outputPath.replace(/\.raw$/, `-seg-${segmentIndex}.wav`);
 		this.segmentPaths.push(segmentPath);
 
 		const doWork = (): Promise<void> => new Promise<void>((resolve) => {
 			const proc = spawn(ffmpegPath, [
+				// Specify raw PCM input format (matches the continuous recording output).
+				// Without this, ffmpeg would try to read WAV headers which don't exist.
+				'-f', 's16le',
+				'-ar', '16000',
+				'-ac', '1',
 				'-i', this._outputPath,
 				'-ss', String(startTime),
 				'-to', String(endTime),
-				'-ar', '16000',
-				'-ac', '1',
 				'-acodec', 'pcm_s16le',
 				'-y',
 				segmentPath,

@@ -118,7 +118,7 @@ suite('ContinuousRecorder', () => {
 	let spawnStub: sinon.SinonStub;
 
 	setup(() => {
-		cr = new ContinuousRecorder('/tmp/verba-continuous-123.wav');
+		cr = new ContinuousRecorder('/tmp/verba-continuous-123.raw');
 		fakeProcess = createFakeProcess();
 		findFfmpegStub = sinon.stub(recorder, 'findFfmpeg').returns('/opt/homebrew/bin/ffmpeg');
 		spawnStub = sinon.stub(child_process, 'spawn').returns(
@@ -132,7 +132,7 @@ suite('ContinuousRecorder', () => {
 
 	suite('constructor and properties', () => {
 		test('outputPath returns the path passed to constructor', () => {
-			assert.strictEqual(cr.outputPath, '/tmp/verba-continuous-123.wav');
+			assert.strictEqual(cr.outputPath, '/tmp/verba-continuous-123.raw');
 		});
 
 		test('isRecording is false initially', () => {
@@ -153,7 +153,7 @@ suite('ContinuousRecorder', () => {
 			assert.ok(args.includes('-to'), 'Expected -to in args');
 			assert.ok(args.includes('4.2'), 'Expected end time 4.2 in args');
 			assert.ok(args.includes('-i'), 'Expected -i in args');
-			assert.ok(args.includes('/tmp/verba-continuous-123.wav'), 'Expected input file in args');
+			assert.ok(args.includes('/tmp/verba-continuous-123.raw'), 'Expected input file in args');
 			assert.ok(args.includes('-ar'), 'Expected -ar in args');
 			assert.ok(args.includes('16000'), 'Expected 16000 sample rate in args');
 			assert.ok(args.includes('-ac'), 'Expected -ac in args');
@@ -471,7 +471,7 @@ suite('ContinuousRecorder lifecycle', () => {
 			await startRecording(cr);
 
 			assert.ok(cr.outputPath.includes('verba-continuous-'), `Expected verba-continuous- in path, got ${cr.outputPath}`);
-			assert.ok(cr.outputPath.endsWith('.wav'), `Expected .wav extension, got ${cr.outputPath}`);
+			assert.ok(cr.outputPath.endsWith('.raw'), `Expected .raw extension, got ${cr.outputPath}`);
 		});
 
 		test('emits error and stopped when ffmpeg crashes mid-recording', async () => {
@@ -497,7 +497,7 @@ suite('ContinuousRecorder lifecycle', () => {
 		});
 
 		test('resets segment count on start', async () => {
-			cr = new ContinuousRecorder('/tmp/verba-continuous-test.wav');
+			cr = new ContinuousRecorder('/tmp/verba-continuous-test.raw');
 			const extractStub = sinon.stub(cr, 'extractSegment').resolves();
 
 			await startRecording(cr);
@@ -595,7 +595,7 @@ suite('ContinuousRecorder lifecycle', () => {
 			const result = await stopPromise;
 
 			assert.ok(result.includes('verba-continuous-'), `Expected path to contain verba-continuous-, got ${result}`);
-			assert.ok(result.endsWith('.wav'), `Expected path to end with .wav, got ${result}`);
+			assert.ok(result.endsWith('.raw'), `Expected path to end with .raw, got ${result}`);
 		});
 
 		test('extracts final segment on stop', async () => {
@@ -783,7 +783,7 @@ suite('ContinuousRecorder lifecycle', () => {
 			extractStub.restore();
 
 			// Create a new recorder with known output path to control segment names
-			const cr2 = new ContinuousRecorder('/tmp/verba-test-segments.wav');
+			const cr2 = new ContinuousRecorder('/tmp/verba-test-segments.raw');
 			// Manually trigger extractSegment calls to populate segmentPaths
 			// (these will spawn ffmpeg but we have spawn stubbed)
 			const extractProc1 = createWritableFakeProcess();
@@ -812,7 +812,7 @@ suite('ContinuousRecorder lifecycle', () => {
 				`Expected seg-1 to be deleted, got: ${deletedPaths.join(', ')}`
 			);
 			assert.ok(
-				deletedPaths.includes('/tmp/verba-test-segments.wav'),
+				deletedPaths.includes('/tmp/verba-test-segments.raw'),
 				`Expected main recording to be deleted, got: ${deletedPaths.join(', ')}`
 			);
 		});

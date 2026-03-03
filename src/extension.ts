@@ -24,7 +24,7 @@ import { GlossaryGenerator } from './glossaryGenerator';
 import { ContinuousRecorder, SegmentEvent } from './continuousRecorder';
 import {
 	WHISPER_MODELS, WHISPER_MODEL_BASE_URL,
-	isTrustedDownloadHost, cleanupFile, isValidExpansion, isWhisperHallucination,
+	isTrustedDownloadHost, cleanupFile, isValidExpansion, isWhisperHallucination, detectMeanVolume,
 } from './extensionHelpers';
 
 class VerbaTranscriptionService extends TranscriptionService {
@@ -1370,6 +1370,15 @@ export function activate(context: vscode.ExtensionContext) {
 				continuousSegmentQueue = continuousSegmentQueue.then(async () => {
 					try {
 						statusBar.setRecordingContinuous(continuousSegmentsInserted, true);
+
+						// VAD: Check if segment contains speech before sending to Whisper.
+						// Silence-only segments cause Whisper to hallucinate ("Thank you
+						// for watching!", "Microsoft Office Word Document", etc.).
+						const meanVolume = detectMeanVolume(event.segmentPath);
+						if (meanVolume !== null && meanVolume < -40) {
+							console.log(`[Verba] Skipping silence-only segment (mean volume: ${meanVolume.toFixed(1)} dB)`);
+							return;
+						}
 
 						// Transcribe — skip segments that are too short for Whisper
 						let rawTranscript: string;

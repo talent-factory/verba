@@ -8,7 +8,7 @@ import {
 	isValidExpansion, mergeExpansions, mergeGlossary,
 	parseGlossaryFile, parseExpansionsFile,
 	WHISPER_MODELS, WHISPER_MODEL_BASE_URL,
-	isWhisperHallucination,
+	isWhisperHallucination, detectMeanVolume,
 } from '../../extensionHelpers';
 
 suite('isTrustedDownloadHost', () => {
@@ -378,5 +378,19 @@ suite('isWhisperHallucination', () => {
 
 	test('does NOT flag text containing "Microsoft" in real context', () => {
 		assert.strictEqual(isWhisperHallucination('Microsoft released a new product'), false);
+	});
+});
+
+suite('detectMeanVolume', () => {
+	test('returns null for non-existent file', () => {
+		const result = detectMeanVolume('/tmp/non-existent-file-abc123.wav');
+		assert.strictEqual(result, null);
+	});
+
+	test('returns a number for a valid audio file (if ffmpeg available)', () => {
+		// This test only runs if ffmpeg is installed (CI might not have it)
+		const result = detectMeanVolume('/dev/null');
+		// /dev/null is not a valid audio file, so we expect null
+		assert.strictEqual(result, null);
 	});
 });

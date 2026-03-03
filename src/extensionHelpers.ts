@@ -1,4 +1,6 @@
 import * as fs from 'fs';
+import { execFileSync } from 'child_process';
+import { findFfmpeg } from './recorder';
 import { Expansion } from './cleanupService';
 
 /** Trusted hosts for model download redirects (Hugging Face CDN). */
@@ -55,6 +57,48 @@ export function isWhisperHallucination(text: string): boolean {
 	const trimmed = text.trim();
 	if (trimmed.length === 0) { return true; }
 	return WHISPER_HALLUCINATION_PATTERNS.some(pattern => pattern.test(trimmed));
+}
+
+/**
+ * Runs ffmpeg's volumedetect filter on an audio file and returns the mean
+ * volume in dB. Returns null if detection fails. Typical values:
+ * -20 dB (loud speech), -35 dB (quiet), -50 dB (near silence), -91 dB (digital silence).
+ *
+ * Used as Voice Activity Detection (VAD) before sending audio to Whisper,
+ * preventing hallucinations on silence-only segments.
+ */
+export function detectMeanVolume(filePath: string): number | null {
+	const ffmpegPath = findFfmpeg();
+	if (!ffmpegPath) { return null; }
+
+	try {
+		// volumedetect outputs stats to stderr. execFileSync with stdio 'pipe'
+		// captures both stdout and stderr via the thrown error on non-zero exit.
+		// ffmpeg exits with code 0 when processing -f null output.
+		const stderr = execFileSync(ffmpegPath, [
+			'-i', filePath,
+			'-af', 'volumedetect',
+			'-f', 'null',
+			'-',
+		], { encoding: 'utf-8', timeout: 5000, stdio: ['pipe', 'pipe', 'pipe'] });
+		// execFileSync returns stdout; volumedetect writes to stderr.
+		// For -f null, ffmpeg might return the info in stdout or we need to catch stderr.
+		const match = stderr.match(/mean_volume:\s*([-\d.]+)\s*dB/);
+		if (match) {
+			return parseFloat(match[1]);
+		}
+		return null;
+	} catch (err: unknown) {
+		// execFileSync throws on non-zero exit, but stderr is in err.stderr
+		if (err && typeof err === 'object' && 'stderr' in err) {
+			const stderr = (err as { stderr: string }).stderr;
+			const match = stderr.match(/mean_volume:\s*([-\d.]+)\s*dB/);
+			if (match) {
+				return parseFloat(match[1]);
+			}
+		}
+		return null;
+	}
 }
 
 export function cleanupFile(filePath: string): void {

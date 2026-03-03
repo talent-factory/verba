@@ -16,6 +16,9 @@ import { Indexer } from './indexer';
 import { GrepaiProvider } from './grepaiProvider';
 import { CostTracker } from './costTracker';
 import { CostOverviewPanel } from './costOverviewPanel';
+import { HistoryManager } from './historyManager';
+import { HistoryRecord } from './historyManager';
+import { buildHistoryItems, buildActionItems, HistoryQuickPickItem, ActionQuickPickItem } from './historyCommands';
 import { getWavDurationSec } from './wavDuration';
 import { GlossaryGenerator } from './glossaryGenerator';
 import {
@@ -66,6 +69,8 @@ export function activate(context: vscode.ExtensionContext) {
 	const transcriptionService = new VerbaTranscriptionService(context.secrets);
 	const cleanupService = new VerbaCleanupService(context.secrets);
 	const costTracker = new CostTracker(context.globalState);
+	const maxHistoryEntries = vscode.workspace.getConfiguration('verba').get<number>('history.maxEntries', 500);
+	const historyManager = new HistoryManager(context.globalState, maxHistoryEntries);
 	let selectedTemplate: Template | undefined;
 	let preferTerminal = false;
 	let processingAbortController: AbortController | null = null;
@@ -424,6 +429,20 @@ export function activate(context: vscode.ExtensionContext) {
 				} else {
 					console.warn('[Verba] Editor insertion reported but pre-edit state unavailable — undo not recorded');
 					clearLastDictation();
+				}
+
+				try {
+					historyManager.addRecord({
+						timestamp: Date.now(),
+						rawTranscript,
+						cleanedText: transcript,
+						templateName: selectedTemplate?.name ?? 'Default Cleanup',
+						target: insertionResult.target,
+						languageId: vscode.window.activeTextEditor?.document.languageId,
+						workspaceFolder: vscode.workspace.workspaceFolders?.[0]?.name,
+					});
+				} catch (historyErr: unknown) {
+					console.warn('[Verba] Failed to record dictation in history:', historyErr);
 				}
 
 				capturedSelectedText = undefined;
@@ -1112,10 +1131,123 @@ export function activate(context: vscode.ExtensionContext) {
 		}
 	});
 
+	// --- History Commands ---
+
+	async function handleHistoryAction(record: HistoryRecord): Promise<void> {
+		const actionItems = buildActionItems();
+		const action = await vscode.window.showQuickPick<ActionQuickPickItem>(actionItems, {
+			placeHolder: 'Choose an action',
+		});
+		if (!action) { return; }
+
+		try {
+			switch (action.id) {
+				case 'insert': {
+					const editor = vscode.window.activeTextEditor;
+					const terminal = vscode.window.activeTerminal;
+					if (editor) {
+						const success = await editor.edit((editBuilder) => {
+							for (const sel of editor.selections) {
+								editBuilder.replace(sel, record.cleanedText);
+							}
+						});
+						if (!success) {
+							vscode.window.showWarningMessage('Verba: Could not insert text. The editor may be read-only or was closed.');
+						}
+					} else if (terminal) {
+						terminal.sendText(record.cleanedText, false);
+					} else {
+						vscode.window.showWarningMessage('Verba: No active editor or terminal to insert into.');
+					}
+					break;
+				}
+				case 'copy':
+					await vscode.env.clipboard.writeText(record.cleanedText);
+					vscode.window.showInformationMessage('Verba: Copied to clipboard.');
+					break;
+				case 'details':
+					vscode.window.showInformationMessage(
+						[
+							`Template: ${record.templateName}`,
+							`Time: ${new Date(record.timestamp).toLocaleString()}`,
+							`Target: ${record.target}`,
+							`Raw transcript: ${record.rawTranscript}`,
+						].join('\n'),
+						{ modal: true },
+					);
+					break;
+			}
+		} catch (err: unknown) {
+			console.error('[Verba] History action failed:', err);
+			const message = err instanceof Error ? err.message : String(err);
+			vscode.window.showErrorMessage(`Verba: History action failed: ${message}`);
+		}
+	}
+
+	const showHistoryCommand = vscode.commands.registerCommand('dictation.showHistory', async () => {
+		const records = historyManager.getRecords();
+		if (records.length === 0) {
+			vscode.window.showInformationMessage('Verba: No dictation history yet.');
+			return;
+		}
+
+		const items = buildHistoryItems(records);
+		const picked = await vscode.window.showQuickPick<HistoryQuickPickItem>(items, {
+			placeHolder: `${records.length} dictations \u2014 type to filter`,
+			matchOnDescription: true,
+			matchOnDetail: true,
+		});
+		if (!picked) { return; }
+
+		await handleHistoryAction(picked.record);
+	});
+
+	const searchHistoryCommand = vscode.commands.registerCommand('dictation.searchHistory', async () => {
+		const query = await vscode.window.showInputBox({
+			placeHolder: 'Search dictation history...',
+		});
+		if (!query) { return; }
+
+		const results = historyManager.searchRecords(query);
+		if (results.length === 0) {
+			vscode.window.showInformationMessage('Verba: No matching history entries found.');
+			return;
+		}
+
+		const items = buildHistoryItems(results);
+		const picked = await vscode.window.showQuickPick<HistoryQuickPickItem>(items, {
+			placeHolder: `${results.length} result${results.length !== 1 ? 's' : ''} \u2014 type to filter`,
+			matchOnDescription: true,
+			matchOnDetail: true,
+		});
+		if (!picked) { return; }
+
+		await handleHistoryAction(picked.record);
+	});
+
+	const clearHistoryCommand = vscode.commands.registerCommand('dictation.clearHistory', async () => {
+		const count = historyManager.getRecordCount();
+		if (count === 0) {
+			vscode.window.showInformationMessage('Verba: History is already empty.');
+			return;
+		}
+
+		const confirm = await vscode.window.showWarningMessage(
+			`Verba: Delete all ${count} history entries?`,
+			{ modal: true },
+			'Delete All',
+		);
+		if (confirm === 'Delete All') {
+			historyManager.clearHistory();
+			vscode.window.showInformationMessage('Verba: Dictation history cleared.');
+		}
+	});
+
 	context.subscriptions.push(
 		editorCommand, terminalCommand, selectDeviceCommand, selectTemplateCommand,
 		indexProjectCommand, downloadModelCommand, manageApiKeysCommand, showCostOverviewCommand,
-		generateGlossaryCommand, undoCommand, saveWatcher,
+		generateGlossaryCommand, undoCommand, showHistoryCommand, searchHistoryCommand, clearHistoryCommand,
+		saveWatcher,
 		{ dispose: () => recorder.dispose() }, statusBar,
 	);
 }

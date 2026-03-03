@@ -172,7 +172,16 @@ export class ContinuousRecorder extends EventEmitter {
 							const segStart = this.lastSegmentEnd;
 							const segEnd = this.lastSilenceStart;
 							this.lastSegmentEnd = event.time;
-							this.extractSegment(segStart, segEnd);
+							this.lastSilenceStart = null;
+							// Skip very short segments (<0.5s) — too little speech
+							// for reliable transcription; triggers Whisper
+							// hallucinations (e.g. "Microsoft Office Word Document").
+							const segDuration = segEnd - segStart;
+							if (segDuration >= 0.5) {
+								this.extractSegment(segStart, segEnd);
+							} else {
+								console.log(`[Verba] Skipping short segment (${segDuration.toFixed(2)}s)`);
+							}
 						}
 					}
 				}

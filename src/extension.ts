@@ -24,7 +24,7 @@ import { GlossaryGenerator } from './glossaryGenerator';
 import { ContinuousRecorder, SegmentEvent } from './continuousRecorder';
 import {
 	WHISPER_MODELS, WHISPER_MODEL_BASE_URL,
-	isTrustedDownloadHost, cleanupFile, isValidExpansion,
+	isTrustedDownloadHost, cleanupFile, isValidExpansion, isWhisperHallucination,
 } from './extensionHelpers';
 
 class VerbaTranscriptionService extends TranscriptionService {
@@ -1369,6 +1369,16 @@ export function activate(context: vscode.ExtensionContext) {
 
 						// Transcribe
 						const rawTranscript = await transcriptionService.process(event.segmentPath, currentGlossary);
+
+						// Guard: skip Whisper hallucinations on short/silent segments.
+						// Whisper produces characteristic garbage text when given very
+						// short audio (e.g. "Microsoft Office Word Document",
+						// "MBC 뉴스", "Amara.org", repeated punctuation). These
+						// patterns never appear in genuine dictation.
+						if (isWhisperHallucination(rawTranscript)) {
+							console.log(`[Verba] Skipping hallucinated segment: "${rawTranscript.substring(0, 60)}"`);
+							return;
+						}
 
 						// Track Whisper cost
 						const provider = vscode.workspace.getConfiguration('verba.transcription').get<string>('provider', 'openai');

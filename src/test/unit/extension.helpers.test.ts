@@ -8,6 +8,7 @@ import {
 	isValidExpansion, mergeExpansions, mergeGlossary,
 	parseGlossaryFile, parseExpansionsFile,
 	WHISPER_MODELS, WHISPER_MODEL_BASE_URL,
+	isWhisperHallucination,
 } from '../../extensionHelpers';
 
 suite('isTrustedDownloadHost', () => {
@@ -311,5 +312,59 @@ suite('WHISPER_MODELS', () => {
 
 	test('WHISPER_MODEL_BASE_URL points to huggingface', () => {
 		assert.ok(WHISPER_MODEL_BASE_URL.startsWith('https://huggingface.co/'));
+	});
+});
+
+suite('isWhisperHallucination', () => {
+	test('detects "Microsoft Office Word Document" hallucination', () => {
+		assert.strictEqual(isWhisperHallucination('Microsoft Office Word Document MSWordDoc Word.Document.8'), true);
+	});
+
+	test('detects MSWordDoc pattern', () => {
+		assert.strictEqual(isWhisperHallucination('MSWordDoc'), true);
+	});
+
+	test('detects Word.Document pattern', () => {
+		assert.strictEqual(isWhisperHallucination('Word.Document.8'), true);
+	});
+
+	test('detects Amara.org hallucination', () => {
+		assert.strictEqual(isWhisperHallucination('Amara.org'), true);
+	});
+
+	test('detects MBC news hallucination', () => {
+		assert.strictEqual(isWhisperHallucination('MBC 뉴스'), true);
+	});
+
+	test('detects only-dots hallucination', () => {
+		assert.strictEqual(isWhisperHallucination('...'), true);
+	});
+
+	test('detects punctuation-only hallucination', () => {
+		assert.strictEqual(isWhisperHallucination(' . . . '), true);
+		assert.strictEqual(isWhisperHallucination('♪♪♪'), true);
+	});
+
+	test('detects URL-like hallucination', () => {
+		assert.strictEqual(isWhisperHallucination('www.example.com'), true);
+	});
+
+	test('detects single "you" hallucination', () => {
+		assert.strictEqual(isWhisperHallucination(' you '), true);
+	});
+
+	test('treats empty string as hallucination', () => {
+		assert.strictEqual(isWhisperHallucination(''), true);
+		assert.strictEqual(isWhisperHallucination('   '), true);
+	});
+
+	test('does NOT flag genuine dictation text', () => {
+		assert.strictEqual(isWhisperHallucination('This is a normal dictation sentence.'), false);
+		assert.strictEqual(isWhisperHallucination('Implement the login feature'), false);
+		assert.strictEqual(isWhisperHallucination('Produktion und Verkauf von Unternehmen'), false);
+	});
+
+	test('does NOT flag text containing "Microsoft" in real context', () => {
+		assert.strictEqual(isWhisperHallucination('Microsoft released a new product'), false);
 	});
 });

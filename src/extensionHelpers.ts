@@ -21,6 +21,34 @@ export function isTrustedDownloadHost(urlString: string): boolean {
 }
 
 /** Silently removes a file if it exists. Logs errors for non-ENOENT failures. */
+/**
+ * Known Whisper hallucination patterns that appear when audio contains
+ * mostly silence or very short speech fragments. These are well-documented
+ * artifacts of the Whisper model and never represent genuine dictation.
+ */
+const WHISPER_HALLUCINATION_PATTERNS: RegExp[] = [
+	/Microsoft\s+Office\s+Word/i,
+	/MSWordDoc/i,
+	/Word\.Document/i,
+	/Amara\.org/i,
+	/MBC\s*뉴스/,
+	/Soutien-nous/i,
+	/sous-titres/i,
+	/Sous-titrage/i,
+	/^\.+$/,            // Only dots
+	/^[\s.…♪,]+$/,     // Only punctuation, whitespace, music notes
+	/www\.\w+\.\w+/,   // URL-like hallucinations
+	/^\s*you\s*$/i,     // Single "you" (common short-segment hallucination)
+	/^\s*\.{3,}\s*$/,   // Multiple dots/ellipsis only
+];
+
+/** Returns true if the transcript looks like a Whisper hallucination. */
+export function isWhisperHallucination(text: string): boolean {
+	const trimmed = text.trim();
+	if (trimmed.length === 0) { return true; }
+	return WHISPER_HALLUCINATION_PATTERNS.some(pattern => pattern.test(trimmed));
+}
+
 export function cleanupFile(filePath: string): void {
 	try {
 		fs.unlinkSync(filePath);

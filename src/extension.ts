@@ -21,6 +21,7 @@ import { HistoryRecord } from './historyManager';
 import { buildHistoryItems, buildActionItems, HistoryQuickPickItem, ActionQuickPickItem } from './historyCommands';
 import { getWavDurationSec } from './wavDuration';
 import { GlossaryGenerator } from './glossaryGenerator';
+import { ContinuousRecorder, SegmentEvent } from './continuousRecorder';
 import {
 	WHISPER_MODELS, WHISPER_MODEL_BASE_URL,
 	isTrustedDownloadHost, cleanupFile, isValidExpansion,
@@ -75,6 +76,12 @@ export function activate(context: vscode.ExtensionContext) {
 	let preferTerminal = false;
 	let processingAbortController: AbortController | null = null;
 	let currentGlossary: string[] = [];
+
+	// Continuous dictation state
+	let continuousRecorder: ContinuousRecorder | null = null;
+	let continuousSegmentQueue: Promise<void> = Promise.resolve();
+	let continuousSegmentsInserted = 0;
+	let continuousAbortController: AbortController | null = null;
 
 	function applyTranscriptionProvider(): void {
 		const config = vscode.workspace.getConfiguration('verba.transcription');
@@ -463,6 +470,12 @@ export function activate(context: vscode.ExtensionContext) {
 				}
 			}
 		} else {
+			// Prevent starting if continuous recording is active
+			if (continuousRecorder?.isRecording) {
+				vscode.window.showWarningMessage('Verba: Continuous recording in progress. Stop it first.');
+				return;
+			}
+
 			try {
 				preferTerminal = forTerminal;
 				const templates = loadTemplates();
@@ -1243,12 +1256,231 @@ export function activate(context: vscode.ExtensionContext) {
 		}
 	});
 
+	// --- Continuous Dictation Command ---
+
+	const startContinuousCommand = vscode.commands.registerCommand('dictation.startContinuous', async () => {
+		// Cancel ongoing segment processing if user triggers shortcut during streaming
+		if (continuousAbortController) {
+			continuousAbortController.abort();
+			continuousAbortController = null;
+			return;
+		}
+
+		// Stop continuous recording if already active
+		if (continuousRecorder?.isRecording) {
+			try {
+				const mainWavPath = await continuousRecorder.stop();
+				// Wait for all pending segment processing
+				await continuousSegmentQueue;
+				statusBar.setIdle(selectedTemplate?.name);
+				vscode.window.setStatusBarMessage(
+					`$(check) Verba: ${continuousSegmentsInserted} segment${continuousSegmentsInserted !== 1 ? 's' : ''} inserted`, 5000
+				);
+				// Cleanup
+				if (mainWavPath) { cleanupFile(mainWavPath); }
+				continuousRecorder.dispose();
+				continuousRecorder = null;
+			} catch (err: unknown) {
+				statusBar.setIdle();
+				const message = err instanceof Error ? err.message : String(err);
+				vscode.window.showErrorMessage(`Verba: ${message}`);
+			}
+			return;
+		}
+
+		// Prevent starting if single-shot is recording
+		if (recorder.isRecording) {
+			vscode.window.showWarningMessage('Verba: Single-shot recording in progress. Stop it first.');
+			return;
+		}
+
+		// Template selection (same logic as handleDictation's else branch)
+		try {
+			const templates = loadTemplates();
+			const lastUsedName = context.workspaceState.get<string>('verba.lastTemplateName');
+			let template: Template | undefined;
+
+			const autoSelect = vscode.workspace.getConfiguration('verba').get<boolean>('autoSelectTemplate', true);
+			if (autoSelect) {
+				const languageId = vscode.window.activeTextEditor?.document.languageId;
+				if (languageId) {
+					template = findTemplateForLanguage(templates, languageId);
+					if (template) {
+						console.log(`[Verba] Continuous: Auto-selected template "${template.name}" for language "${languageId}"`);
+					}
+				}
+			}
+			if (!template && lastUsedName) {
+				template = templates.find(t => t.name === lastUsedName);
+			}
+			if (!template) {
+				template = await selectTemplate(
+					templates,
+					undefined,
+					(items, options) => vscode.window.showQuickPick(items, options) as any,
+				);
+				if (!template) { return; }
+				await context.workspaceState.update('verba.lastTemplateName', template.name);
+			}
+
+			selectedTemplate = template;
+
+			// Capture selected text (once at recording start, shared across all segments)
+			const activeEditor = vscode.window.activeTextEditor;
+			let capturedText: string | undefined;
+			if (activeEditor) {
+				const sel = activeEditor.selection;
+				if (!sel.isEmpty) {
+					capturedText = activeEditor.document.getText(sel);
+				}
+			}
+
+			// Guard: template referencing <selection> requires actual selection
+			if (!capturedText && selectedTemplate?.prompt.includes('<selection>')) {
+				vscode.window.showWarningMessage(
+					'Verba: This template requires text to be selected in the editor.'
+				);
+				return;
+			}
+
+			// Read continuous dictation settings
+			const silenceThreshold = vscode.workspace.getConfiguration('verba.continuous').get<number>('silenceThreshold', 1.5);
+			const silenceLevel = vscode.workspace.getConfiguration('verba.continuous').get<number>('silenceLevel', -30);
+
+			// Create recorder
+			continuousRecorder = new ContinuousRecorder(undefined, silenceThreshold, silenceLevel);
+			continuousSegmentsInserted = 0;
+			continuousSegmentQueue = Promise.resolve();
+
+			// Continuous dictation targets the editor
+			const executeCommand = vscode.workspace.getConfiguration('verba.terminal').get<boolean>('executeCommand', false);
+			const preferTerminalForContinuous = false;
+
+			// Listen for segments
+			continuousRecorder.on('segment', (event: SegmentEvent) => {
+				continuousSegmentQueue = continuousSegmentQueue.then(async () => {
+					try {
+						statusBar.setRecordingContinuous(continuousSegmentsInserted, true);
+
+						// Transcribe
+						const rawTranscript = await transcriptionService.process(event.segmentPath, currentGlossary);
+
+						// Track Whisper cost
+						const provider = vscode.workspace.getConfiguration('verba.transcription').get<string>('provider', 'openai');
+						if (provider === 'openai') {
+							const wavDurationSec = getWavDurationSec(event.segmentPath);
+							if (wavDurationSec > 0) { costTracker.trackWhisperUsage(wavDurationSec); }
+						}
+
+						// Claude cleanup
+						const pipelineContext = selectedTemplate
+							? { templatePrompt: selectedTemplate.prompt, selectedText: capturedText }
+							: undefined;
+						const abortController = new AbortController();
+						continuousAbortController = abortController;
+
+						let transcript: string;
+						try {
+							transcript = await cleanupService.processStreaming(
+								rawTranscript,
+								pipelineContext,
+								(_charCount) => statusBar.setRecordingContinuous(continuousSegmentsInserted, true),
+								abortController.signal,
+							);
+							if (cleanupService.lastUsage) {
+								costTracker.trackClaudeUsage(
+									cleanupService.lastUsage.inputTokens,
+									cleanupService.lastUsage.outputTokens,
+								);
+								cleanupService.lastUsage = undefined;
+							}
+						} catch (err: unknown) {
+							if (err instanceof Error && err.name === 'AbortError') {
+								return; // Cancelled
+							}
+							// Fallback: insert raw transcript
+							console.warn('[Verba] Claude cleanup failed for segment, inserting raw:', err);
+							transcript = rawTranscript;
+						} finally {
+							continuousAbortController = null;
+						}
+
+						// Insert text
+						const insertionResult = await insertText(
+							transcript,
+							vscode.window.activeTextEditor,
+							vscode.window.activeTerminal,
+							executeCommand,
+							preferTerminalForContinuous,
+						);
+
+						// Record undo (per segment)
+						if (insertionResult.target === 'editor') {
+							recordDictation({
+								type: 'editor',
+								documentUri: vscode.window.activeTextEditor?.document.uri.toString() ?? '',
+								insertedText: transcript,
+								insertedRanges: [],
+								originalTexts: [],
+							});
+						}
+
+						// Record history (per segment)
+						try {
+							historyManager.addRecord({
+								timestamp: Date.now(),
+								rawTranscript,
+								cleanedText: transcript,
+								templateName: selectedTemplate?.name ?? 'Default Cleanup',
+								target: insertionResult.target,
+								languageId: vscode.window.activeTextEditor?.document.languageId,
+								workspaceFolder: vscode.workspace.workspaceFolders?.[0]?.name,
+							});
+						} catch (historyErr: unknown) {
+							console.warn('[Verba] Failed to record segment in history:', historyErr);
+						}
+
+						continuousSegmentsInserted++;
+						statusBar.setRecordingContinuous(continuousSegmentsInserted);
+
+						// Cleanup segment file
+						cleanupFile(event.segmentPath);
+					} catch (err: unknown) {
+						console.error('[Verba] Segment processing failed:', err);
+						const message = err instanceof Error ? err.message : String(err);
+						vscode.window.showWarningMessage(`Verba: Segment failed: ${message}`);
+						statusBar.setRecordingContinuous(continuousSegmentsInserted);
+					}
+				});
+			});
+
+			continuousRecorder.on('error', (err: Error) => {
+				console.error('[Verba] Continuous recorder error:', err);
+			});
+
+			// Start recording
+			const preferredDevice = vscode.workspace.getConfiguration('verba').get<string>('audioDevice', '').trim() || undefined;
+			await continuousRecorder.start(preferredDevice);
+			statusBar.setRecordingContinuous();
+			vscode.window.showInformationMessage(
+				`Verba: Continuous recording started (${template.name})...`
+			);
+		} catch (err: unknown) {
+			continuousRecorder = null;
+			statusBar.setIdle(selectedTemplate?.name);
+			console.error('[Verba] Start continuous recording failed:', err);
+			const message = err instanceof Error ? err.message : String(err);
+			vscode.window.showErrorMessage(`Verba: ${message}`);
+		}
+	});
+
 	context.subscriptions.push(
 		editorCommand, terminalCommand, selectDeviceCommand, selectTemplateCommand,
 		indexProjectCommand, downloadModelCommand, manageApiKeysCommand, showCostOverviewCommand,
 		generateGlossaryCommand, undoCommand, showHistoryCommand, searchHistoryCommand, clearHistoryCommand,
+		startContinuousCommand,
 		saveWatcher,
-		{ dispose: () => recorder.dispose() }, statusBar,
+		{ dispose: () => { recorder.dispose(); if (continuousRecorder) { continuousRecorder.dispose(); } } }, statusBar,
 	);
 }
 

@@ -141,17 +141,23 @@ suite('ContinuousRecorder', () => {
 	});
 
 	suite('extractSegment()', () => {
-		test('spawns ffmpeg with correct -ss and -to arguments', async () => {
+		test('spawns ffmpeg with correct -ss and -t arguments for input seeking', async () => {
 			const promise = cr.extractSegment(1.5, 4.2);
 			fakeProcess.emit('close', 0);
 			await promise;
 
 			assert.ok(spawnStub.calledOnce, 'Expected spawn to be called once');
 			const args = spawnStub.firstCall.args[1] as string[];
-			assert.ok(args.includes('-ss'), 'Expected -ss in args');
+			// -ss must be BEFORE -i for byte-level input seeking with raw PCM
+			const ssIndex = args.indexOf('-ss');
+			const iIndex = args.indexOf('-i');
+			assert.ok(ssIndex >= 0, 'Expected -ss in args');
+			assert.ok(ssIndex < iIndex, 'Expected -ss before -i for input seeking');
 			assert.ok(args.includes('1.5'), 'Expected start time 1.5 in args');
-			assert.ok(args.includes('-to'), 'Expected -to in args');
-			assert.ok(args.includes('4.2'), 'Expected end time 4.2 in args');
+			// -t (duration) not -to (absolute time)
+			assert.ok(args.includes('-t'), 'Expected -t (duration) in args');
+			const duration = 4.2 - 1.5;
+			assert.ok(args.includes(String(duration)), `Expected duration ${duration} in args`);
 			assert.ok(args.includes('-i'), 'Expected -i in args');
 			assert.ok(args.includes('/tmp/verba-continuous-123.raw'), 'Expected input file in args');
 			assert.ok(args.includes('-ar'), 'Expected -ar in args');

@@ -373,16 +373,22 @@ export class ContinuousRecorder extends EventEmitter {
 		const segmentPath = this._outputPath.replace(/\.raw$/, `-seg-${segmentIndex}.wav`);
 		this.segmentPaths.push(segmentPath);
 
+		const duration = endTime - startTime;
 		const doWork = (): Promise<void> => new Promise<void>((resolve) => {
 			const proc = spawn(ffmpegPath, [
-				// Specify raw PCM input format (matches the continuous recording output).
-				// Without this, ffmpeg would try to read WAV headers which don't exist.
+				// Input format and seeking BEFORE -i for byte-level seeking.
+				// With raw PCM, ffmpeg calculates byte offset directly:
+				// offset = time * sample_rate * channels * bytes_per_sample
+				// This is fast and precise, unlike post-input seeking which
+				// decodes sequentially and fails with actively-written files.
 				'-f', 's16le',
 				'-ar', '16000',
 				'-ac', '1',
-				'-i', this._outputPath,
 				'-ss', String(startTime),
-				'-to', String(endTime),
+				'-i', this._outputPath,
+				// Use -t (duration) not -to (absolute time), because with
+				// input seeking, -to would be relative to file start, not seek point.
+				'-t', String(duration),
 				'-acodec', 'pcm_s16le',
 				'-y',
 				segmentPath,

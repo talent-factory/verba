@@ -99,6 +99,11 @@
         "command": "dictation.clearHistory",
         "title": "Clear Dictation History",
         "category": "Verba"
+      },
+      {
+        "command": "dictation.startContinuous",
+        "title": "Toggle Continuous Dictation",
+        "category": "Verba"
       }
     ],
     "keybindings": [
@@ -123,6 +128,11 @@
         "command": "dictation.undo",
         "key": "ctrl+alt+z",
         "mac": "cmd+alt+z"
+      },
+      {
+        "command": "dictation.startContinuous",
+        "key": "ctrl+shift+alt+d",
+        "mac": "cmd+shift+alt+d"
       }
     ],
     "configuration": {
@@ -298,6 +308,20 @@
           "minimum": 10,
           "maximum": 5000,
           "description": "Maximum number of dictation history entries to keep. Oldest entries are removed when the limit is reached. Takes effect after restarting VS Code."
+        },
+        "verba.continuous.silenceThreshold": {
+          "type": "number",
+          "default": 1.5,
+          "minimum": 0.5,
+          "maximum": 10,
+          "description": "Minimum pause duration in seconds to trigger segment split during continuous dictation."
+        },
+        "verba.continuous.silenceLevel": {
+          "type": "number",
+          "default": -30,
+          "minimum": -60,
+          "maximum": -10,
+          "description": "Audio level threshold in dB below which is considered silence. Lower values = more sensitive."
         }
       }
     }

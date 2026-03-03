@@ -21,11 +21,30 @@ import { HistoryRecord } from './historyManager';
 import { buildHistoryItems, buildActionItems, HistoryQuickPickItem, ActionQuickPickItem } from './historyCommands';
 import { getWavDurationSec } from './wavDuration';
 import { GlossaryGenerator } from './glossaryGenerator';
-import { ContinuousRecorder, SegmentEvent } from './continuousRecorder';
+import { ContinuousRecorder, TranscriptEvent } from './continuousRecorder';
 import {
 	WHISPER_MODELS, WHISPER_MODEL_BASE_URL,
-	isTrustedDownloadHost, cleanupFile, isValidExpansion, isWhisperHallucination,
+	isTrustedDownloadHost, cleanupFile, isValidExpansion,
 } from './extensionHelpers';
+
+const DEEPGRAM_API_KEY_STORAGE_KEY = 'verba.deepgramApiKey';
+
+async function getDeepgramApiKey(secretStorage: vscode.SecretStorage): Promise<string> {
+	const stored = await secretStorage.get(DEEPGRAM_API_KEY_STORAGE_KEY);
+	if (stored) { return stored; }
+
+	const newKey = await vscode.window.showInputBox({
+		prompt: 'Enter your Deepgram API key (required for continuous dictation)',
+		placeHolder: 'dg-...',
+		password: true,
+		ignoreFocusOut: true,
+	});
+	if (!newKey) {
+		throw new Error('Deepgram API key is required for continuous dictation. Get one at console.deepgram.com.');
+	}
+	await secretStorage.store(DEEPGRAM_API_KEY_STORAGE_KEY, newKey);
+	return newKey;
+}
 
 class VerbaTranscriptionService extends TranscriptionService {
 	protected async promptForApiKey(): Promise<string | undefined> {
@@ -942,6 +961,7 @@ export function activate(context: vscode.ExtensionContext) {
 			const keys = [
 				{ label: 'OpenAI', storageKey: 'openai-api-key', prefix: 'sk-' },
 				{ label: 'Anthropic', storageKey: 'anthropic-api-key', prefix: 'sk-ant-' },
+				{ label: 'Deepgram', storageKey: DEEPGRAM_API_KEY_STORAGE_KEY, prefix: 'dg-' },
 			];
 
 			const items = await Promise.all(keys.map(async (k) => {
@@ -1270,7 +1290,7 @@ export function activate(context: vscode.ExtensionContext) {
 		if (continuousRecorder?.isRecording) {
 			try {
 				console.log(`[Verba] Stopping continuous recording (${continuousSegmentsInserted} segments so far)`);
-				const mainWavPath = await continuousRecorder.stop();
+				await continuousRecorder.stop();
 				console.log('[Verba] Recorder stopped, waiting for segment queue to drain...');
 				// Wait for all pending segment processing
 				await continuousSegmentQueue;
@@ -1279,8 +1299,6 @@ export function activate(context: vscode.ExtensionContext) {
 				vscode.window.setStatusBarMessage(
 					`$(check) Verba: ${continuousSegmentsInserted} segment${continuousSegmentsInserted !== 1 ? 's' : ''} inserted`, 5000
 				);
-				// Cleanup
-				if (mainWavPath) { cleanupFile(mainWavPath); }
 				continuousRecorder.dispose();
 				continuousRecorder = null;
 			} catch (err: unknown) {
@@ -1351,57 +1369,25 @@ export function activate(context: vscode.ExtensionContext) {
 				return;
 			}
 
-			// Read continuous dictation settings
-			const silenceThreshold = vscode.workspace.getConfiguration('verba.continuous').get<number>('silenceThreshold', 1.5);
-			const silenceLevel = vscode.workspace.getConfiguration('verba.continuous').get<number>('silenceLevel', -30);
+			// Get Deepgram API key
+			const deepgramApiKey = await getDeepgramApiKey(context.secrets);
 
 			// Create recorder
-			continuousRecorder = new ContinuousRecorder(undefined, silenceThreshold, silenceLevel);
+			continuousRecorder = new ContinuousRecorder(deepgramApiKey);
 			continuousSegmentsInserted = 0;
 			continuousSegmentQueue = Promise.resolve();
-			
 
 			// Continuous dictation targets the editor
 			const executeCommand = vscode.workspace.getConfiguration('verba.terminal').get<boolean>('executeCommand', false);
 			const preferTerminalForContinuous = false;
 
-			// Listen for segments
-			continuousRecorder.on('segment', (event: SegmentEvent) => {
+			// Listen for transcripts (Deepgram already transcribed — no Whisper needed)
+			continuousRecorder.on('transcript', (event: TranscriptEvent) => {
 				continuousSegmentQueue = continuousSegmentQueue.then(async () => {
 					try {
 						statusBar.setRecordingContinuous(continuousSegmentsInserted, true);
 
-						// Transcribe — skip segments that are too short for Whisper
-						let rawTranscript: string;
-						try {
-							rawTranscript = await transcriptionService.process(event.segmentPath, currentGlossary);
-						} catch (transcriptionErr: unknown) {
-							const msg = transcriptionErr instanceof Error ? transcriptionErr.message : String(transcriptionErr);
-							// Whisper returns 400 for audio < 0.1s — this is normal for
-							// edge segments (final segment when user stops right after a pause).
-							if (msg.includes('too short') || msg.includes('400') || msg.includes('No speech detected')) {
-								console.log(`[Verba] Skipping silent/short segment: ${msg}`);
-								return;
-							}
-							throw transcriptionErr;
-						}
-
-						// Guard: skip Whisper hallucinations on short/silent segments.
-						// Whisper produces characteristic garbage text when given very
-						// short audio (e.g. "Microsoft Office Word Document",
-						// "MBC 뉴스", "Amara.org", repeated punctuation). These
-						// patterns never appear in genuine dictation.
-						if (isWhisperHallucination(rawTranscript)) {
-							console.log(`[Verba] Skipping hallucinated segment: "${rawTranscript.substring(0, 60)}"`);
-							return;
-						}
-
-						// Track Whisper cost
-						const provider = vscode.workspace.getConfiguration('verba.transcription').get<string>('provider', 'openai');
-						if (provider === 'openai') {
-							const wavDurationSec = getWavDurationSec(event.segmentPath);
-							if (wavDurationSec > 0) { costTracker.trackWhisperUsage(wavDurationSec); }
-						}
+						const rawTranscript = event.text;
 
 						// Claude cleanup
 						const pipelineContext = continuousTemplate
@@ -1490,17 +1476,20 @@ export function activate(context: vscode.ExtensionContext) {
 							console.warn('[Verba] Failed to record segment in history:', historyErr);
 						}
 
-												continuousSegmentsInserted++;
+						continuousSegmentsInserted++;
 						statusBar.setRecordingContinuous(continuousSegmentsInserted);
 					} catch (err: unknown) {
 						console.error('[Verba] Segment processing failed:', err);
 						const message = err instanceof Error ? err.message : String(err);
 						vscode.window.showWarningMessage(`Verba: Segment failed: ${message}`);
 						statusBar.setRecordingContinuous(continuousSegmentsInserted);
-					} finally {
-						cleanupFile(event.segmentPath);
 					}
 				});
+			});
+
+			// Show interim (partial) transcription in status bar
+			continuousRecorder.on('interim', (text: string) => {
+				statusBar.setRecordingContinuous(continuousSegmentsInserted);
 			});
 
 			let lastRecorderErrorTime = 0;

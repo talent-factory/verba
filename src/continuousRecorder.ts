@@ -167,10 +167,14 @@ export class ContinuousRecorder extends EventEmitter {
 						this.lastSilenceStart = event.time;
 					} else if (event.type === 'silence_end') {
 						if (this.lastSilenceStart !== null) {
-							// Extract segment from lastSegmentEnd to lastSilenceStart
-							// (the speech before the silence)
+							// Extract segment from lastSegmentEnd to slightly past
+							// lastSilenceStart. The +0.3s buffer captures the
+							// trailing edge of the last spoken word, which often
+							// drops below the silence threshold before the speaker
+							// fully finishes (e.g. "Handel mit Energie" → without
+							// buffer, "Energie" may be clipped at "Ener-").
 							const segStart = this.lastSegmentEnd;
-							const segEnd = this.lastSilenceStart;
+							const segEnd = this.lastSilenceStart + 0.3;
 							this.lastSegmentEnd = event.time;
 							this.lastSilenceStart = null;
 							// Skip very short segments (<0.5s) — too little speech

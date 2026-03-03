@@ -368,7 +368,7 @@ suite('ContinuousRecorder lifecycle', () => {
 			assert.strictEqual(extractStub.callCount, 1, 'extractSegment should be called once on silence_end');
 			// First arg: startTime (lastSegmentEnd=0), second: endTime (lastSilenceStart=3.5)
 			assert.strictEqual(extractStub.firstCall.args[0], 0, 'startTime should be 0 (lastSegmentEnd)');
-			assert.strictEqual(extractStub.firstCall.args[1], 3.5, 'endTime should be 3.5 (lastSilenceStart)');
+			assert.strictEqual(extractStub.firstCall.args[1], 3.8, 'endTime should be 3.5+0.3 buffer (lastSilenceStart+0.3)');
 		});
 
 		test('silence_end without prior silence_start does not trigger extractSegment', async () => {
@@ -399,7 +399,7 @@ suite('ContinuousRecorder lifecycle', () => {
 
 			assert.strictEqual(extractStub.callCount, 1, 'Cycle 1: extractSegment should be called once');
 			assert.strictEqual(extractStub.firstCall.args[0], 0, 'Cycle 1: startTime should be 0');
-			assert.strictEqual(extractStub.firstCall.args[1], 3.0, 'Cycle 1: endTime should be 3.0 (silence_start)');
+			assert.strictEqual(extractStub.firstCall.args[1], 3.3, 'Cycle 1: endTime should be 3.0+0.3 buffer');
 
 			// Cycle 2: speech 5-8s, silence 8-10s
 			fakeProcess.stderr.emit('data', Buffer.from(
@@ -409,7 +409,7 @@ suite('ContinuousRecorder lifecycle', () => {
 
 			assert.strictEqual(extractStub.callCount, 2, 'Cycle 2: extractSegment should be called twice total');
 			assert.strictEqual(extractStub.secondCall.args[0], 5.0, 'Cycle 2: startTime should be 5.0 (lastSegmentEnd)');
-			assert.strictEqual(extractStub.secondCall.args[1], 8.0, 'Cycle 2: endTime should be 8.0 (silence_start)');
+			assert.strictEqual(extractStub.secondCall.args[1], 8.3, 'Cycle 2: endTime should be 8.0+0.3 buffer');
 
 			// Stop recording — final segment should start at 10.0
 			extractStub.resetHistory();

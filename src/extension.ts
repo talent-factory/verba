@@ -1356,6 +1356,7 @@ export function activate(context: vscode.ExtensionContext) {
 			continuousRecorder = new ContinuousRecorder(undefined, silenceThreshold, silenceLevel);
 			continuousSegmentsInserted = 0;
 			continuousSegmentQueue = Promise.resolve();
+			let lastSegmentTranscript = '';
 
 			// Continuous dictation targets the editor
 			const executeCommand = vscode.workspace.getConfiguration('verba.terminal').get<boolean>('executeCommand', false);
@@ -1367,8 +1368,13 @@ export function activate(context: vscode.ExtensionContext) {
 					try {
 						statusBar.setRecordingContinuous(continuousSegmentsInserted, true);
 
-						// Transcribe
-						const rawTranscript = await transcriptionService.process(event.segmentPath, currentGlossary);
+						// Transcribe — pass previous segment's transcript as Whisper prompt
+						// context. This dramatically reduces hallucinations at segment
+						// boundaries because Whisper knows what was said before.
+						const whisperContext = lastSegmentTranscript
+							? [...(currentGlossary || []), lastSegmentTranscript]
+							: currentGlossary;
+						const rawTranscript = await transcriptionService.process(event.segmentPath, whisperContext);
 
 						// Guard: skip Whisper hallucinations on short/silent segments.
 						// Whisper produces characteristic garbage text when given very
@@ -1435,9 +1441,13 @@ export function activate(context: vscode.ExtensionContext) {
 							continuousAbortController = null;
 						}
 
+						// Prepend separator between segments (space or newline)
+						const separator = continuousSegmentsInserted > 0 ? '\n' : '';
+						const textToInsert = separator + transcript;
+
 						// Insert text
 						const insertionResult = await insertText(
-							transcript,
+							textToInsert,
 							vscode.window.activeTextEditor,
 							vscode.window.activeTerminal,
 							executeCommand,
@@ -1449,7 +1459,7 @@ export function activate(context: vscode.ExtensionContext) {
 							recordDictation({
 								type: 'editor',
 								documentUri: vscode.window.activeTextEditor?.document.uri.toString() ?? '',
-								insertedText: transcript,
+								insertedText: textToInsert,
 								insertedRanges: [],
 								originalTexts: [],
 							});
@@ -1470,6 +1480,7 @@ export function activate(context: vscode.ExtensionContext) {
 							console.warn('[Verba] Failed to record segment in history:', historyErr);
 						}
 
+						lastSegmentTranscript = transcript;
 						continuousSegmentsInserted++;
 						statusBar.setRecordingContinuous(continuousSegmentsInserted);
 					} catch (err: unknown) {

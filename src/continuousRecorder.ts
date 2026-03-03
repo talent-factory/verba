@@ -328,9 +328,9 @@ export class ContinuousRecorder extends EventEmitter {
 		// Extract final segment (from lastSegmentEnd to end of recording).
 		// Use a large endTime — ffmpeg clamps to actual duration.
 		// If no silence was ever detected (lastSegmentEnd === 0), entire recording is one segment.
-		const startTime = this.lastSegmentEnd;
-		const endTime = 999999;
-		await this.extractSegment(startTime, endTime);
+		const finalStartTime = this.lastSegmentEnd;
+		console.log(`[Verba] Extracting final segment from ${finalStartTime.toFixed(1)}s`);
+		await this.extractSegment(finalStartTime, 999999);
 
 		this.emit('stopped');
 

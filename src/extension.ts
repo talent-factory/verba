@@ -1269,9 +1269,12 @@ export function activate(context: vscode.ExtensionContext) {
 		// Stop continuous recording if already active
 		if (continuousRecorder?.isRecording) {
 			try {
+				console.log(`[Verba] Stopping continuous recording (${continuousSegmentsInserted} segments so far)`);
 				const mainWavPath = await continuousRecorder.stop();
+				console.log('[Verba] Recorder stopped, waiting for segment queue to drain...');
 				// Wait for all pending segment processing
 				await continuousSegmentQueue;
+				console.log(`[Verba] All segments processed (${continuousSegmentsInserted} total)`);
 				statusBar.setIdle(selectedTemplate?.name);
 				vscode.window.setStatusBarMessage(
 					`$(check) Verba: ${continuousSegmentsInserted} segment${continuousSegmentsInserted !== 1 ? 's' : ''} inserted`, 5000

@@ -8,7 +8,6 @@ import {
 	isValidExpansion, mergeExpansions, mergeGlossary,
 	parseGlossaryFile, parseExpansionsFile,
 	WHISPER_MODELS, WHISPER_MODEL_BASE_URL,
-	isWhisperHallucination, detectMeanVolume,
 } from '../../extensionHelpers';
 
 suite('isTrustedDownloadHost', () => {
@@ -315,62 +314,3 @@ suite('WHISPER_MODELS', () => {
 	});
 });
 
-suite('isWhisperHallucination', () => {
-	test('detects "Microsoft Office Word Document" hallucination', () => {
-		assert.strictEqual(isWhisperHallucination('Microsoft Office Word Document MSWordDoc Word.Document.8'), true);
-	});
-
-	test('detects MSWordDoc pattern', () => {
-		assert.strictEqual(isWhisperHallucination('MSWordDoc'), true);
-	});
-
-	test('detects Word.Document pattern', () => {
-		assert.strictEqual(isWhisperHallucination('Word.Document.8'), true);
-	});
-
-	test('detects only-dots hallucination', () => {
-		assert.strictEqual(isWhisperHallucination('...'), true);
-	});
-
-	test('detects punctuation-only hallucination', () => {
-		assert.strictEqual(isWhisperHallucination(' . . . '), true);
-		assert.strictEqual(isWhisperHallucination('♪♪♪'), true);
-	});
-
-	test('treats empty string as hallucination', () => {
-		assert.strictEqual(isWhisperHallucination(''), true);
-		assert.strictEqual(isWhisperHallucination('   '), true);
-	});
-
-	test('does NOT flag patterns removed from conservative filter', () => {
-		// These were removed to avoid discarding real speech Whisper mangled
-		assert.strictEqual(isWhisperHallucination('Thank you for watching!'), false);
-		assert.strictEqual(isWhisperHallucination('www.example.com'), false);
-		assert.strictEqual(isWhisperHallucination('Amara.org'), false);
-		assert.strictEqual(isWhisperHallucination(' you '), false);
-	});
-
-	test('does NOT flag genuine dictation text', () => {
-		assert.strictEqual(isWhisperHallucination('This is a normal dictation sentence.'), false);
-		assert.strictEqual(isWhisperHallucination('Implement the login feature'), false);
-		assert.strictEqual(isWhisperHallucination('Produktion und Verkauf von Unternehmen'), false);
-	});
-
-	test('does NOT flag text containing "Microsoft" in real context', () => {
-		assert.strictEqual(isWhisperHallucination('Microsoft released a new product'), false);
-	});
-});
-
-suite('detectMeanVolume', () => {
-	test('returns null for non-existent file', () => {
-		const result = detectMeanVolume('/tmp/non-existent-file-abc123.wav');
-		assert.strictEqual(result, null);
-	});
-
-	test('returns a number for a valid audio file (if ffmpeg available)', () => {
-		// This test only runs if ffmpeg is installed (CI might not have it)
-		const result = detectMeanVolume('/dev/null');
-		// /dev/null is not a valid audio file, so we expect null
-		assert.strictEqual(result, null);
-	});
-});

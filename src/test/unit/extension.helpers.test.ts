@@ -358,6 +358,18 @@ suite('isWhisperHallucination', () => {
 		assert.strictEqual(isWhisperHallucination('   '), true);
 	});
 
+	test('detects "Thank you for watching" hallucination', () => {
+		assert.strictEqual(isWhisperHallucination('Thank you for watching!'), true);
+		assert.strictEqual(isWhisperHallucination('Thanks for watching'), true);
+		assert.strictEqual(isWhisperHallucination('Thank you for listening.'), true);
+		assert.strictEqual(isWhisperHallucination('Please subscribe'), true);
+	});
+
+	test('detects German hallucination patterns', () => {
+		assert.strictEqual(isWhisperHallucination('Untertitel'), true);
+		assert.strictEqual(isWhisperHallucination('Vielen Dank fürs Zuschauen'), true);
+	});
+
 	test('does NOT flag genuine dictation text', () => {
 		assert.strictEqual(isWhisperHallucination('This is a normal dictation sentence.'), false);
 		assert.strictEqual(isWhisperHallucination('Implement the login feature'), false);

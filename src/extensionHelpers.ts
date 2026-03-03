@@ -40,6 +40,14 @@ const WHISPER_HALLUCINATION_PATTERNS: RegExp[] = [
 	/www\.\w+\.\w+/,   // URL-like hallucinations
 	/^\s*you\s*$/i,     // Single "you" (common short-segment hallucination)
 	/^\s*\.{3,}\s*$/,   // Multiple dots/ellipsis only
+	// YouTube-style outro hallucinations (common on silence at end of recording)
+	/thank\s*you\s*(for\s*watching|for\s*listening)/i,
+	/thanks\s*for\s*(watching|listening)/i,
+	/please\s*subscribe/i,
+	/like\s*and\s*subscribe/i,
+	/^\s*bye[\s.!]*$/i,
+	/Untertitel/i,              // German subtitle hallucination
+	/Vielen\s*Dank\s*f.rs?\s*Zuschauen/i, // German "Thanks for watching"
 ];
 
 /** Returns true if the transcript looks like a Whisper hallucination. */

@@ -168,8 +168,9 @@ export class CleanupService implements ProcessingStage {
 		context: PipelineContext | undefined,
 		input: string,
 	): Promise<{ client: Anthropic; systemPrompt: string; userMessage: string }> {
-		const languageHint = context?.detectedLanguage
-			? `\nThe transcript language is: ${context.detectedLanguage}. Respond in the same language.\n`
+		const langCode = context?.detectedLanguage;
+		const languageHint = langCode && /^[a-z]{2,3}$/.test(langCode)
+			? `\nThe transcript language is: ${langCode}. Respond in the same language.\n`
 			: '';
 		const glossaryInstruction = this.glossary.length > 0
 			? `\nBehalte folgende Begriffe exakt bei (nicht uebersetzen, nicht kuerzen, nicht aendern): ${this.glossary.join(', ')}.`

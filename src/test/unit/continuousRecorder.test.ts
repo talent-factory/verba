@@ -327,6 +327,46 @@ suite('ContinuousRecorder (Deepgram)', () => {
 			assert.strictEqual(transcriptEvents[0].detectedLanguage, undefined);
 		});
 
+		test('last detected language wins when multiple is_final events have different languages', async () => {
+			await startRecording();
+
+			const transcriptEvents: TranscriptEvent[] = [];
+			cr.on('transcript', (evt: TranscriptEvent) => transcriptEvents.push(evt));
+
+			fakeConnection.emit(FakeLiveTranscriptionEvents.Transcript, {
+				channel: { alternatives: [{ transcript: 'Hallo' }], detected_language: 'de' },
+				is_final: true,
+			});
+			fakeConnection.emit(FakeLiveTranscriptionEvents.Transcript, {
+				channel: { alternatives: [{ transcript: 'world' }], detected_language: 'en' },
+				is_final: true,
+			});
+			fakeConnection.emit(FakeLiveTranscriptionEvents.UtteranceEnd);
+
+			assert.strictEqual(transcriptEvents.length, 1);
+			assert.strictEqual(transcriptEvents[0].detectedLanguage, 'en', 'last detected language should win');
+		});
+
+		test('language sticks when subsequent is_final event omits detected_language', async () => {
+			await startRecording();
+
+			const transcriptEvents: TranscriptEvent[] = [];
+			cr.on('transcript', (evt: TranscriptEvent) => transcriptEvents.push(evt));
+
+			fakeConnection.emit(FakeLiveTranscriptionEvents.Transcript, {
+				channel: { alternatives: [{ transcript: 'Hallo' }], detected_language: 'de' },
+				is_final: true,
+			});
+			fakeConnection.emit(FakeLiveTranscriptionEvents.Transcript, {
+				channel: { alternatives: [{ transcript: 'Welt' }] },
+				is_final: true,
+			});
+			fakeConnection.emit(FakeLiveTranscriptionEvents.UtteranceEnd);
+
+			assert.strictEqual(transcriptEvents.length, 1);
+			assert.strictEqual(transcriptEvents[0].detectedLanguage, 'de', 'language should persist when omitted');
+		});
+
 		test('multiple utterances increment utteranceIndex', async () => {
 			await startRecording();
 
@@ -477,6 +517,24 @@ suite('ContinuousRecorder (Deepgram)', () => {
 			assert.strictEqual(transcriptEvents.length, 1, 'Should flush on stop');
 			assert.strictEqual(transcriptEvents[0].text, 'unsent text');
 			assert.strictEqual(transcriptEvents[0].isFinal, true);
+		});
+
+		test('flushes pending transcript with detectedLanguage on stop', async () => {
+			await startRecording();
+
+			const transcriptEvents: TranscriptEvent[] = [];
+			cr.on('transcript', (evt: TranscriptEvent) => transcriptEvents.push(evt));
+
+			fakeConnection.emit(FakeLiveTranscriptionEvents.Transcript, {
+				channel: { alternatives: [{ transcript: 'unsent text' }], detected_language: 'fr' },
+				is_final: true,
+			});
+
+			await completeStop(cr.stop());
+
+			assert.strictEqual(transcriptEvents.length, 1);
+			assert.strictEqual(transcriptEvents[0].text, 'unsent text');
+			assert.strictEqual(transcriptEvents[0].detectedLanguage, 'fr');
 		});
 
 		test('drain period allows Deepgram to deliver remaining transcripts', async () => {

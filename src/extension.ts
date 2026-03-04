@@ -82,6 +82,18 @@ function wrapVscodeEditor(editor: vscode.TextEditor): UndoEditor {
 	};
 }
 
+/** Resolves the effective language: manual setting overrides auto-detection. Returns undefined if no valid language. */
+function resolveLanguage(autoDetected: string | undefined): string | undefined {
+	const setting = vscode.workspace.getConfiguration('verba').get<string>('language', 'auto');
+	const lang = setting !== 'auto' ? setting : autoDetected;
+	if (!lang) { return undefined; }
+	if (!/^[a-z]{2,3}$/.test(lang)) {
+		console.warn(`[Verba] Invalid language value "${lang}" — expected ISO 639-1 code (e.g. "de", "en"). Ignoring.`);
+		return undefined;
+	}
+	return lang;
+}
+
 /** Activates the Verba extension: registers commands, wires up services, and initializes the status bar. */
 export function activate(context: vscode.ExtensionContext) {
 	const recorder = new FfmpegRecorder();
@@ -375,13 +387,11 @@ export function activate(context: vscode.ExtensionContext) {
 				}
 
 				// Step 3: Claude post-processing (pass captured selection as context only with a template)
-				const languageSetting = vscode.workspace.getConfiguration('verba').get<string>('language', 'auto');
-				const detectedLanguage = languageSetting !== 'auto' ? languageSetting : transcriptionResult.detectedLanguage;
 				const pipelineContext: PipelineContext = {
 					templatePrompt: selectedTemplate?.prompt,
 					contextSnippets,
 					selectedText: capturedSelectedText,
-					detectedLanguage,
+					detectedLanguage: resolveLanguage(transcriptionResult.detectedLanguage),
 				};
 				statusBar.setProcessing();
 				const abortController = new AbortController();
@@ -1407,12 +1417,10 @@ export function activate(context: vscode.ExtensionContext) {
 						const rawTranscript = event.text;
 
 						// Claude cleanup
-						const languageSetting = vscode.workspace.getConfiguration('verba').get<string>('language', 'auto');
-						const detectedLanguage = languageSetting !== 'auto' ? languageSetting : event.detectedLanguage;
 						const pipelineContext: PipelineContext = {
 							templatePrompt: continuousTemplate?.prompt,
 							selectedText: capturedText,
-							detectedLanguage,
+							detectedLanguage: resolveLanguage(event.detectedLanguage),
 						};
 						const abortController = new AbortController();
 						continuousAbortController = abortController;

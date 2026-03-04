@@ -843,6 +843,34 @@ suite('CleanupService', () => {
 			assert.ok(!callArgs.system.includes('The transcript language is'),
 				'system prompt should not contain language hint when detectedLanguage is absent');
 		});
+
+		test('rejects invalid language code to prevent prompt injection', async () => {
+			secretStorage.get.resolves('sk-ant-test-key');
+			fakeClient.messages.create.resolves({
+				content: [{ type: 'text', text: 'cleaned' }],
+			});
+
+			const context: PipelineContext = { detectedLanguage: 'invalid-code' };
+			await service.process('test input', context);
+
+			const callArgs = fakeClient.messages.create.firstCall.args[0];
+			assert.ok(!callArgs.system.includes('The transcript language is'),
+				'should reject non-ISO 639-1 language codes');
+		});
+
+		test('accepts 3-letter ISO 639-2 language codes', async () => {
+			secretStorage.get.resolves('sk-ant-test-key');
+			fakeClient.messages.create.resolves({
+				content: [{ type: 'text', text: 'cleaned' }],
+			});
+
+			const context: PipelineContext = { detectedLanguage: 'deu' };
+			await service.process('test input', context);
+
+			const callArgs = fakeClient.messages.create.firstCall.args[0];
+			assert.ok(callArgs.system.includes('The transcript language is: deu'),
+				'should accept 3-letter language codes');
+		});
 	});
 
 	suite('processStreaming()', () => {
@@ -1184,6 +1212,41 @@ suite('CleanupService', () => {
 			await service.processStreaming('raw input', undefined, sinon.stub());
 
 			assert.strictEqual(service.lastUsage, undefined);
+		});
+
+		test('includes language hint in streaming system prompt when detectedLanguage is provided', async () => {
+			secretStorage.get.resolves('sk-ant-test-key');
+			fakeClient.messages.stream.returns(createFakeStream(['cleaned']));
+
+			const context: PipelineContext = { detectedLanguage: 'de' };
+			await service.processStreaming('test input', context, sinon.stub());
+
+			const callArgs = fakeClient.messages.stream.firstCall.args[0];
+			assert.ok(callArgs.system.includes('The transcript language is: de'),
+				'streaming system prompt should contain language hint');
+		});
+
+		test('omits language hint in streaming when detectedLanguage is absent', async () => {
+			secretStorage.get.resolves('sk-ant-test-key');
+			fakeClient.messages.stream.returns(createFakeStream(['cleaned']));
+
+			await service.processStreaming('test input', undefined, sinon.stub());
+
+			const callArgs = fakeClient.messages.stream.firstCall.args[0];
+			assert.ok(!callArgs.system.includes('The transcript language is'),
+				'streaming system prompt should not contain language hint when absent');
+		});
+
+		test('rejects invalid language codes in streaming prompt', async () => {
+			secretStorage.get.resolves('sk-ant-test-key');
+			fakeClient.messages.stream.returns(createFakeStream(['cleaned']));
+
+			const context: PipelineContext = { detectedLanguage: 'invalid-code' };
+			await service.processStreaming('test input', context, sinon.stub());
+
+			const callArgs = fakeClient.messages.stream.firstCall.args[0];
+			assert.ok(!callArgs.system.includes('The transcript language is'),
+				'should reject non-ISO 639-1 language codes');
 		});
 	});
 });

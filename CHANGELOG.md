@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.5.0](https://github.com/talent-factory/verba/compare/verba-v0.4.0...verba-v0.5.0) (2026-03-04)
+
+
+### Added
+
+* Undo, History, Continuous Dictation, Deepgram Migration, Language Detection, Retry Logic, Bug Fixes ([bc33aa8](https://github.com/talent-factory/verba/commit/bc33aa83a7165b2b8c0abfdb4827dccb25b7d511))
+
 ## [0.4.0] - 2026-03-02
 
 ### Added

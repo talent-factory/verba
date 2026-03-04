@@ -16,8 +16,7 @@ import { Indexer } from './indexer';
 import { GrepaiProvider } from './grepaiProvider';
 import { CostTracker } from './costTracker';
 import { CostOverviewPanel } from './costOverviewPanel';
-import { HistoryManager } from './historyManager';
-import { HistoryRecord } from './historyManager';
+import { HistoryManager, HistoryRecord } from './historyManager';
 import { buildHistoryItems, buildActionItems, HistoryQuickPickItem, ActionQuickPickItem } from './historyCommands';
 import { getWavDurationSec } from './wavDuration';
 import { GlossaryGenerator } from './glossaryGenerator';
@@ -1477,9 +1476,10 @@ export function activate(context: vscode.ExtensionContext) {
 								return; // Cancelled by user
 							}
 							const message = err instanceof Error ? err.message : String(err);
+							const httpStatus = err instanceof Error ? (err as any).status : undefined;
 							console.error('[Verba] Claude cleanup failed for segment:', err);
 
-							if (message.includes('401') || message.includes('authentication') || message.includes('403')) {
+							if (httpStatus === 401 || httpStatus === 403) {
 								vscode.window.showErrorMessage(
 									'Verba: Claude API key invalid or expired. Raw transcript inserted. Fix via "Verba: Manage API Keys".'
 								);
@@ -1566,6 +1566,9 @@ export function activate(context: vscode.ExtensionContext) {
 				`Verba: Continuous recording started (${continuousTemplate.name})...`
 			);
 		} catch (err: unknown) {
+			if (continuousRecorder) {
+				continuousRecorder.dispose();
+			}
 			continuousRecorder = null;
 			statusBar.setIdle(selectedTemplate?.name);
 			console.error('[Verba] Start continuous recording failed:', err);

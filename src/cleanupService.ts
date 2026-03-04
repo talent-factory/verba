@@ -250,29 +250,33 @@ export class CleanupService implements ProcessingStage {
 
 	private async handleApiError(err: unknown, logPrefix: string): Promise<never> {
 		console.error(logPrefix, err);
-		if (err instanceof Error && (err as any).status === 401) {
+		const originalStatus = err instanceof Error ? (err as any).status : undefined;
+
+		const throwWithStatus = (message: string): never => {
+			const wrapped = new Error(message);
+			if (originalStatus !== undefined) {
+				(wrapped as any).status = originalStatus;
+			}
+			throw wrapped;
+		};
+
+		if (originalStatus === 401) {
 			this._client = null;
 			try {
 				await this.secretStorage.delete(API_KEY_STORAGE_KEY);
 			} catch (deleteErr: unknown) {
 				console.error('[Verba] Failed to remove invalid Anthropic API key from storage:', deleteErr);
 			}
-			throw new Error(
-				'Invalid Anthropic API key. Please update it via "Verba: Manage API Keys".'
-			);
+			throwWithStatus('Invalid Anthropic API key. Please update it via "Verba: Manage API Keys".');
 		}
-		if (err instanceof Error && (err as any).status === 429) {
-			throw new Error(
-				'Anthropic rate limit reached. Please wait a moment and try again.'
-			);
+		if (originalStatus === 429) {
+			throwWithStatus('Anthropic rate limit reached. Please wait a moment and try again.');
 		}
 		if (isOverloadedError(err)) {
-			throw new Error(
-				'Anthropic API is currently overloaded. Please try again in a few seconds.'
-			);
+			throwWithStatus('Anthropic API is currently overloaded. Please try again in a few seconds.');
 		}
 		const detail = err instanceof Error ? err.message : String(err);
-		throw new Error(`Post-processing failed: ${detail}`);
+		return throwWithStatus(`Post-processing failed: ${detail}`);
 	}
 
 	private fallbackIfEmpty(text: string, rawInput: string, hasSelection: boolean): string {

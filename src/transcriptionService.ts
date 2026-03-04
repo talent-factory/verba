@@ -74,6 +74,7 @@ export class TranscriptionService {
 			model: 'nova-3',
 			language: 'multi',
 			smart_format: true,
+			detect_language: true,
 		};
 
 		if (glossary?.length) {

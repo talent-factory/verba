@@ -84,6 +84,7 @@ suite('TranscriptionService', () => {
 			assert.strictEqual(options.model, 'nova-3');
 			assert.strictEqual(options.language, 'multi');
 			assert.strictEqual(options.smart_format, true);
+			assert.strictEqual(options.detect_language, true);
 		});
 
 		test('prompts for API key when none is stored', async () => {

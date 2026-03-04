@@ -220,8 +220,8 @@ export class TranscriptionService {
 
 	/**
 	 * Truncates glossary terms to fit within Deepgram's 500-token keyterm budget.
-	 * Each keyterm is formatted as `term:2` (boost weight). Tokens are estimated
-	 * by splitting on whitespace — each word plus the `:2` suffix counts as ~1 token.
+	 * Each keyterm is formatted as `term:2` (boost weight). Deepgram tokenises each
+	 * keyterm entry as roughly: 1 token per word + 1 token for the `:intensifier` suffix.
 	 */
 	private truncateKeyterms(glossary: string[]): string[] {
 		const MAX_TOKENS = 500;
@@ -230,8 +230,8 @@ export class TranscriptionService {
 
 		for (const term of glossary) {
 			const kt = `${term}:2`;
-			// Estimate: each whitespace-separated word ≈ 1 token
-			const estimated = kt.split(/\s+/).length;
+			// Conservative estimate: words in term + 1 for the `:2` boost suffix
+			const estimated = term.split(/\s+/).length + 1;
 			if (tokenCount + estimated > MAX_TOKENS) {
 				break;
 			}

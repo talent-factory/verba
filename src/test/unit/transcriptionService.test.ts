@@ -272,14 +272,14 @@ suite('TranscriptionService', () => {
 			fakeClient.listen.prerecorded.transcribeFile.resolves(deepgramResponse('Hello'));
 			sinon.stub(fs, 'readFileSync').returns(Buffer.from('fake-wav'));
 
-			// Generate 600 single-word terms — each "termN:2" ≈ 1 token, so only ~500 should be sent
-			const bigGlossary = Array.from({ length: 600 }, (_, i) => `term${i}`);
+			// Generate 300 single-word terms — each costs 2 estimated tokens (word + :2), so ~250 fit in 500
+			const bigGlossary = Array.from({ length: 300 }, (_, i) => `term${i}`);
 			await service.process('/tmp/test.wav', bigGlossary);
 
 			const [, options] = fakeClient.listen.prerecorded.transcribeFile.firstCall.args;
 			assert.ok(Array.isArray(options.keyterm));
-			assert.ok(options.keyterm.length < 600, `Expected truncation, got ${options.keyterm.length} terms`);
-			assert.ok(options.keyterm.length >= 400, `Expected at least 400 terms, got ${options.keyterm.length}`);
+			assert.ok(options.keyterm.length < 300, `Expected truncation, got ${options.keyterm.length} terms`);
+			assert.ok(options.keyterm.length >= 200, `Expected at least 200 terms, got ${options.keyterm.length}`);
 			// All entries should have :2 boost suffix
 			assert.ok(options.keyterm.every((kt: string) => kt.endsWith(':2')));
 		});

@@ -224,14 +224,14 @@ export class TranscriptionService {
 	 * using character length (BPE ≈ 1 token per 4 characters), with a safety margin.
 	 */
 	private truncateKeyterms(glossary: string[]): string[] {
-		const MAX_TOKENS = 450; // Safety margin below Deepgram's 500-token hard limit
+		const MAX_TOKENS = 350; // Conservative margin — BPE tokenization varies, Deepgram hard limit is 500
 		const keyterms: string[] = [];
 		let tokenCount = 0;
 
 		for (const term of glossary) {
 			const kt = `${term}:2`;
-			// BPE tokenizers produce roughly 1 token per 4 characters
-			const estimated = Math.max(1, Math.ceil(kt.length / 4));
+			// BPE tokenizers produce roughly 1 token per 3 characters (conservative)
+			const estimated = Math.max(1, Math.ceil(kt.length / 3));
 			if (tokenCount + estimated > MAX_TOKENS) {
 				break;
 			}

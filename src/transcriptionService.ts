@@ -1,11 +1,10 @@
 import * as fs from 'fs';
 import { spawn, spawnSync } from 'child_process';
-import OpenAI from 'openai';
 
-const API_KEY_STORAGE_KEY = 'openai-api-key';
+const API_KEY_STORAGE_KEY = 'verba.deepgramApiKey';
 
-/** Transcription backend: `'openai'` for cloud Whisper API, `'local'` for whisper.cpp CLI. */
-export type TranscriptionProvider = 'openai' | 'local';
+/** Transcription backend: `'deepgram'` for cloud Deepgram API, `'local'` for whisper.cpp CLI. */
+export type TranscriptionProvider = 'deepgram' | 'local';
 
 interface SecretStorage {
 	get(key: string): Thenable<string | undefined>;
@@ -13,16 +12,21 @@ interface SecretStorage {
 	delete(key: string): Thenable<void>;
 }
 
+// Lazy-load @deepgram/sdk (same pattern as continuousRecorder.ts)
+function getDeepgramSdk(): typeof import('@deepgram/sdk') {
+	return require('@deepgram/sdk');
+}
+
 /**
- * Transcribes WAV audio files via OpenAI Whisper API or local whisper.cpp CLI.
+ * Transcribes WAV audio files via Deepgram pre-recorded API or local whisper.cpp CLI.
  * Provider is selected via setProvider(). An optional glossary biases transcription.
- * API key (for OpenAI) is stored in VS Code SecretStorage; prompts user on first use.
+ * API key (for Deepgram) is stored in VS Code SecretStorage; prompts user on first use.
  */
 export class TranscriptionService {
-	readonly name = 'Whisper Transcription';
-	private _client: OpenAI | null = null;
+	readonly name = 'Deepgram Transcription';
+	private _client: any = null;
 	private secretStorage: SecretStorage;
-	private _provider: TranscriptionProvider = 'openai';
+	private _provider: TranscriptionProvider = 'deepgram';
 	private _modelPath: string = '';
 
 	constructor(secretStorage: SecretStorage) {
@@ -31,8 +35,8 @@ export class TranscriptionService {
 
 	/** Switches the transcription backend. Throws on invalid provider values. */
 	setProvider(provider: TranscriptionProvider): void {
-		if (provider !== 'openai' && provider !== 'local') {
-			throw new Error(`Invalid provider: ${provider}. Must be 'openai' or 'local'.`);
+		if (provider !== 'deepgram' && provider !== 'local') {
+			throw new Error(`Invalid provider: ${provider}. Must be 'deepgram' or 'local'.`);
 		}
 		this._provider = provider;
 	}
@@ -45,41 +49,47 @@ export class TranscriptionService {
 	/**
 	 * Transcribes a WAV audio file to text using the active provider.
 	 * @param input - Absolute path to the WAV file.
-	 * @param glossary - Optional terms to bias transcription accuracy (passed as prompt hint to both OpenAI and whisper.cpp).
+	 * @param glossary - Optional terms to bias transcription accuracy.
 	 */
 	async process(input: string, glossary?: string[]): Promise<string> {
 		if (this._provider === 'local') {
 			return this.processLocal(input, glossary);
 		}
-		return this.processOpenAI(input, glossary);
+		return this.processDeepgram(input, glossary);
 	}
 
-	private async processOpenAI(input: string, glossary?: string[]): Promise<string> {
+	private async processDeepgram(input: string, glossary?: string[]): Promise<string> {
 		const apiKey = await this.getApiKey();
 		const client = this.getClient(apiKey);
 
-		const prompt = glossary?.length ? glossary.join(', ') : undefined;
-		let transcription;
+		const audioBuffer = fs.readFileSync(input);
+		const options: Record<string, unknown> = {
+			model: 'nova-3',
+			language: 'multi',
+			smart_format: true,
+		};
+
+		if (glossary?.length) {
+			options.keywords = glossary.map(term => `${term}:2`);
+		}
+
+		let response;
 		try {
-			transcription = await client.audio.transcriptions.create({
-				file: fs.createReadStream(input),
-				model: 'whisper-1',
-				...(prompt && { prompt }),
-			});
+			response = await client.listen.prerecorded.transcribeFile(audioBuffer, options);
 		} catch (err: unknown) {
-			if (err instanceof Error && (err as any).status === 401) {
+			if (err instanceof Error && ((err as any).status === 401 || (err as any).status === 403)) {
 				this._client = null;
 				await this.secretStorage.delete(API_KEY_STORAGE_KEY);
 				throw new Error(
-					'Invalid OpenAI API key. It has been removed — you will be prompted again on next use.'
+					'Invalid Deepgram API key. It has been removed — you will be prompted again on next use.'
 				);
 			}
 			const detail = err instanceof Error ? err.message : String(err);
 			throw new Error(`Transcription failed: ${detail}`);
 		}
 
-		const rawText = transcription.text || '';
-		console.log(`[Verba] Whisper raw response (${rawText.length} chars): ${rawText.substring(0, 200)}`);
+		const rawText = response?.result?.results?.channels?.[0]?.alternatives?.[0]?.transcript || '';
+		console.log(`[Verba] Deepgram raw response (${rawText.length} chars): ${rawText.substring(0, 200)}`);
 
 		return this.validateTranscript(rawText);
 	}
@@ -186,7 +196,7 @@ export class TranscriptionService {
 			throw new Error('No speech detected in recording.');
 		}
 
-		// Whisper hallucinates dots/ellipsis when it receives audio without speech
+		// Whisper/Deepgram may return dots/ellipsis when it receives audio without speech
 		if (/^[\s.…]+$/.test(rawText)) {
 			throw new Error(
 				'No speech detected in recording (only silence). '
@@ -238,7 +248,7 @@ export class TranscriptionService {
 		const key = await this.promptForApiKey();
 		if (!key) {
 			throw new Error(
-				'OpenAI API key required for transcription.'
+				'Deepgram API key required for transcription.'
 			);
 		}
 
@@ -251,9 +261,10 @@ export class TranscriptionService {
 		throw new Error('promptForApiKey not implemented');
 	}
 
-	private getClient(apiKey: string): OpenAI {
+	private getClient(apiKey: string): any {
 		if (!this._client) {
-			this._client = new OpenAI({ apiKey });
+			const { createClient } = getDeepgramSdk();
+			this._client = createClient(apiKey);
 		}
 		return this._client;
 	}

@@ -14,8 +14,8 @@ suite('CostOverviewPanel', () => {
 		test('renders cards grouped by provider', () => {
 			const models: AggregatedModel[] = [
 				{
-					model: 'whisper-1',
-					provider: 'openai',
+					model: 'nova-3',
+					provider: 'deepgram',
 					category: 'Transcription',
 					totalCostUsd: 0.006,
 					audioDurationSec: 60,
@@ -31,9 +31,9 @@ suite('CostOverviewPanel', () => {
 			];
 			const html = buildCostOverviewHtml(models, 'session', 0.0095);
 
-			assert.ok(html.includes('OpenAI'));
+			assert.ok(html.includes('Deepgram'));
 			assert.ok(html.includes('Anthropic'));
-			assert.ok(html.includes('whisper-1'));
+			assert.ok(html.includes('nova-3'));
 			assert.ok(html.includes('claude-haiku-4-5-20251001'));
 		});
 
@@ -72,11 +72,11 @@ suite('CostOverviewPanel', () => {
 			assert.ok(html.includes('class="toggle-btn active" onclick="toggleScope(\'total\')">Total</button>'));
 		});
 
-		test('shows audio duration for Whisper', () => {
+		test('shows audio duration for Deepgram', () => {
 			const models: AggregatedModel[] = [
 				{
-					model: 'whisper-1',
-					provider: 'openai',
+					model: 'nova-3',
+					provider: 'deepgram',
 					category: 'Transcription',
 					totalCostUsd: 0.006,
 					audioDurationSec: 150,
@@ -130,8 +130,8 @@ suite('CostOverviewPanel', () => {
 		test('formats costs with 4 decimal places', () => {
 			const models: AggregatedModel[] = [
 				{
-					model: 'whisper-1',
-					provider: 'openai',
+					model: 'nova-3',
+					provider: 'deepgram',
 					category: 'Transcription',
 					totalCostUsd: 0.1,
 					audioDurationSec: 60,
@@ -154,15 +154,15 @@ suite('CostOverviewPanel', () => {
 			const records: UsageRecord[] = [
 				{
 					timestamp: 1000,
-					model: 'whisper-1',
-					provider: 'openai',
+					model: 'nova-3',
+					provider: 'deepgram',
 					audioDurationSec: 30,
 					costUsd: 0.003,
 				},
 				{
 					timestamp: 2000,
-					model: 'whisper-1',
-					provider: 'openai',
+					model: 'nova-3',
+					provider: 'deepgram',
 					audioDurationSec: 60,
 					costUsd: 0.006,
 				},
@@ -170,15 +170,15 @@ suite('CostOverviewPanel', () => {
 			const result = aggregateRecords(records);
 
 			assert.strictEqual(result.length, 1);
-			assert.strictEqual(result[0].model, 'whisper-1');
+			assert.strictEqual(result[0].model, 'nova-3');
 		});
 
 		test('separates records by model', () => {
 			const records: UsageRecord[] = [
 				{
 					timestamp: 1000,
-					model: 'whisper-1',
-					provider: 'openai',
+					model: 'nova-3',
+					provider: 'deepgram',
 					audioDurationSec: 60,
 					costUsd: 0.006,
 				},
@@ -194,7 +194,7 @@ suite('CostOverviewPanel', () => {
 			const result = aggregateRecords(records);
 
 			assert.strictEqual(result.length, 2);
-			assert.strictEqual(result[0].model, 'whisper-1');
+			assert.strictEqual(result[0].model, 'nova-3');
 			assert.strictEqual(result[1].model, 'claude-haiku-4-5-20251001');
 		});
 
@@ -202,15 +202,15 @@ suite('CostOverviewPanel', () => {
 			const records: UsageRecord[] = [
 				{
 					timestamp: 1000,
-					model: 'whisper-1',
-					provider: 'openai',
+					model: 'nova-3',
+					provider: 'deepgram',
 					audioDurationSec: 60,
 					costUsd: 0.006,
 				},
 				{
 					timestamp: 2000,
-					model: 'whisper-1',
-					provider: 'openai',
+					model: 'nova-3',
+					provider: 'deepgram',
 					audioDurationSec: 60,
 					costUsd: 0.006,
 				},
@@ -249,15 +249,15 @@ suite('CostOverviewPanel', () => {
 			const records: UsageRecord[] = [
 				{
 					timestamp: 1000,
-					model: 'whisper-1',
-					provider: 'openai',
+					model: 'nova-3',
+					provider: 'deepgram',
 					audioDurationSec: 30,
 					costUsd: 0.003,
 				},
 				{
 					timestamp: 2000,
-					model: 'whisper-1',
-					provider: 'openai',
+					model: 'nova-3',
+					provider: 'deepgram',
 					audioDurationSec: 90,
 					costUsd: 0.009,
 				},
@@ -271,8 +271,8 @@ suite('CostOverviewPanel', () => {
 			const records: UsageRecord[] = [
 				{
 					timestamp: 1000,
-					model: 'whisper-1',
-					provider: 'openai',
+					model: 'nova-3',
+					provider: 'deepgram',
 					audioDurationSec: 60,
 					costUsd: 0.006,
 				},
@@ -303,8 +303,8 @@ suite('CostOverviewPanel', () => {
 			const records: UsageRecord[] = [
 				{
 					timestamp: 1000,
-					model: 'whisper-1',
-					provider: 'openai',
+					model: 'nova-3',
+					provider: 'deepgram',
 					audioDurationSec: 60,
 					costUsd: 0.006,
 				},

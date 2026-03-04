@@ -17,7 +17,7 @@
   "keywords": [
     "dictation",
     "voice",
-    "whisper",
+    "deepgram",
     "speech-to-text",
     "ai"
   ],
@@ -266,12 +266,12 @@
         },
         "verba.transcription.provider": {
           "type": "string",
-          "default": "openai",
+          "default": "deepgram",
           "enum": [
-            "openai",
+            "deepgram",
             "local"
           ],
-          "description": "Transcription provider: 'openai' uses the Whisper API (requires API key), 'local' uses whisper.cpp CLI for offline transcription (requires whisper-cpp installed)."
+          "description": "Transcription provider: 'deepgram' uses the Deepgram Nova-3 API (requires API key), 'local' uses whisper.cpp CLI for offline transcription (requires whisper-cpp installed)."
         },
         "verba.transcription.localModel": {
           "type": "string",

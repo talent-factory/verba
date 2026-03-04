@@ -11,7 +11,7 @@ import { CostTracker, UsageRecord } from './costTracker';
 
 export interface AggregatedModel {
 	model: string;
-	provider: 'openai' | 'anthropic';
+	provider: 'openai' | 'anthropic' | 'deepgram';
 	category: 'Transcription' | 'Embedding' | 'Processing' | 'Unknown';
 	totalCostUsd: number;
 	inputTokens?: number;
@@ -20,7 +20,7 @@ export interface AggregatedModel {
 }
 
 const MODEL_CATEGORY_MAP: Record<string, AggregatedModel['category']> = {
-	'whisper-1': 'Transcription',
+	'nova-3': 'Transcription',
 	'text-embedding-3-small': 'Embedding',
 	'claude-haiku-4-5-20251001': 'Processing',
 };
@@ -124,7 +124,7 @@ export function buildCostOverviewHtml(
 	} else {
 		const grouped = new Map<string, AggregatedModel[]>();
 		for (const model of models) {
-			const providerName = model.provider === 'openai' ? 'OpenAI' : 'Anthropic';
+			const providerName = model.provider === 'deepgram' ? 'Deepgram' : model.provider === 'openai' ? 'OpenAI' : 'Anthropic';
 			if (!grouped.has(providerName)) {
 				grouped.set(providerName, []);
 			}

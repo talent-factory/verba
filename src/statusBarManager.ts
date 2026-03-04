@@ -4,7 +4,7 @@ import type { TranscriptionProvider } from './transcriptionService';
 /** Manages the Verba status bar item, reflecting the current dictation state. */
 export class StatusBarManager {
 	private item: vscode.StatusBarItem;
-	private _provider: TranscriptionProvider = 'openai';
+	private _provider: TranscriptionProvider = 'deepgram';
 
 	constructor() {
 		this.item = vscode.window.createStatusBarItem(
@@ -27,7 +27,7 @@ export class StatusBarManager {
 			? `$(mic) Verba: ${templateName}`
 			: '$(mic) Verba';
 		this.item.backgroundColor = undefined;
-		const providerLabel = this._provider === 'local' ? 'Local (whisper.cpp)' : 'OpenAI Whisper';
+		const providerLabel = this._provider === 'local' ? 'Local (whisper.cpp)' : 'Deepgram Nova-3';
 		this.item.tooltip = templateName
 			? `Provider: ${providerLabel} · Template: ${templateName} — Click to start dictation`
 			: `Provider: ${providerLabel} — Click to start dictation`;
@@ -62,7 +62,7 @@ export class StatusBarManager {
 		this.item.backgroundColor = undefined;
 		this.item.tooltip = this._provider === 'local'
 			? 'Transcribing audio via whisper.cpp...'
-			: 'Transcribing audio via OpenAI Whisper...';
+			: 'Transcribing audio via Deepgram Nova-3...';
 	}
 
 	/** Shows a spinner during Claude post-processing, optionally with a live character count. */

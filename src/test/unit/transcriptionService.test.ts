@@ -20,26 +20,39 @@ function createFakeSecretStorage(): {
 	};
 }
 
-// Fake OpenAI client
-function createFakeOpenAIClient() {
+// Fake Deepgram client
+function createFakeDeepgramClient() {
 	return {
-		audio: {
-			transcriptions: {
-				create: sinon.stub(),
+		listen: {
+			prerecorded: {
+				transcribeFile: sinon.stub(),
 			},
 		},
+	};
+}
+
+/** Helper to build a Deepgram pre-recorded API response structure. */
+function deepgramResponse(transcript: string) {
+	return {
+		result: {
+			results: {
+				channels: [{
+					alternatives: [{ transcript }]
+				}]
+			}
+		}
 	};
 }
 
 suite('TranscriptionService', () => {
 	let service: TranscriptionService;
 	let secretStorage: ReturnType<typeof createFakeSecretStorage>;
-	let fakeClient: ReturnType<typeof createFakeOpenAIClient>;
+	let fakeClient: ReturnType<typeof createFakeDeepgramClient>;
 	let promptApiKeyStub: sinon.SinonStub;
 
 	setup(() => {
 		secretStorage = createFakeSecretStorage();
-		fakeClient = createFakeOpenAIClient();
+		fakeClient = createFakeDeepgramClient();
 		service = new TranscriptionService(secretStorage as any);
 		// Inject the fake client to avoid real API calls
 		(service as any)._client = fakeClient;
@@ -51,35 +64,37 @@ suite('TranscriptionService', () => {
 		sinon.restore();
 	});
 
-	test('has name "Whisper Transcription"', () => {
-		assert.strictEqual(service.name, 'Whisper Transcription');
+	test('has name "Deepgram Transcription"', () => {
+		assert.strictEqual(service.name, 'Deepgram Transcription');
 	});
 
 	suite('process()', () => {
-		test('sends WAV file to whisper-1 and returns transcript', async () => {
-			secretStorage.get.resolves('sk-test-key-123');
-			fakeClient.audio.transcriptions.create.resolves({ text: 'Hello world' });
-			sinon.stub(fs, 'createReadStream').returns('fake-stream' as any);
+		test('sends WAV file to Deepgram Nova-3 and returns transcript', async () => {
+			secretStorage.get.resolves('dg-test-key-123');
+			fakeClient.listen.prerecorded.transcribeFile.resolves(deepgramResponse('Hello world'));
+			sinon.stub(fs, 'readFileSync').returns(Buffer.from('fake-wav'));
 
 			const result = await service.process('/tmp/test.wav');
 
 			assert.strictEqual(result, 'Hello world');
-			assert.ok(fakeClient.audio.transcriptions.create.calledOnce);
-			const callArgs = fakeClient.audio.transcriptions.create.firstCall.args[0];
-			assert.strictEqual(callArgs.model, 'whisper-1');
-			assert.strictEqual(callArgs.file, 'fake-stream');
+			assert.ok(fakeClient.listen.prerecorded.transcribeFile.calledOnce);
+			const [source, options] = fakeClient.listen.prerecorded.transcribeFile.firstCall.args;
+			assert.ok(Buffer.isBuffer(source));
+			assert.strictEqual(options.model, 'nova-3');
+			assert.strictEqual(options.language, 'multi');
+			assert.strictEqual(options.smart_format, true);
 		});
 
 		test('prompts for API key when none is stored', async () => {
 			secretStorage.get.resolves(undefined);
-			promptApiKeyStub.resolves('sk-new-key');
-			fakeClient.audio.transcriptions.create.resolves({ text: 'test' });
-			sinon.stub(fs, 'createReadStream').returns('fake-stream' as any);
+			promptApiKeyStub.resolves('dg-new-key');
+			fakeClient.listen.prerecorded.transcribeFile.resolves(deepgramResponse('test'));
+			sinon.stub(fs, 'readFileSync').returns(Buffer.from('fake-wav'));
 
 			await service.process('/tmp/test.wav');
 
 			assert.ok(promptApiKeyStub.calledOnce);
-			assert.ok(secretStorage.store.calledWith('openai-api-key', 'sk-new-key'));
+			assert.ok(secretStorage.store.calledWith('verba.deepgramApiKey', 'dg-new-key'));
 		});
 
 		test('throws when user cancels API key prompt', async () => {
@@ -88,14 +103,14 @@ suite('TranscriptionService', () => {
 
 			await assert.rejects(
 				() => service.process('/tmp/test.wav'),
-				/OpenAI API key required/
+				/Deepgram API key required/
 			);
 		});
 
 		test('uses cached API key on second call', async () => {
-			secretStorage.get.resolves('sk-test-key');
-			fakeClient.audio.transcriptions.create.resolves({ text: 'first' });
-			sinon.stub(fs, 'createReadStream').returns('fake-stream' as any);
+			secretStorage.get.resolves('dg-test-key');
+			fakeClient.listen.prerecorded.transcribeFile.resolves(deepgramResponse('first'));
+			sinon.stub(fs, 'readFileSync').returns(Buffer.from('fake-wav'));
 
 			await service.process('/tmp/a.wav');
 			await service.process('/tmp/b.wav');
@@ -105,9 +120,9 @@ suite('TranscriptionService', () => {
 		});
 
 		test('throws on empty transcript', async () => {
-			secretStorage.get.resolves('sk-test-key');
-			fakeClient.audio.transcriptions.create.resolves({ text: '' });
-			sinon.stub(fs, 'createReadStream').returns('fake-stream' as any);
+			secretStorage.get.resolves('dg-test-key');
+			fakeClient.listen.prerecorded.transcribeFile.resolves(deepgramResponse(''));
+			sinon.stub(fs, 'readFileSync').returns(Buffer.from('fake-wav'));
 
 			await assert.rejects(
 				() => service.process('/tmp/test.wav'),
@@ -116,24 +131,38 @@ suite('TranscriptionService', () => {
 		});
 
 		test('clears stored key, resets client, and throws on 401 authentication error', async () => {
-			secretStorage.get.resolves('sk-bad-key');
+			secretStorage.get.resolves('dg-bad-key');
 			const authError = new Error('Incorrect API key provided');
 			(authError as any).status = 401;
-			fakeClient.audio.transcriptions.create.rejects(authError);
-			sinon.stub(fs, 'createReadStream').returns('fake-stream' as any);
+			fakeClient.listen.prerecorded.transcribeFile.rejects(authError);
+			sinon.stub(fs, 'readFileSync').returns(Buffer.from('fake-wav'));
 
 			await assert.rejects(
 				() => service.process('/tmp/test.wav'),
-				/Invalid OpenAI API key/
+				/Invalid Deepgram API key/
 			);
-			assert.ok(secretStorage.delete.calledWith('openai-api-key'));
+			assert.ok(secretStorage.delete.calledWith('verba.deepgramApiKey'));
 			assert.strictEqual((service as any)._client, null, 'client should be cleared after 401');
 		});
 
+		test('clears stored key on 403 forbidden error', async () => {
+			secretStorage.get.resolves('dg-bad-key');
+			const authError = new Error('Forbidden');
+			(authError as any).status = 403;
+			fakeClient.listen.prerecorded.transcribeFile.rejects(authError);
+			sinon.stub(fs, 'readFileSync').returns(Buffer.from('fake-wav'));
+
+			await assert.rejects(
+				() => service.process('/tmp/test.wav'),
+				/Invalid Deepgram API key/
+			);
+			assert.ok(secretStorage.delete.calledWith('verba.deepgramApiKey'));
+		});
+
 		test('throws descriptive error on network failure', async () => {
-			secretStorage.get.resolves('sk-test-key');
-			fakeClient.audio.transcriptions.create.rejects(new Error('ECONNREFUSED'));
-			sinon.stub(fs, 'createReadStream').returns('fake-stream' as any);
+			secretStorage.get.resolves('dg-test-key');
+			fakeClient.listen.prerecorded.transcribeFile.rejects(new Error('ECONNREFUSED'));
+			sinon.stub(fs, 'readFileSync').returns(Buffer.from('fake-wav'));
 
 			await assert.rejects(
 				() => service.process('/tmp/test.wav'),
@@ -142,11 +171,11 @@ suite('TranscriptionService', () => {
 		});
 
 		test('throws silence error when transcript is only dots or ellipsis', async () => {
-			secretStorage.get.resolves('sk-test-key');
-			sinon.stub(fs, 'createReadStream').returns('fake-stream' as any);
+			secretStorage.get.resolves('dg-test-key');
+			sinon.stub(fs, 'readFileSync').returns(Buffer.from('fake-wav'));
 
 			for (const silenceText of ['...', '…', '. . .', '  ...  ', '.\n.']) {
-				fakeClient.audio.transcriptions.create.resolves({ text: silenceText });
+				fakeClient.listen.prerecorded.transcribeFile.resolves(deepgramResponse(silenceText));
 				await assert.rejects(
 					() => service.process('/tmp/test.wav'),
 					/No speech detected.*only silence/,
@@ -156,9 +185,9 @@ suite('TranscriptionService', () => {
 		});
 
 		test('throws on whitespace-only transcript', async () => {
-			secretStorage.get.resolves('sk-test-key');
-			fakeClient.audio.transcriptions.create.resolves({ text: '   \t  ' });
-			sinon.stub(fs, 'createReadStream').returns('fake-stream' as any);
+			secretStorage.get.resolves('dg-test-key');
+			fakeClient.listen.prerecorded.transcribeFile.resolves(deepgramResponse('   \t  '));
+			sinon.stub(fs, 'readFileSync').returns(Buffer.from('fake-wav'));
 
 			await assert.rejects(
 				() => service.process('/tmp/test.wav'),
@@ -167,9 +196,9 @@ suite('TranscriptionService', () => {
 		});
 
 		test('wraps non-Error thrown values in descriptive message', async () => {
-			secretStorage.get.resolves('sk-test-key');
-			fakeClient.audio.transcriptions.create.returns(Promise.reject('raw string error'));
-			sinon.stub(fs, 'createReadStream').returns('fake-stream' as any);
+			secretStorage.get.resolves('dg-test-key');
+			fakeClient.listen.prerecorded.transcribeFile.returns(Promise.reject('raw string error'));
+			sinon.stub(fs, 'readFileSync').returns(Buffer.from('fake-wav'));
 
 			await assert.rejects(
 				() => service.process('/tmp/test.wav'),
@@ -177,53 +206,66 @@ suite('TranscriptionService', () => {
 			);
 		});
 
-		test('passes glossary terms as prompt parameter to Whisper', async () => {
-			secretStorage.get.resolves('sk-test-key');
-			fakeClient.audio.transcriptions.create.resolves({ text: 'Visual Studio Code is great' });
-			sinon.stub(fs, 'createReadStream').returns('fake-stream' as any);
+		test('passes glossary terms as keywords with boost to Deepgram', async () => {
+			secretStorage.get.resolves('dg-test-key');
+			fakeClient.listen.prerecorded.transcribeFile.resolves(deepgramResponse('Visual Studio Code is great'));
+			sinon.stub(fs, 'readFileSync').returns(Buffer.from('fake-wav'));
 
 			await service.process('/tmp/test.wav', ['Visual Studio Code', 'Kubernetes']);
 
-			const callArgs = fakeClient.audio.transcriptions.create.firstCall.args[0];
-			assert.strictEqual(callArgs.prompt, 'Visual Studio Code, Kubernetes');
+			const [, options] = fakeClient.listen.prerecorded.transcribeFile.firstCall.args;
+			assert.deepStrictEqual(options.keywords, ['Visual Studio Code:2', 'Kubernetes:2']);
 		});
 
-		test('omits prompt parameter when glossary is empty', async () => {
-			secretStorage.get.resolves('sk-test-key');
-			fakeClient.audio.transcriptions.create.resolves({ text: 'Hello world' });
-			sinon.stub(fs, 'createReadStream').returns('fake-stream' as any);
+		test('omits keywords when glossary is empty', async () => {
+			secretStorage.get.resolves('dg-test-key');
+			fakeClient.listen.prerecorded.transcribeFile.resolves(deepgramResponse('Hello world'));
+			sinon.stub(fs, 'readFileSync').returns(Buffer.from('fake-wav'));
 
 			await service.process('/tmp/test.wav', []);
 
-			const callArgs = fakeClient.audio.transcriptions.create.firstCall.args[0];
-			assert.strictEqual(callArgs.prompt, undefined);
+			const [, options] = fakeClient.listen.prerecorded.transcribeFile.firstCall.args;
+			assert.strictEqual(options.keywords, undefined);
 		});
 
-		test('omits prompt parameter when glossary is undefined', async () => {
-			secretStorage.get.resolves('sk-test-key');
-			fakeClient.audio.transcriptions.create.resolves({ text: 'Hello world' });
-			sinon.stub(fs, 'createReadStream').returns('fake-stream' as any);
+		test('omits keywords when glossary is undefined', async () => {
+			secretStorage.get.resolves('dg-test-key');
+			fakeClient.listen.prerecorded.transcribeFile.resolves(deepgramResponse('Hello world'));
+			sinon.stub(fs, 'readFileSync').returns(Buffer.from('fake-wav'));
 
 			await service.process('/tmp/test.wav');
 
-			const callArgs = fakeClient.audio.transcriptions.create.firstCall.args[0];
-			assert.strictEqual(callArgs.prompt, undefined);
+			const [, options] = fakeClient.listen.prerecorded.transcribeFile.firstCall.args;
+			assert.strictEqual(options.keywords, undefined);
 		});
 	});
 
 	suite('provider selection', () => {
-		test('defaults to openai provider', () => {
-			assert.strictEqual((service as any)._provider, 'openai');
+		test('defaults to deepgram provider', () => {
+			assert.strictEqual((service as any)._provider, 'deepgram');
 		});
 
-		test('setProvider changes the active provider', () => {
+		test('setProvider to local changes the active provider', () => {
 			service.setProvider('local');
 			assert.strictEqual((service as any)._provider, 'local');
+		});
+
+		test('setProvider to deepgram works', () => {
+			service.setProvider('local');
+			service.setProvider('deepgram');
+			assert.strictEqual((service as any)._provider, 'deepgram');
 		});
 
 		test('setProvider rejects invalid provider values', () => {
 			assert.throws(
 				() => service.setProvider('invalid' as any),
+				/Invalid provider/
+			);
+		});
+
+		test('setProvider rejects openai as invalid', () => {
+			assert.throws(
+				() => service.setProvider('openai' as any),
 				/Invalid provider/
 			);
 		});
@@ -287,7 +329,7 @@ suite('TranscriptionService', () => {
 			assert.ok(args.includes('auto'));
 		});
 
-		test('does not require OpenAI API key for local transcription', async () => {
+		test('does not require Deepgram API key for local transcription', async () => {
 			existsSyncStub.returns(true);
 			spawnStub.callsFake(() => fakeSpawn('Offline transcript', '', 0));
 

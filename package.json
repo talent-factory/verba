@@ -99,6 +99,11 @@
         "command": "dictation.clearHistory",
         "title": "Clear Dictation History",
         "category": "Verba"
+      },
+      {
+        "command": "dictation.startContinuous",
+        "title": "Toggle Continuous Dictation",
+        "category": "Verba"
       }
     ],
     "keybindings": [
@@ -123,6 +128,11 @@
         "command": "dictation.undo",
         "key": "ctrl+alt+z",
         "mac": "cmd+alt+z"
+      },
+      {
+        "command": "dictation.startContinuous",
+        "key": "ctrl+shift+alt+d",
+        "mac": "cmd+shift+alt+d"
       }
     ],
     "configuration": {
@@ -327,6 +337,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
+    "@deepgram/sdk": "^4.11.3",
     "openai": "^6.22.0"
   }
 }

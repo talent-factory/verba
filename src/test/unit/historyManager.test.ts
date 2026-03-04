@@ -37,7 +37,7 @@ suite('HistoryManager', () => {
 	});
 
 	suite('addRecord', () => {
-		test('adds a record and persists to globalState', () => {
+		test('adds a record and persists to globalState', async () => {
 			manager.addRecord({
 				timestamp: 1000,
 				rawTranscript: 'hello world',
@@ -45,6 +45,9 @@ suite('HistoryManager', () => {
 				templateName: 'Default Cleanup',
 				target: 'editor',
 			});
+
+			// Flush the serialized persist queue (runs in next microtask)
+			await new Promise(resolve => setImmediate(resolve));
 
 			assert.strictEqual(manager.getRecordCount(), 1);
 			assert.ok(globalState.update.calledOnce);
@@ -223,7 +226,7 @@ suite('HistoryManager', () => {
 			assert.deepStrictEqual(manager.getRecords(), []);
 		});
 
-		test('persists empty array to globalState', () => {
+		test('persists empty array to globalState', async () => {
 			manager.addRecord({
 				timestamp: 1000,
 				rawTranscript: 'test',
@@ -231,9 +234,11 @@ suite('HistoryManager', () => {
 				templateName: 'Default Cleanup',
 				target: 'editor',
 			});
+			await new Promise(resolve => setImmediate(resolve));
 			globalState.update.resetHistory();
 
 			manager.clearHistory();
+			await new Promise(resolve => setImmediate(resolve));
 
 			assert.ok(globalState.update.calledOnce);
 			assert.strictEqual(globalState.update.firstCall.args[0], 'verba.history');

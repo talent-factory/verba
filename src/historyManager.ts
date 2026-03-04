@@ -87,6 +87,7 @@ export class HistoryManager {
 	private readonly _maxEntries: number;
 	private _records: HistoryRecord[];
 	private _persistFailureWarned = false;
+	private _persistQueue: Promise<void> = Promise.resolve();
 
 	constructor(globalState: GlobalState, maxEntries: number = DEFAULT_MAX_ENTRIES) {
 		this._globalState = globalState;
@@ -147,11 +148,11 @@ export class HistoryManager {
 
 	private _persist(): void {
 		const snapshot = [...this._records];
-		Promise.resolve(this._globalState.update(STORAGE_KEY, snapshot))
-			.then(() => {
+		this._persistQueue = this._persistQueue.then(async () => {
+			try {
+				await this._globalState.update(STORAGE_KEY, snapshot);
 				this._persistFailureWarned = false;
-			})
-			.catch((err: unknown) => {
+			} catch (err: unknown) {
 				console.error('[Verba] Failed to persist history records:', err);
 				if (!this._persistFailureWarned) {
 					this._persistFailureWarned = true;
@@ -163,6 +164,7 @@ export class HistoryManager {
 						}
 					}
 				}
-			});
+			}
+		});
 	}
 }

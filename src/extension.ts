@@ -1570,7 +1570,8 @@ export function activate(context: vscode.ExtensionContext) {
 			statusBar.setIdle(selectedTemplate?.name);
 			console.error('[Verba] Start continuous recording failed:', err);
 			const message = err instanceof Error ? err.message : String(err);
-			if (message.includes('auth') || message.includes('401') || message.includes('403') || message.includes('connection failed')) {
+			const httpStatus = err instanceof Error ? (err as any).status : undefined;
+			if (httpStatus === 401 || httpStatus === 403) {
 				await context.secrets.delete(DEEPGRAM_API_KEY_STORAGE_KEY);
 				vscode.window.showErrorMessage(
 					'Verba: Deepgram API key invalid. It has been removed — you will be prompted for a new key on the next attempt. Or use "Verba: Manage API Keys".'

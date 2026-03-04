@@ -400,7 +400,7 @@ suite('undoManager', () => {
 				}),
 			}));
 			assert.strictEqual(result.status, 'editor-edit-failed');
-			assert.strictEqual(getLastDictation(), undefined);
+			assert.ok(getLastDictation() !== undefined, 'undo record should be preserved on transient failure');
 		});
 
 		test('editor undo processes multi-cursor ranges in reverse document order', async () => {
@@ -469,7 +469,7 @@ suite('undoManager', () => {
 			if (result.status === 'error') {
 				assert.ok(result.message.includes('unexpected crash'));
 			}
-			assert.strictEqual(getLastDictation(), undefined);
+			assert.ok(getLastDictation() !== undefined, 'undo record should be preserved on unexpected errors');
 		});
 	});
 });

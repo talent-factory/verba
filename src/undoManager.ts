@@ -130,11 +130,15 @@ export async function executeUndo(deps: UndoDeps): Promise<UndoResult> {
 		}));
 
 		const success = await editor.applyEdits(edits);
-		clearLastDictation();
-		return success ? { status: 'editor-undone' } : { status: 'editor-edit-failed' };
+		if (success) {
+			clearLastDictation();
+			return { status: 'editor-undone' };
+		}
+		// Transient failure: keep undo record so user can retry
+		return { status: 'editor-edit-failed' };
 	} catch (err: unknown) {
 		console.error('[Verba] Undo dictation failed:', err);
-		clearLastDictation();
+		// Keep undo record on unexpected errors so user can retry
 		const message = err instanceof Error ? err.message : String(err);
 		return { status: 'error', message };
 	}

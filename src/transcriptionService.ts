@@ -70,7 +70,7 @@ export class TranscriptionService {
 		};
 
 		if (glossary?.length) {
-			options.keyterm = glossary.map(term => `${term}:2`);
+			options.keyterm = this.truncateKeyterms(glossary);
 		}
 
 		let response: any;
@@ -216,6 +216,36 @@ export class TranscriptionService {
 		}
 
 		return rawText;
+	}
+
+	/**
+	 * Truncates glossary terms to fit within Deepgram's 500-token keyterm budget.
+	 * Each keyterm is formatted as `term:2` (boost weight). Tokens are estimated
+	 * by splitting on whitespace — each word plus the `:2` suffix counts as ~1 token.
+	 */
+	private truncateKeyterms(glossary: string[]): string[] {
+		const MAX_TOKENS = 500;
+		const keyterms: string[] = [];
+		let tokenCount = 0;
+
+		for (const term of glossary) {
+			const kt = `${term}:2`;
+			// Estimate: each whitespace-separated word ≈ 1 token
+			const estimated = kt.split(/\s+/).length;
+			if (tokenCount + estimated > MAX_TOKENS) {
+				break;
+			}
+			keyterms.push(kt);
+			tokenCount += estimated;
+		}
+
+		if (keyterms.length < glossary.length) {
+			console.log(
+				`[Verba] Glossary truncated: ${keyterms.length}/${glossary.length} terms sent as keyterms (${tokenCount} estimated tokens, limit ${MAX_TOKENS})`
+			);
+		}
+
+		return keyterms;
 	}
 
 	private findWhisperCpp(): string | null {

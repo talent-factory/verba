@@ -266,6 +266,23 @@ suite('TranscriptionService', () => {
 			const [, options] = fakeClient.listen.prerecorded.transcribeFile.firstCall.args;
 			assert.strictEqual(options.keyterm, undefined);
 		});
+
+		test('truncates glossary when keyterm token limit would be exceeded', async () => {
+			secretStorage.get.resolves('dg-test-key');
+			fakeClient.listen.prerecorded.transcribeFile.resolves(deepgramResponse('Hello'));
+			sinon.stub(fs, 'readFileSync').returns(Buffer.from('fake-wav'));
+
+			// Generate 600 single-word terms — each "termN:2" ≈ 1 token, so only ~500 should be sent
+			const bigGlossary = Array.from({ length: 600 }, (_, i) => `term${i}`);
+			await service.process('/tmp/test.wav', bigGlossary);
+
+			const [, options] = fakeClient.listen.prerecorded.transcribeFile.firstCall.args;
+			assert.ok(Array.isArray(options.keyterm));
+			assert.ok(options.keyterm.length < 600, `Expected truncation, got ${options.keyterm.length} terms`);
+			assert.ok(options.keyterm.length >= 400, `Expected at least 400 terms, got ${options.keyterm.length}`);
+			// All entries should have :2 boost suffix
+			assert.ok(options.keyterm.every((kt: string) => kt.endsWith(':2')));
+		});
 	});
 
 	suite('provider selection', () => {

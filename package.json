@@ -264,6 +264,25 @@
           },
           "description": "Text expansions: abbreviations that are automatically expanded during post-processing. Define abbreviation/expansion pairs (e.g. 'mfg' → 'Mit freundlichen Grüssen'). Workspace-specific expansions can be added via '.verba-expansions.json'."
         },
+        "verba.language": {
+          "type": "string",
+          "default": "auto",
+          "enum": [
+            "auto",
+            "de",
+            "en",
+            "fr",
+            "es",
+            "it",
+            "pt",
+            "nl",
+            "pl",
+            "ja",
+            "ko",
+            "zh"
+          ],
+          "description": "Language for post-processing. 'auto' uses Deepgram's detected language to hint Claude about the transcript language."
+        },
         "verba.transcription.provider": {
           "type": "string",
           "default": "deepgram",

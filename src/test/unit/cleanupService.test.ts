@@ -783,6 +783,68 @@ suite('CleanupService', () => {
 
 	});
 
+	suite('language hint', () => {
+		test('includes language hint in system prompt when detectedLanguage is provided', async () => {
+			secretStorage.get.resolves('sk-ant-test-key');
+			fakeClient.messages.create.resolves({
+				content: [{ type: 'text', text: 'cleaned' }],
+			});
+
+			const context: PipelineContext = { detectedLanguage: 'de' };
+			await service.process('test input', context);
+
+			const callArgs = fakeClient.messages.create.firstCall.args[0];
+			assert.ok(callArgs.system.includes('The transcript language is: de'),
+				'system prompt should contain language hint');
+			assert.ok(callArgs.system.includes('Respond in the same language'),
+				'system prompt should instruct Claude to respond in the same language');
+		});
+
+		test('includes language hint with template prompt when detectedLanguage is provided', async () => {
+			secretStorage.get.resolves('sk-ant-test-key');
+			fakeClient.messages.create.resolves({
+				content: [{ type: 'text', text: 'cleaned' }],
+			});
+
+			const context: PipelineContext = {
+				templatePrompt: 'Write a commit message.',
+				detectedLanguage: 'en',
+			};
+			await service.process('test input', context);
+
+			const callArgs = fakeClient.messages.create.firstCall.args[0];
+			assert.ok(callArgs.system.includes('The transcript language is: en'),
+				'template system prompt should contain language hint');
+		});
+
+		test('omits language hint when detectedLanguage is undefined', async () => {
+			secretStorage.get.resolves('sk-ant-test-key');
+			fakeClient.messages.create.resolves({
+				content: [{ type: 'text', text: 'cleaned' }],
+			});
+
+			await service.process('test input');
+
+			const callArgs = fakeClient.messages.create.firstCall.args[0];
+			assert.ok(!callArgs.system.includes('The transcript language is'),
+				'system prompt should not contain language hint when no language detected');
+		});
+
+		test('omits language hint when context has no detectedLanguage', async () => {
+			secretStorage.get.resolves('sk-ant-test-key');
+			fakeClient.messages.create.resolves({
+				content: [{ type: 'text', text: 'cleaned' }],
+			});
+
+			const context: PipelineContext = { templatePrompt: 'Write a commit message.' };
+			await service.process('test input', context);
+
+			const callArgs = fakeClient.messages.create.firstCall.args[0];
+			assert.ok(!callArgs.system.includes('The transcript language is'),
+				'system prompt should not contain language hint when detectedLanguage is absent');
+		});
+	});
+
 	suite('processStreaming()', () => {
 		function createFakeStream(chunks: string[], options?: { throwDuring?: Error }) {
 			return {

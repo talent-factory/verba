@@ -6,6 +6,13 @@ const API_KEY_STORAGE_KEY = 'verba.deepgramApiKey';
 /** Transcription backend: `'deepgram'` for cloud Deepgram API, `'local'` for whisper.cpp CLI. */
 export type TranscriptionProvider = 'deepgram' | 'local';
 
+/** Result of a transcription operation, including the transcript text and optional detected language. */
+export interface TranscriptionResult {
+	text: string;
+	/** ISO 639-1 language code detected by Deepgram (e.g. "de", "en", "fr"). Undefined for local whisper.cpp. */
+	detectedLanguage?: string;
+}
+
 interface SecretStorage {
 	get(key: string): Thenable<string | undefined>;
 	store(key: string, value: string): Thenable<void>;
@@ -51,14 +58,14 @@ export class TranscriptionService {
 	 * @param input - Absolute path to the WAV file.
 	 * @param glossary - Optional terms to bias transcription accuracy.
 	 */
-	async process(input: string, glossary?: string[]): Promise<string> {
+	async process(input: string, glossary?: string[]): Promise<TranscriptionResult> {
 		if (this._provider === 'local') {
 			return this.processLocal(input, glossary);
 		}
 		return this.processDeepgram(input, glossary);
 	}
 
-	private async processDeepgram(input: string, glossary?: string[]): Promise<string> {
+	private async processDeepgram(input: string, glossary?: string[]): Promise<TranscriptionResult> {
 		const apiKey = await this.getApiKey();
 		const client = this.getClient(apiKey);
 
@@ -99,13 +106,15 @@ export class TranscriptionService {
 			throw new Error('Transcription failed: Deepgram returned no result');
 		}
 
-		const rawText = response.result.results?.channels?.[0]?.alternatives?.[0]?.transcript || '';
-		console.log(`[Verba] Deepgram raw response (${rawText.length} chars): ${rawText.substring(0, 200)}`);
+		const channel = response.result.results?.channels?.[0];
+		const rawText = channel?.alternatives?.[0]?.transcript || '';
+		const detectedLanguage: string | undefined = channel?.detected_language || undefined;
+		console.log(`[Verba] Deepgram raw response (${rawText.length} chars, lang=${detectedLanguage ?? 'unknown'}): ${rawText.substring(0, 200)}`);
 
-		return this.validateTranscript(rawText);
+		return { text: this.validateTranscript(rawText), detectedLanguage };
 	}
 
-	private async processLocal(input: string, glossary?: string[]): Promise<string> {
+	private async processLocal(input: string, glossary?: string[]): Promise<TranscriptionResult> {
 		if (!this._modelPath) {
 			throw new Error(
 				'No whisper model configured. Run "Verba: Download Whisper Model" to download a model.'
@@ -162,7 +171,7 @@ export class TranscriptionService {
 			.join(' ')
 			.trim();
 
-		return this.validateTranscript(text);
+		return { text: this.validateTranscript(text) };
 	}
 
 	/** Runs whisper-cli asynchronously to avoid blocking the VS Code extension host. Times out after 120 s. */

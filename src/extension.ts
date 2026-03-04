@@ -5,7 +5,7 @@ import * as https from 'https';
 import { FfmpegRecorder } from './recorder';
 import { StatusBarManager } from './statusBarManager';
 import { PipelineContext } from './pipeline';
-import { TranscriptionService, TranscriptionProvider } from './transcriptionService';
+import { TranscriptionService, TranscriptionProvider, TranscriptionResult } from './transcriptionService';
 import { CleanupService, Expansion } from './cleanupService';
 import { insertText, InsertionResult } from './insertText';
 import { recordDictation, clearLastDictation, computeInsertedRanges, executeUndo, UndoEditor, PreEditSelection } from './undoManager';
@@ -341,8 +341,9 @@ export function activate(context: vscode.ExtensionContext) {
 				console.log(`[Verba] WAV file: ${filePath} (${fileStats.size} bytes)`);
 
 				// Step 1: Transcribe (uses cached glossary from applyGlossary)
-				const rawTranscript = await transcriptionService.process(filePath, currentGlossary);
-				console.log(`[Verba] Transcript (${rawTranscript.length} chars): ${rawTranscript.substring(0, 200)}`);
+				const transcriptionResult = await transcriptionService.process(filePath, currentGlossary);
+				const rawTranscript = transcriptionResult.text;
+				console.log(`[Verba] Transcript (${rawTranscript.length} chars, lang=${transcriptionResult.detectedLanguage ?? 'unknown'}): ${rawTranscript.substring(0, 200)}`);
 
 				// Track Deepgram usage from WAV file duration (only for Deepgram API, not local whisper.cpp)
 				const transcriptionProvider = vscode.workspace.getConfiguration('verba.transcription').get<string>('provider', 'deepgram');
@@ -374,9 +375,14 @@ export function activate(context: vscode.ExtensionContext) {
 				}
 
 				// Step 3: Claude post-processing (pass captured selection as context only with a template)
-				const pipelineContext: PipelineContext | undefined = selectedTemplate
-					? { templatePrompt: selectedTemplate.prompt, contextSnippets, selectedText: capturedSelectedText }
-					: undefined;
+				const languageSetting = vscode.workspace.getConfiguration('verba').get<string>('language', 'auto');
+				const detectedLanguage = languageSetting !== 'auto' ? languageSetting : transcriptionResult.detectedLanguage;
+				const pipelineContext: PipelineContext = {
+					templatePrompt: selectedTemplate?.prompt,
+					contextSnippets,
+					selectedText: capturedSelectedText,
+					detectedLanguage,
+				};
 				statusBar.setProcessing();
 				const abortController = new AbortController();
 				processingAbortController = abortController;
@@ -1401,9 +1407,13 @@ export function activate(context: vscode.ExtensionContext) {
 						const rawTranscript = event.text;
 
 						// Claude cleanup
-						const pipelineContext = continuousTemplate
-							? { templatePrompt: continuousTemplate.prompt, selectedText: capturedText }
-							: undefined;
+						const languageSetting = vscode.workspace.getConfiguration('verba').get<string>('language', 'auto');
+						const detectedLanguage = languageSetting !== 'auto' ? languageSetting : event.detectedLanguage;
+						const pipelineContext: PipelineContext = {
+							templatePrompt: continuousTemplate?.prompt,
+							selectedText: capturedText,
+							detectedLanguage,
+						};
 						const abortController = new AbortController();
 						continuousAbortController = abortController;
 

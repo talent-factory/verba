@@ -294,6 +294,39 @@ suite('ContinuousRecorder (Deepgram)', () => {
 			assert.strictEqual(transcriptEvents[0].utteranceIndex, 0);
 		});
 
+		test('UtteranceEnd emits transcript with detected language', async () => {
+			await startRecording();
+
+			const transcriptEvents: TranscriptEvent[] = [];
+			cr.on('transcript', (evt: TranscriptEvent) => transcriptEvents.push(evt));
+
+			fakeConnection.emit(FakeLiveTranscriptionEvents.Transcript, {
+				channel: { alternatives: [{ transcript: 'Hallo Welt' }], detected_language: 'de' },
+				is_final: true,
+			});
+			fakeConnection.emit(FakeLiveTranscriptionEvents.UtteranceEnd);
+
+			assert.strictEqual(transcriptEvents.length, 1);
+			assert.strictEqual(transcriptEvents[0].text, 'Hallo Welt');
+			assert.strictEqual(transcriptEvents[0].detectedLanguage, 'de');
+		});
+
+		test('detectedLanguage is undefined when Deepgram does not provide it', async () => {
+			await startRecording();
+
+			const transcriptEvents: TranscriptEvent[] = [];
+			cr.on('transcript', (evt: TranscriptEvent) => transcriptEvents.push(evt));
+
+			fakeConnection.emit(FakeLiveTranscriptionEvents.Transcript, {
+				channel: { alternatives: [{ transcript: 'Hello' }] },
+				is_final: true,
+			});
+			fakeConnection.emit(FakeLiveTranscriptionEvents.UtteranceEnd);
+
+			assert.strictEqual(transcriptEvents.length, 1);
+			assert.strictEqual(transcriptEvents[0].detectedLanguage, undefined);
+		});
+
 		test('multiple utterances increment utteranceIndex', async () => {
 			await startRecording();
 

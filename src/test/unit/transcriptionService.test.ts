@@ -32,12 +32,13 @@ function createFakeDeepgramClient() {
 }
 
 /** Helper to build a Deepgram pre-recorded API response structure. */
-function deepgramResponse(transcript: string) {
+function deepgramResponse(transcript: string, detected_language?: string) {
 	return {
 		result: {
 			results: {
 				channels: [{
-					alternatives: [{ transcript }]
+					alternatives: [{ transcript }],
+					...(detected_language ? { detected_language } : {}),
 				}]
 			}
 		}
@@ -76,7 +77,7 @@ suite('TranscriptionService', () => {
 
 			const result = await service.process('/tmp/test.wav');
 
-			assert.strictEqual(result, 'Hello world');
+			assert.strictEqual(result.text, 'Hello world');
 			assert.ok(fakeClient.listen.prerecorded.transcribeFile.calledOnce);
 			const [source, options] = fakeClient.listen.prerecorded.transcribeFile.firstCall.args;
 			assert.ok(Buffer.isBuffer(source));
@@ -284,6 +285,28 @@ suite('TranscriptionService', () => {
 			// All entries should have :2 boost suffix
 			assert.ok(options.keyterm.every((kt: string) => kt.endsWith(':2')));
 		});
+
+		test('returns detected language from Deepgram response', async () => {
+			secretStorage.get.resolves('dg-test-key');
+			fakeClient.listen.prerecorded.transcribeFile.resolves(deepgramResponse('Hallo Welt', 'de'));
+			sinon.stub(fs, 'readFileSync').returns(Buffer.from('fake-wav'));
+
+			const result = await service.process('/tmp/test.wav');
+
+			assert.strictEqual(result.text, 'Hallo Welt');
+			assert.strictEqual(result.detectedLanguage, 'de');
+		});
+
+		test('returns undefined language when Deepgram does not include detected_language', async () => {
+			secretStorage.get.resolves('dg-test-key');
+			fakeClient.listen.prerecorded.transcribeFile.resolves(deepgramResponse('Hello'));
+			sinon.stub(fs, 'readFileSync').returns(Buffer.from('fake-wav'));
+
+			const result = await service.process('/tmp/test.wav');
+
+			assert.strictEqual(result.text, 'Hello');
+			assert.strictEqual(result.detectedLanguage, undefined);
+		});
 	});
 
 	suite('provider selection', () => {
@@ -362,7 +385,8 @@ suite('TranscriptionService', () => {
 
 			const result = await service.process('/tmp/test.wav');
 
-			assert.strictEqual(result, 'Hello from whisper.cpp');
+			assert.strictEqual(result.text, 'Hello from whisper.cpp');
+			assert.strictEqual(result.detectedLanguage, undefined, 'local provider should not detect language');
 			assert.ok(spawnStub.calledOnce);
 			const [binary, args] = spawnStub.firstCall.args;
 			assert.ok(typeof binary === 'string');
@@ -381,7 +405,7 @@ suite('TranscriptionService', () => {
 
 			const result = await service.process('/tmp/test.wav');
 
-			assert.strictEqual(result, 'Offline transcript');
+			assert.strictEqual(result.text, 'Offline transcript');
 			assert.ok(secretStorage.get.notCalled, 'should not access secret storage');
 		});
 
@@ -475,7 +499,7 @@ suite('TranscriptionService', () => {
 			spawnStub.callsFake(() => fakeSpawn('  Hello world  \n', '', 0));
 
 			const result = await service.process('/tmp/test.wav');
-			assert.strictEqual(result, 'Hello world');
+			assert.strictEqual(result.text, 'Hello world');
 		});
 
 		test('strips timestamp prefixes from whisper-cli output', async () => {
@@ -486,7 +510,7 @@ suite('TranscriptionService', () => {
 			));
 
 			const result = await service.process('/tmp/test.wav');
-			assert.strictEqual(result, 'Hello world This is a test');
+			assert.strictEqual(result.text, 'Hello world This is a test');
 		});
 
 		test('throws timeout error when transcription exceeds time limit', async () => {

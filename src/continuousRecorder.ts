@@ -22,6 +22,8 @@ export interface TranscriptEvent {
 	text: string;
 	isFinal: boolean;
 	utteranceIndex: number;
+	/** ISO 639-1 language code detected by Deepgram (e.g. "de", "en"). */
+	detectedLanguage?: string;
 }
 
 /**
@@ -45,6 +47,7 @@ export class ContinuousRecorder extends EventEmitter {
 	private _stopping: boolean = false;
 	private _utteranceCount: number = 0;
 	private pendingTranscript: string = '';
+	private pendingLanguage: string | undefined = undefined;
 	private lastEmittedText: string = '';
 	private sendFailureCount: number = 0;
 	private static readonly MAX_SEND_FAILURES = 10;
@@ -106,6 +109,8 @@ export class ContinuousRecorder extends EventEmitter {
 			if (!transcript) { return; }
 			if (data.is_final) {
 				this.pendingTranscript += (this.pendingTranscript ? ' ' : '') + transcript;
+				const lang = data.channel?.detected_language;
+				if (lang) { this.pendingLanguage = lang; }
 			} else {
 				this.emit('interim', transcript);
 			}
@@ -120,9 +125,11 @@ export class ContinuousRecorder extends EventEmitter {
 					text: this.pendingTranscript,
 					isFinal: true,
 					utteranceIndex: idx,
+					detectedLanguage: this.pendingLanguage,
 				} as TranscriptEvent);
 			}
 			this.pendingTranscript = '';
+			this.pendingLanguage = undefined;
 		});
 
 		this.connection.on(LiveTranscriptionEvents.Error, (error: any) => {
@@ -204,6 +211,7 @@ export class ContinuousRecorder extends EventEmitter {
 					this._utteranceCount = 0;
 					this._stopping = false;
 					this.pendingTranscript = '';
+					this.pendingLanguage = undefined;
 					this.lastEmittedText = '';
 					this.sendFailureCount = 0;
 					resolve();
@@ -291,8 +299,10 @@ export class ContinuousRecorder extends EventEmitter {
 				text: this.pendingTranscript,
 				isFinal: true,
 				utteranceIndex: idx,
+				detectedLanguage: this.pendingLanguage,
 			} as TranscriptEvent);
 			this.pendingTranscript = '';
+			this.pendingLanguage = undefined;
 		}
 
 		// Step 4: Close Deepgram connection

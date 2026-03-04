@@ -265,6 +265,94 @@ suite('CleanupService', () => {
 			);
 		});
 
+		test('retries on 529 overloaded error and succeeds on second attempt', async () => {
+			secretStorage.get.resolves('sk-ant-test-key');
+			const overloadedError = new Error('Overloaded');
+			(overloadedError as any).status = 529;
+
+			fakeClient.messages.create
+				.onFirstCall().rejects(overloadedError)
+				.onSecondCall().resolves({
+					content: [{ type: 'text', text: 'Cleaned after retry' }],
+					usage: { input_tokens: 10, output_tokens: 5 },
+				});
+
+			// Stub sleep to avoid real delays
+			const sleepStub = sinon.stub(service as any, 'sleep').resolves();
+
+			const result = await service.process('test input');
+
+			assert.strictEqual(result, 'Cleaned after retry');
+			assert.strictEqual(fakeClient.messages.create.callCount, 2);
+			assert.ok(sleepStub.calledOnce);
+			assert.strictEqual(sleepStub.firstCall.args[0], 1000, 'first retry delay should be 1000ms');
+		});
+
+		test('retries on 529 up to 3 attempts then throws', async () => {
+			secretStorage.get.resolves('sk-ant-test-key');
+			const overloadedError = new Error('Overloaded');
+			(overloadedError as any).status = 529;
+			fakeClient.messages.create.rejects(overloadedError);
+
+			const sleepStub = sinon.stub(service as any, 'sleep').resolves();
+
+			await assert.rejects(
+				() => service.process('test'),
+				/overloaded/
+			);
+			assert.strictEqual(fakeClient.messages.create.callCount, 3);
+			assert.strictEqual(sleepStub.callCount, 2, 'should sleep between attempts');
+			assert.strictEqual(sleepStub.firstCall.args[0], 1000);
+			assert.strictEqual(sleepStub.secondCall.args[0], 2000);
+		});
+
+		test('calls onRetry callback during 529 retry', async () => {
+			secretStorage.get.resolves('sk-ant-test-key');
+			const overloadedError = new Error('Overloaded');
+			(overloadedError as any).status = 529;
+
+			fakeClient.messages.create
+				.onFirstCall().rejects(overloadedError)
+				.onSecondCall().resolves({
+					content: [{ type: 'text', text: 'ok' }],
+				});
+
+			sinon.stub(service as any, 'sleep').resolves();
+			const onRetrySpy = sinon.spy();
+			service.onRetry = onRetrySpy;
+
+			await service.process('test');
+
+			assert.ok(onRetrySpy.calledOnce);
+			assert.deepStrictEqual(onRetrySpy.firstCall.args, [2, 3]);
+		});
+
+		test('does not retry 401 errors', async () => {
+			secretStorage.get.resolves('sk-ant-test-key');
+			const authError = new Error('Unauthorized');
+			(authError as any).status = 401;
+			fakeClient.messages.create.rejects(authError);
+
+			await assert.rejects(
+				() => service.process('test'),
+				/Invalid Anthropic API key/
+			);
+			assert.strictEqual(fakeClient.messages.create.callCount, 1, 'should not retry 401');
+		});
+
+		test('does not retry 429 errors', async () => {
+			secretStorage.get.resolves('sk-ant-test-key');
+			const rateLimitError = new Error('Rate limited');
+			(rateLimitError as any).status = 429;
+			fakeClient.messages.create.rejects(rateLimitError);
+
+			await assert.rejects(
+				() => service.process('test'),
+				/rate limit reached/
+			);
+			assert.strictEqual(fakeClient.messages.create.callCount, 1, 'should not retry 429');
+		});
+
 		test('uses custom system prompt from context when provided', async () => {
 			secretStorage.get.resolves('sk-ant-test-key');
 			fakeClient.messages.create.resolves({
@@ -1146,6 +1234,88 @@ suite('CleanupService', () => {
 				() => service.processStreaming('test', undefined, sinon.stub()),
 				/Post-processing failed: Connection reset/,
 			);
+		});
+
+		test('retries streaming on 529 overloaded error and succeeds', async () => {
+			secretStorage.get.resolves('sk-ant-test-key');
+			const overloadedError = new Error('Overloaded');
+			(overloadedError as any).status = 529;
+
+			fakeClient.messages.stream
+				.onFirstCall().returns(createFakeStream([], { throwDuring: overloadedError }))
+				.onSecondCall().returns(createFakeStream(['Retry', ' success']));
+
+			const sleepStub = sinon.stub(service as any, 'sleep').resolves();
+			const onChunk = sinon.stub();
+
+			const result = await service.processStreaming('test', undefined, onChunk);
+
+			assert.strictEqual(result, 'Retry success');
+			assert.strictEqual(fakeClient.messages.stream.callCount, 2);
+			assert.ok(sleepStub.calledOnce);
+			assert.strictEqual(sleepStub.firstCall.args[0], 1000);
+		});
+
+		test('streaming retries up to 3 attempts on 529 then throws', async () => {
+			secretStorage.get.resolves('sk-ant-test-key');
+			const overloadedError = new Error('Overloaded');
+			(overloadedError as any).status = 529;
+
+			fakeClient.messages.stream.returns(createFakeStream([], { throwDuring: overloadedError }));
+
+			const sleepStub = sinon.stub(service as any, 'sleep').resolves();
+
+			await assert.rejects(
+				() => service.processStreaming('test', undefined, sinon.stub()),
+				/overloaded/,
+			);
+			assert.strictEqual(fakeClient.messages.stream.callCount, 3);
+			assert.strictEqual(sleepStub.callCount, 2);
+		});
+
+		test('streaming calls onRetry during 529 retry', async () => {
+			secretStorage.get.resolves('sk-ant-test-key');
+			const overloadedError = new Error('Overloaded');
+			(overloadedError as any).status = 529;
+
+			fakeClient.messages.stream
+				.onFirstCall().returns(createFakeStream([], { throwDuring: overloadedError }))
+				.onSecondCall().returns(createFakeStream(['ok']));
+
+			sinon.stub(service as any, 'sleep').resolves();
+			const onRetrySpy = sinon.spy();
+			service.onRetry = onRetrySpy;
+
+			await service.processStreaming('test', undefined, sinon.stub());
+
+			assert.ok(onRetrySpy.calledOnce);
+			assert.deepStrictEqual(onRetrySpy.firstCall.args, [2, 3]);
+		});
+
+		test('streaming does not retry 401 errors', async () => {
+			secretStorage.get.resolves('sk-ant-test-key');
+			const authError = new Error('Unauthorized');
+			(authError as any).status = 401;
+			fakeClient.messages.stream.returns(createFakeStream([], { throwDuring: authError }));
+
+			await assert.rejects(
+				() => service.processStreaming('test', undefined, sinon.stub()),
+				/Invalid Anthropic API key/,
+			);
+			assert.strictEqual(fakeClient.messages.stream.callCount, 1, 'should not retry 401');
+		});
+
+		test('streaming does not retry 429 errors', async () => {
+			secretStorage.get.resolves('sk-ant-test-key');
+			const rateLimitError = new Error('Rate limited');
+			(rateLimitError as any).status = 429;
+			fakeClient.messages.stream.returns(createFakeStream([], { throwDuring: rateLimitError }));
+
+			await assert.rejects(
+				() => service.processStreaming('test', undefined, sinon.stub()),
+				/rate limit reached/,
+			);
+			assert.strictEqual(fakeClient.messages.stream.callCount, 1, 'should not retry 429');
 		});
 
 		test('onChunk callback failure does not crash the stream', async () => {

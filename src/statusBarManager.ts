@@ -74,6 +74,13 @@ export class StatusBarManager {
 		this.item.tooltip = 'Processing dictation...';
 	}
 
+	/** Shows a retry indicator when the API is temporarily overloaded. */
+	setRetrying(attempt: number, maxAttempts: number): void {
+		this.item.text = `$(loading~spin) API busy, retrying (${attempt}/${maxAttempts})...`;
+		this.item.backgroundColor = undefined;
+		this.item.tooltip = 'Anthropic API is overloaded, retrying...';
+	}
+
 	/** Disposes the underlying VS Code status bar item. */
 	dispose(): void {
 		this.item.dispose();

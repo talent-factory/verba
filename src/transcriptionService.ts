@@ -35,6 +35,7 @@ export class TranscriptionService {
 	private secretStorage: SecretStorage;
 	private _provider: TranscriptionProvider = 'deepgram';
 	private _modelPath: string = '';
+	private _language: string = 'auto';
 
 	constructor(secretStorage: SecretStorage) {
 		this.secretStorage = secretStorage;
@@ -46,6 +47,11 @@ export class TranscriptionService {
 			throw new Error(`Invalid provider: ${provider}. Must be 'deepgram' or 'local'.`);
 		}
 		this._provider = provider;
+	}
+
+	/** Sets the language for Deepgram transcription. `'auto'` uses multilingual mode. */
+	setLanguage(language: string): void {
+		this._language = language;
 	}
 
 	/** Sets the absolute path to the GGML model file used by the local whisper.cpp provider. */
@@ -70,11 +76,12 @@ export class TranscriptionService {
 		const client = this.getClient(apiKey);
 
 		const audioBuffer = fs.readFileSync(input);
+		const isAutoLanguage = this._language === 'auto';
 		const options: Record<string, unknown> = {
 			model: 'nova-3',
-			language: 'multi',
+			language: isAutoLanguage ? 'multi' : this._language,
 			smart_format: true,
-			detect_language: true,
+			...(isAutoLanguage ? { detect_language: true } : {}),
 		};
 
 		if (glossary?.length) {
@@ -234,7 +241,7 @@ export class TranscriptionService {
 	 * using character length (BPE ≈ 1 token per 4 characters), with a safety margin.
 	 */
 	private truncateKeyterms(glossary: string[]): string[] {
-		const MAX_TOKENS = 350; // Conservative margin — BPE tokenization varies, Deepgram hard limit is 500
+		const MAX_TOKENS = 200; // Very conservative — Deepgram's BPE tokenizer counts significantly more than char/3 estimate; hard limit is 500
 		const keyterms: string[] = [];
 		let tokenCount = 0;
 

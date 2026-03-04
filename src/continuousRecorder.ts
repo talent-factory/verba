@@ -147,12 +147,17 @@ export class ContinuousRecorder extends EventEmitter {
 			'pipe:1',
 		], { stdio: ['pipe', 'pipe', 'pipe'] });
 
+		// Log ffmpeg stderr for diagnostics
+		this.ffmpegProcess.stderr?.on('data', (data: Buffer) => {
+			console.warn('[Verba] ffmpeg stderr:', data.toString().trim());
+		});
+
 		// Pipe ffmpeg stdout to Deepgram
 		this.ffmpegProcess.stdout?.on('data', (chunk: Buffer) => {
 			try {
 				if (this.connection) { this.connection.send(chunk); }
-			} catch {
-				/* connection might be closing */
+			} catch (e) {
+				console.error('[Verba] Deepgram send failed:', e);
 			}
 		});
 
@@ -207,7 +212,7 @@ export class ContinuousRecorder extends EventEmitter {
 			this.ffmpegProcess = null;
 			await new Promise<void>((resolve) => {
 				const killTimer = setTimeout(() => {
-					try { proc.kill('SIGKILL'); } catch { /**/ }
+					try { proc.kill('SIGKILL'); } catch (e) { console.error('[Verba] ffmpeg SIGKILL failed:', e); }
 				}, 3000);
 				proc.removeAllListeners('close');
 				proc.on('close', () => {
@@ -217,11 +222,11 @@ export class ContinuousRecorder extends EventEmitter {
 				if (proc.stdin && !(proc.stdin as any).destroyed) {
 					(proc.stdin as any).write('q', (err?: Error) => {
 						if (err) {
-							try { proc.kill('SIGKILL'); } catch { /**/ }
+							try { proc.kill('SIGKILL'); } catch (e) { console.error('[Verba] ffmpeg SIGKILL failed:', e); }
 						}
 					});
 				} else {
-					try { proc.kill('SIGKILL'); } catch { /**/ }
+					try { proc.kill('SIGKILL'); } catch (e) { console.error('[Verba] ffmpeg SIGKILL failed:', e); }
 				}
 			});
 		}
@@ -233,7 +238,7 @@ export class ContinuousRecorder extends EventEmitter {
 				if (typeof this.connection.finish === 'function') {
 					this.connection.finish();
 				}
-			} catch { /**/ }
+			} catch (e) { console.error('[Verba] Deepgram finish() failed:', e); }
 
 			const { LiveTranscriptionEvents } = getDeepgramSdk();
 			await new Promise<void>((resolve) => {
@@ -259,7 +264,7 @@ export class ContinuousRecorder extends EventEmitter {
 
 		// Step 4: Close Deepgram connection
 		if (this.connection) {
-			try { this.connection.requestClose(); } catch { /**/ }
+			try { this.connection.requestClose(); } catch (e) { console.error('[Verba] Deepgram requestClose failed:', e); }
 			this.connection = null;
 		}
 
@@ -270,11 +275,11 @@ export class ContinuousRecorder extends EventEmitter {
 	/** Kills any active ffmpeg process and closes the Deepgram connection. */
 	dispose(): void {
 		if (this.ffmpegProcess) {
-			try { this.ffmpegProcess.kill('SIGKILL'); } catch { /**/ }
+			try { this.ffmpegProcess.kill('SIGKILL'); } catch (e) { console.error('[Verba] ffmpeg SIGKILL failed:', e); }
 			this.ffmpegProcess = null;
 		}
 		if (this.connection) {
-			try { this.connection.requestClose(); } catch { /**/ }
+			try { this.connection.requestClose(); } catch (e) { console.error('[Verba] Deepgram requestClose failed:', e); }
 			this.connection = null;
 		}
 		this._isRecording = false;

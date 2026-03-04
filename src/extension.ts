@@ -1441,6 +1441,24 @@ export function activate(context: vscode.ExtensionContext) {
 						const separator = continuousSegmentsInserted > 0 ? '\n' : '';
 						const textToInsert = separator + transcript;
 
+						// Capture pre-edit state for undo tracking
+						const editorBeforeInsert = vscode.window.activeTextEditor;
+						let preEditSelections: PreEditSelection[] | undefined;
+						if (editorBeforeInsert) {
+							preEditSelections = editorBeforeInsert.selections
+								.map(sel => ({
+									startLine: sel.start.line,
+									startCharacter: sel.start.character,
+									endLine: sel.end.line,
+									endCharacter: sel.end.character,
+									isEmpty: sel.isEmpty,
+									originalText: sel.isEmpty ? '' : editorBeforeInsert.document.getText(sel),
+								}))
+								.sort((a, b) => a.startLine !== b.startLine
+									? a.startLine - b.startLine
+									: a.startCharacter - b.startCharacter);
+						}
+
 						// Insert text
 						const insertionResult = await insertText(
 							textToInsert,
@@ -1451,13 +1469,14 @@ export function activate(context: vscode.ExtensionContext) {
 						);
 
 						// Record undo (per segment)
-						if (insertionResult.target === 'editor') {
+						if (insertionResult.target === 'editor' && editorBeforeInsert && preEditSelections) {
+							const insertedRanges = computeInsertedRanges(preEditSelections, textToInsert);
 							recordDictation({
 								type: 'editor',
-								documentUri: vscode.window.activeTextEditor?.document.uri.toString() ?? '',
+								documentUri: editorBeforeInsert.document.uri.toString(),
 								insertedText: textToInsert,
-								insertedRanges: [],
-								originalTexts: [],
+								insertedRanges,
+								originalTexts: preEditSelections.map(s => s.originalText),
 							});
 						}
 
@@ -1499,6 +1518,16 @@ export function activate(context: vscode.ExtensionContext) {
 				if (now - lastRecorderErrorTime > 10_000) {
 					lastRecorderErrorTime = now;
 					vscode.window.showWarningMessage(`Verba: Recording issue: ${err.message}`);
+				}
+			});
+
+			// Handle unexpected stop (e.g. ffmpeg crash) — reset UI
+			continuousRecorder.on('stopped', () => {
+				if (continuousRecorder?.isRecording === false) {
+					console.log('[Verba] Continuous recorder stopped unexpectedly, resetting UI');
+					statusBar.setIdle(selectedTemplate?.name);
+					continuousRecorder.dispose();
+					continuousRecorder = null;
 				}
 			});
 

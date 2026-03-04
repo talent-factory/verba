@@ -210,6 +210,48 @@ suite('ContinuousRecorder (Deepgram)', () => {
 			assert.ok(fakeConnection.send.calledOnce, 'Deepgram send should be called');
 			assert.ok(fakeConnection.send.calledWith(audioChunk), 'Deepgram should receive the audio chunk');
 		});
+
+		test('rejects when Deepgram connection times out', async () => {
+			const startPromise = cr.start();
+			// Do NOT emit 'open' — let the 10s timeout fire
+			await clock.tickAsync(10000);
+			await assert.rejects(startPromise, /timed out/);
+		});
+
+		test('rejects when Deepgram connection emits error during open', async () => {
+			// Suppress unhandled 'error' on ContinuousRecorder EventEmitter
+			cr.on('error', () => {});
+			const startPromise = cr.start();
+			fakeConnection.emit(FakeLiveTranscriptionEvents.Error, 'auth failure');
+			await assert.rejects(startPromise, /Deepgram connection failed/);
+		});
+
+		test('rejects when ffmpeg terminates during startup', async () => {
+			const startPromise = cr.start();
+			fakeConnection.emit(FakeLiveTranscriptionEvents.Open);
+			// Kill ffmpeg before the 500ms heuristic
+			fakeProcess.killed = true;
+			await clock.tickAsync(500);
+			await assert.rejects(startPromise, /ffmpeg terminated during startup/);
+		});
+
+		test('rejects when ffmpeg emits error event during startup', async () => {
+			const startPromise = cr.start();
+			fakeConnection.emit(FakeLiveTranscriptionEvents.Open);
+			// Flush microtasks so start() proceeds past connection await to spawn ffmpeg
+			await clock.tickAsync(0);
+			fakeProcess.emit('error', new Error('ENOENT'));
+			await assert.rejects(startPromise, /ffmpeg failed to start/);
+		});
+
+		test('logs ffmpeg stderr for diagnostics', async () => {
+			await startRecording();
+			const warnStub = sinon.stub(console, 'warn');
+			fakeProcess.stderr.emit('data', Buffer.from('some ffmpeg warning'));
+			assert.ok(warnStub.calledOnce, 'Should log stderr');
+			assert.ok(warnStub.firstCall.args[1].includes('some ffmpeg warning'));
+			warnStub.restore();
+		});
 	});
 
 	suite('Transcript events', () => {

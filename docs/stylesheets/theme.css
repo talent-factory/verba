@@ -1,0 +1,26 @@
+/* Talent Factory color scheme — derived from talent-factory.xyz */
+/* Primary accent: #7c3aed (Violet-600), Glow: #a855f7 (Violet-500) */
+/* Dark base: #0d0d1a, Text: #0f172a, Muted: #64748b */
+
+/* ---- Light mode ---- */
+[data-md-color-scheme="default"] {
+  --md-primary-fg-color: #7c3aed;
+  --md-primary-fg-color--light: #a855f7;
+  --md-primary-fg-color--dark: #6d28d9;
+  --md-accent-fg-color: #a855f7;
+  --md-accent-fg-color--transparent: rgba(168, 85, 247, 0.1);
+}
+
+/* ---- Dark mode ---- */
+[data-md-color-scheme="slate"] {
+  --md-primary-fg-color: #a855f7;
+  --md-primary-fg-color--light: #c084fc;
+  --md-primary-fg-color--dark: #7c3aed;
+  --md-accent-fg-color: #a855f7;
+  --md-accent-fg-color--transparent: rgba(168, 85, 247, 0.1);
+  --md-default-bg-color: #0d0d1a;
+  --md-default-bg-color--light: #151528;
+  --md-default-fg-color: rgba(255, 255, 255, 0.87);
+  --md-default-fg-color--light: rgba(255, 255, 255, 0.6);
+  --md-code-bg-color: #151528;
+}

@@ -6,29 +6,35 @@ repo_name: talent-factory/verba
 
 theme:
   name: material
+  logo: images/logo.svg
+  favicon: images/favicon.ico
   palette:
     - media: "(prefers-color-scheme: light)"
       scheme: default
-      primary: deep purple
-      accent: amber
+      primary: custom
+      accent: custom
       toggle:
         icon: material/brightness-7
         name: Switch to dark mode
     - media: "(prefers-color-scheme: dark)"
       scheme: slate
-      primary: deep purple
-      accent: amber
+      primary: custom
+      accent: custom
       toggle:
         icon: material/brightness-4
         name: Switch to light mode
   features:
+    - navigation.tabs
     - navigation.sections
-    - navigation.expand
     - navigation.top
+    - navigation.indexes
     - search.highlight
     - content.code.copy
   icon:
     repo: fontawesome/brands/github
+
+extra_css:
+  - stylesheets/theme.css
 
 markdown_extensions:
   - admonition

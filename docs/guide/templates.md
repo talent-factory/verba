@@ -78,7 +78,7 @@ Define custom templates in `settings.json`:
 
 ## Glossary Interaction
 
-If you have defined a [glossary](configuration.md#glossary--dictionary), the glossary terms are automatically included in every template's Claude prompt. This ensures that product names, technical jargon, and abbreviations are preserved exactly — regardless of which template you use. No additional template configuration is needed.
+If you have defined a [glossary](configuration.md#glossary-dictionary), the glossary terms are automatically included in every template's Claude prompt. This ensures that product names, technical jargon, and abbreviations are preserved exactly — regardless of which template you use. No additional template configuration is needed.
 
 ## Course Correction
 

@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <!-- Background -->
+  <rect width="128" height="128" rx="22" fill="#1E1E1E"/>
+  
+  <!-- V shape - main element -->
+  <polygon points="16,24 40,24 64,80 88,24 112,24 72,104 56,104" fill="#007ACC"/>
+  
+  <!-- Sound wave lines - left -->
+  <line x1="20" y1="96" x2="20" y2="108" stroke="#0098FF" stroke-width="4" stroke-linecap="round"/>
+  <line x1="30" y1="90" x2="30" y2="108" stroke="#0098FF" stroke-width="4" stroke-linecap="round" opacity="0.8"/>
+  <line x1="40" y1="94" x2="40" y2="108" stroke="#0098FF" stroke-width="4" stroke-linecap="round" opacity="0.6"/>
+
+  <!-- Sound wave lines - right -->
+  <line x1="108" y1="96" x2="108" y2="108" stroke="#0098FF" stroke-width="4" stroke-linecap="round"/>
+  <line x1="98" y1="90" x2="98" y2="108" stroke="#0098FF" stroke-width="4" stroke-linecap="round" opacity="0.8"/>
+  <line x1="88" y1="94" x2="88" y2="108" stroke="#0098FF" stroke-width="4" stroke-linecap="round" opacity="0.6"/>
+</svg>

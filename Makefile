@@ -10,7 +10,7 @@ else
   CODE := code
 endif
 
-.PHONY: help dev compile watch test test-unit package install
+.PHONY: help dev compile watch test test-unit package install docs docs-serve
 
 help: ## Show available targets
 	@echo "Usage: make <target>"
@@ -23,6 +23,8 @@ help: ## Show available targets
 	@echo "  test-unit   Run unit tests only"
 	@echo "  package     Package extension as .vsix"
 	@echo "  install     Package and install extension locally"
+	@echo "  docs        Build documentation (mkdocs)"
+	@echo "  docs-serve  Serve documentation locally with live reload"
 	@echo ""
 	@echo "All targets are also available as npm scripts (cross-platform):"
 	@echo "  npm run dev / compile / watch / test / test:unit / package:vsix / install:local"
@@ -47,3 +49,9 @@ package:
 
 install:
 	$(NPM) run install:local
+
+docs:
+	mkdocs build --strict
+
+docs-serve:
+	mkdocs serve

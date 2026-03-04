@@ -220,20 +220,18 @@ export class TranscriptionService {
 
 	/**
 	 * Truncates glossary terms to fit within Deepgram's 500-token keyterm budget.
-	 * Each keyterm is formatted as `term:2` (boost weight). Deepgram tokenises each
-	 * keyterm entry as roughly: 1 token per word + 1 token for the `:intensifier` suffix.
+	 * Each keyterm is formatted as `term:2` (boost weight). Token count is estimated
+	 * using character length (BPE ≈ 1 token per 4 characters), with a safety margin.
 	 */
 	private truncateKeyterms(glossary: string[]): string[] {
-		// Deepgram's BPE tokenizer counts more tokens than simple word splits.
-		// Use 60% of the 500-token hard limit as safety margin.
-		const MAX_TOKENS = 300;
+		const MAX_TOKENS = 450; // Safety margin below Deepgram's 500-token hard limit
 		const keyterms: string[] = [];
 		let tokenCount = 0;
 
 		for (const term of glossary) {
 			const kt = `${term}:2`;
-			// Conservative estimate: words in term + 1 for the `:2` boost suffix
-			const estimated = term.split(/\s+/).length + 1;
+			// BPE tokenizers produce roughly 1 token per 4 characters
+			const estimated = Math.max(1, Math.ceil(kt.length / 4));
 			if (tokenCount + estimated > MAX_TOKENS) {
 				break;
 			}

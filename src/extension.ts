@@ -100,6 +100,9 @@ export function activate(context: vscode.ExtensionContext) {
 	const statusBar = new StatusBarManager();
 	const transcriptionService = new VerbaTranscriptionService(context.secrets);
 	const cleanupService = new VerbaCleanupService(context.secrets);
+	cleanupService.onRetry = (attempt, maxAttempts) => {
+		statusBar.setRetrying(attempt, maxAttempts);
+	};
 	const costTracker = new CostTracker(context.globalState);
 	const maxHistoryEntries = vscode.workspace.getConfiguration('verba').get<number>('history.maxEntries', 500);
 	const historyManager = new HistoryManager(context.globalState, maxHistoryEntries);

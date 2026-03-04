@@ -4,6 +4,31 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.5.0] - 2026-03-04
+
+### Added
+
+- **Undo Last Dictation (TF-258):** `dictation.undo` command (`Cmd+Z` context-aware) reverts the last dictation insertion. Works in both editor (via document edit reversal) and terminal (via backspace sequence). Single-level undo with automatic expiry after new edits.
+- **Dictation History with Full-Text Search (TF-264):** Persistent dictation history stored via `globalState`. Browse recent dictations via Quick Pick (`dictation.showHistory`), search across raw transcript and cleaned text (`dictation.searchHistory`). Actions: insert at cursor, copy to clipboard, show details. Configurable max entries (`verba.history.maxEntries`, default 500). Privacy: history stays local, never sent to APIs.
+- **Continuous Dictation with Deepgram Streaming (TF-260):** Longer dictation sessions using Deepgram Nova-3 WebSocket streaming. ffmpeg captures microphone audio (raw PCM to stdout), piped directly to Deepgram's real-time transcription API. Deepgram's built-in VAD handles pause detection and utterance segmentation. Each completed utterance goes through Claude cleanup, then insertion. New command `dictation.startContinuous` (`Cmd+Shift+Alt+D`). Per-utterance undo and history records.
+- **Multi-Language Auto-Detection (TF-261):** Deepgram `language: 'multi'` enables automatic language detection for both single-shot and continuous transcription. Detected language is passed through to Claude post-processing for language-appropriate cleanup. Manual override via `verba.language` setting.
+- **Retry Logic for API Overload (TF-273):** Exponential backoff with up to 3 retries when Claude API returns HTTP 529 (overloaded). Backoff delays: 2s, 4s, 8s. Prevents dictation loss during transient API capacity issues.
+
+### Changed
+
+- **Deepgram Consolidation (TF-272):** Replaced OpenAI Whisper API with Deepgram Nova-3 pre-recorded API for single-shot dictation. Both single-shot and continuous now use Deepgram (shared API key). `openai` npm package retained for embeddings only. Cost reduced from $0.006/min (Whisper) to $0.0043/min (Deepgram Nova-3).
+- Deepgram keyterm token limit reduced to prevent request failures with large glossaries
+- Language configuration passed through from transcription service to Deepgram API
+
+### Fixed
+
+- API key deletion now checks for HTTP 401/403 status codes instead of deleting on any transcription error
+- Undo records cleared correctly after new editor edits to prevent stale undo operations
+- History persistence errors handled gracefully without disrupting the dictation pipeline
+- Resource leak fixed when continuous recorder fails to start (status bar listener now disposed)
+- Unreachable auth-detection code removed from continuous segment error handler
+- Duplicate `historyManager` import statements removed
+
 ## [0.4.0] - 2026-03-02
 
 ### Added

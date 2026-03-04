@@ -1323,6 +1323,13 @@ export function activate(context: vscode.ExtensionContext) {
 			return;
 		}
 
+		// Continuous mode requires an active editor — fallback to single-shot for terminal
+		if (!vscode.window.activeTextEditor) {
+			console.log('[Verba] No active editor — falling back to single-shot dictation');
+			await vscode.commands.executeCommand('dictation.start');
+			return;
+		}
+
 		// Template selection (same logic as handleDictation's else branch)
 		try {
 			const templates = loadTemplates();
@@ -1445,25 +1452,7 @@ export function activate(context: vscode.ExtensionContext) {
 						const separator = continuousSegmentsInserted > 0 ? '\n' : '';
 						const textToInsert = separator + transcript;
 
-						// Capture pre-edit state for undo tracking
-						const editorBeforeInsert = vscode.window.activeTextEditor;
-						let preEditSelections: PreEditSelection[] | undefined;
-						if (editorBeforeInsert) {
-							preEditSelections = editorBeforeInsert.selections
-								.map(sel => ({
-									startLine: sel.start.line,
-									startCharacter: sel.start.character,
-									endLine: sel.end.line,
-									endCharacter: sel.end.character,
-									isEmpty: sel.isEmpty,
-									originalText: sel.isEmpty ? '' : editorBeforeInsert.document.getText(sel),
-								}))
-								.sort((a, b) => a.startLine !== b.startLine
-									? a.startLine - b.startLine
-									: a.startCharacter - b.startCharacter);
-						}
-
-						// Insert text
+						// Insert text (no undo tracking in continuous mode)
 						const insertionResult = await insertText(
 							textToInsert,
 							vscode.window.activeTextEditor,
@@ -1471,18 +1460,6 @@ export function activate(context: vscode.ExtensionContext) {
 							executeCommand,
 							preferTerminalForContinuous,
 						);
-
-						// Record undo (per segment)
-						if (insertionResult.target === 'editor' && editorBeforeInsert && preEditSelections) {
-							const insertedRanges = computeInsertedRanges(preEditSelections, textToInsert);
-							recordDictation({
-								type: 'editor',
-								documentUri: editorBeforeInsert.document.uri.toString(),
-								insertedText: textToInsert,
-								insertedRanges,
-								originalTexts: preEditSelections.map(s => s.originalText),
-							});
-						}
 
 						// Record history (per segment)
 						try {

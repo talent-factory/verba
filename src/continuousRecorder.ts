@@ -163,7 +163,7 @@ export class ContinuousRecorder extends EventEmitter {
 
 		// Log ffmpeg stderr for diagnostics
 		this.ffmpegProcess.stderr?.on('data', (data: Buffer) => {
-			console.warn('[Verba] ffmpeg stderr:', data.toString().trim());
+			console.log('[Verba] ffmpeg stderr:', data.toString().trim());
 		});
 
 		// Pipe ffmpeg stdout to Deepgram

@@ -224,7 +224,9 @@ export class TranscriptionService {
 	 * keyterm entry as roughly: 1 token per word + 1 token for the `:intensifier` suffix.
 	 */
 	private truncateKeyterms(glossary: string[]): string[] {
-		const MAX_TOKENS = 500;
+		// Deepgram's BPE tokenizer counts more tokens than simple word splits.
+		// Use 60% of the 500-token hard limit as safety margin.
+		const MAX_TOKENS = 300;
 		const keyterms: string[] = [];
 		let tokenCount = 0;
 

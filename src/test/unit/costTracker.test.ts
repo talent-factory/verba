@@ -23,38 +23,38 @@ suite('CostTracker', () => {
 		sinon.restore();
 	});
 
-	suite('trackWhisperUsage', () => {
+	suite('trackDeepgramUsage', () => {
 		test('calculates cost correctly for 60 seconds of audio', () => {
-			tracker.trackWhisperUsage(60);
+			tracker.trackDeepgramUsage(60);
 
 			const records = tracker.getSessionRecords();
 			assert.strictEqual(records.length, 1);
-			assert.strictEqual(records[0].costUsd, 0.006);
+			assert.strictEqual(records[0].costUsd, 0.0043);
 		});
 
 		test('calculates cost correctly for 30 seconds of audio', () => {
-			tracker.trackWhisperUsage(30);
+			tracker.trackDeepgramUsage(30);
 
 			const records = tracker.getSessionRecords();
 			assert.strictEqual(records.length, 1);
-			assert.strictEqual(records[0].costUsd, 0.003);
+			assert.strictEqual(records[0].costUsd, 0.00215);
 		});
 
 		test('calculates cost correctly for 90 seconds of audio', () => {
-			tracker.trackWhisperUsage(90);
+			tracker.trackDeepgramUsage(90);
 
 			const records = tracker.getSessionRecords();
 			// Use approximate comparison to handle floating-point precision
-			const expected = (90 / 60) * 0.006;
+			const expected = (90 / 60) * 0.0043;
 			assert.strictEqual(records[0].costUsd, expected);
 		});
 
 		test('creates record with correct fields', () => {
-			tracker.trackWhisperUsage(120);
+			tracker.trackDeepgramUsage(120);
 
 			const record = tracker.getSessionRecords()[0];
-			assert.strictEqual(record.model, 'whisper-1');
-			assert.strictEqual(record.provider, 'openai');
+			assert.strictEqual(record.model, 'nova-3');
+			assert.strictEqual(record.provider, 'deepgram');
 			assert.strictEqual(record.audioDurationSec, 120);
 			assert.strictEqual(record.inputTokens, undefined);
 			assert.strictEqual(record.outputTokens, undefined);
@@ -62,13 +62,13 @@ suite('CostTracker', () => {
 		});
 
 		test('persists to globalState on each call', () => {
-			tracker.trackWhisperUsage(60);
+			tracker.trackDeepgramUsage(60);
 
 			assert.ok(globalState.update.calledOnce);
 			assert.strictEqual(globalState.update.firstCall.args[0], 'verba.costRecords');
 			const persisted = globalState.update.firstCall.args[1] as UsageRecord[];
 			assert.strictEqual(persisted.length, 1);
-			assert.strictEqual(persisted[0].model, 'whisper-1');
+			assert.strictEqual(persisted[0].model, 'nova-3');
 		});
 	});
 
@@ -161,28 +161,28 @@ suite('CostTracker', () => {
 		});
 
 		test('sums multiple session records', () => {
-			tracker.trackWhisperUsage(60);   // 0.006
+			tracker.trackDeepgramUsage(60);   // 0.0043
 			tracker.trackClaudeUsage(1_000_000, 0); // 1.00
 			tracker.trackEmbeddingUsage(1_000_000);  // 0.020
 
-			assert.strictEqual(tracker.getSessionCosts(), 0.006 + 1.0 + 0.020);
+			assert.strictEqual(tracker.getSessionCosts(), 0.0043 + 1.0 + 0.020);
 		});
 
 		test('does not include previous session records', () => {
 			const previousRecords: UsageRecord[] = [{
 				timestamp: Date.now() - 100000,
-				model: 'whisper-1',
-				provider: 'openai',
+				model: 'nova-3',
+				provider: 'deepgram',
 				audioDurationSec: 60,
-				costUsd: 0.006,
+				costUsd: 0.0043,
 			}];
 			globalState = createFakeGlobalState(previousRecords);
 			tracker = new CostTracker(globalState);
 
 			assert.strictEqual(tracker.getSessionCosts(), 0);
 
-			tracker.trackWhisperUsage(60);
-			assert.strictEqual(tracker.getSessionCosts(), 0.006);
+			tracker.trackDeepgramUsage(60);
+			assert.strictEqual(tracker.getSessionCosts(), 0.0043);
 		});
 	});
 
@@ -192,25 +192,25 @@ suite('CostTracker', () => {
 		});
 
 		test('includes only session records when no previous data', () => {
-			tracker.trackWhisperUsage(60);
+			tracker.trackDeepgramUsage(60);
 
-			assert.strictEqual(tracker.getTotalCosts(), 0.006);
+			assert.strictEqual(tracker.getTotalCosts(), 0.0043);
 		});
 
 		test('includes both previous session and current session records', () => {
 			const previousRecords: UsageRecord[] = [{
 				timestamp: Date.now() - 100000,
-				model: 'whisper-1',
-				provider: 'openai',
+				model: 'nova-3',
+				provider: 'deepgram',
 				audioDurationSec: 120,
-				costUsd: 0.012,
+				costUsd: 0.0086,
 			}];
 			globalState = createFakeGlobalState(previousRecords);
 			tracker = new CostTracker(globalState);
 
-			tracker.trackWhisperUsage(60); // 0.006
+			tracker.trackDeepgramUsage(60); // 0.0043
 
-			assert.strictEqual(tracker.getTotalCosts(), 0.012 + 0.006);
+			assert.strictEqual(tracker.getTotalCosts(), 0.0086 + 0.0043);
 		});
 
 		test('excludes costs from previous months', () => {
@@ -219,17 +219,17 @@ suite('CostTracker', () => {
 
 			const previousRecords: UsageRecord[] = [{
 				timestamp: lastMonth.getTime(),
-				model: 'whisper-1',
-				provider: 'openai',
+				model: 'nova-3',
+				provider: 'deepgram',
 				audioDurationSec: 120,
-				costUsd: 0.012,
+				costUsd: 0.0086,
 			}];
 			globalState = createFakeGlobalState(previousRecords);
 			tracker = new CostTracker(globalState);
 
-			tracker.trackWhisperUsage(60); // 0.006
+			tracker.trackDeepgramUsage(60); // 0.0043
 
-			assert.strictEqual(tracker.getTotalCosts(), 0.006);
+			assert.strictEqual(tracker.getTotalCosts(), 0.0043);
 		});
 	});
 
@@ -239,12 +239,12 @@ suite('CostTracker', () => {
 		});
 
 		test('returns all session records in order', () => {
-			tracker.trackWhisperUsage(60);
+			tracker.trackDeepgramUsage(60);
 			tracker.trackClaudeUsage(100, 50);
 
 			const records = tracker.getSessionRecords();
 			assert.strictEqual(records.length, 2);
-			assert.strictEqual(records[0].model, 'whisper-1');
+			assert.strictEqual(records[0].model, 'nova-3');
 			assert.strictEqual(records[1].model, 'claude-haiku-4-5-20251001');
 		});
 	});
@@ -257,26 +257,26 @@ suite('CostTracker', () => {
 		test('returns only previous records when session is empty', () => {
 			const previousRecords: UsageRecord[] = [{
 				timestamp: Date.now() - 100000,
-				model: 'whisper-1',
-				provider: 'openai',
+				model: 'nova-3',
+				provider: 'deepgram',
 				audioDurationSec: 60,
-				costUsd: 0.006,
+				costUsd: 0.0043,
 			}];
 			globalState = createFakeGlobalState(previousRecords);
 			tracker = new CostTracker(globalState);
 
 			const records = tracker.getTotalRecords();
 			assert.strictEqual(records.length, 1);
-			assert.strictEqual(records[0].costUsd, 0.006);
+			assert.strictEqual(records[0].costUsd, 0.0043);
 		});
 
 		test('returns combined previous and session records', () => {
 			const previousRecords: UsageRecord[] = [{
 				timestamp: Date.now() - 100000,
-				model: 'whisper-1',
-				provider: 'openai',
+				model: 'nova-3',
+				provider: 'deepgram',
 				audioDurationSec: 60,
-				costUsd: 0.006,
+				costUsd: 0.0043,
 			}];
 			globalState = createFakeGlobalState(previousRecords);
 			tracker = new CostTracker(globalState);
@@ -285,7 +285,7 @@ suite('CostTracker', () => {
 
 			const records = tracker.getTotalRecords();
 			assert.strictEqual(records.length, 2);
-			assert.strictEqual(records[0].model, 'whisper-1');
+			assert.strictEqual(records[0].model, 'nova-3');
 			assert.strictEqual(records[1].model, 'claude-haiku-4-5-20251001');
 		});
 
@@ -296,17 +296,17 @@ suite('CostTracker', () => {
 			const previousRecords: UsageRecord[] = [
 				{
 					timestamp: lastMonth.getTime(),
-					model: 'whisper-1',
-					provider: 'openai',
+					model: 'nova-3',
+					provider: 'deepgram',
 					audioDurationSec: 60,
-					costUsd: 0.006,
+					costUsd: 0.0043,
 				},
 				{
 					timestamp: Date.now() - 100000,
-					model: 'whisper-1',
-					provider: 'openai',
+					model: 'nova-3',
+					provider: 'deepgram',
 					audioDurationSec: 30,
-					costUsd: 0.003,
+					costUsd: 0.00215,
 				},
 			];
 			globalState = createFakeGlobalState(previousRecords);
@@ -314,13 +314,13 @@ suite('CostTracker', () => {
 
 			const records = tracker.getTotalRecords();
 			assert.strictEqual(records.length, 1);
-			assert.strictEqual(records[0].costUsd, 0.003);
+			assert.strictEqual(records[0].costUsd, 0.00215);
 		});
 	});
 
 	suite('resetTotalCosts', () => {
 		test('clears session records', () => {
-			tracker.trackWhisperUsage(60);
+			tracker.trackDeepgramUsage(60);
 			tracker.trackClaudeUsage(100, 50);
 
 			tracker.resetTotalCosts();
@@ -330,7 +330,7 @@ suite('CostTracker', () => {
 		});
 
 		test('clears globalState', () => {
-			tracker.trackWhisperUsage(60);
+			tracker.trackDeepgramUsage(60);
 			globalState.update.resetHistory();
 
 			tracker.resetTotalCosts();
@@ -343,10 +343,10 @@ suite('CostTracker', () => {
 		test('clears both previous and session records from totals', () => {
 			const previousRecords: UsageRecord[] = [{
 				timestamp: Date.now() - 100000,
-				model: 'whisper-1',
-				provider: 'openai',
+				model: 'nova-3',
+				provider: 'deepgram',
 				audioDurationSec: 60,
-				costUsd: 0.006,
+				costUsd: 0.0043,
 			}];
 			globalState = createFakeGlobalState(previousRecords);
 			tracker = new CostTracker(globalState);
@@ -380,19 +380,19 @@ suite('CostTracker', () => {
 		test('persists combined previous + session records on each track call', () => {
 			const previousRecords: UsageRecord[] = [{
 				timestamp: Date.now() - 50000,
-				model: 'whisper-1',
-				provider: 'openai',
+				model: 'nova-3',
+				provider: 'deepgram',
 				audioDurationSec: 60,
-				costUsd: 0.006,
+				costUsd: 0.0043,
 			}];
 			globalState = createFakeGlobalState(previousRecords);
 			tracker = new CostTracker(globalState);
 
-			tracker.trackWhisperUsage(30);
+			tracker.trackDeepgramUsage(30);
 
 			const persisted = globalState.update.firstCall.args[1] as UsageRecord[];
 			assert.strictEqual(persisted.length, 2);
-			assert.strictEqual(persisted[0].costUsd, 0.006);      // previous
+			assert.strictEqual(persisted[0].costUsd, 0.0043);    // previous
 			assert.strictEqual(persisted[1].audioDurationSec, 30); // new session
 		});
 
@@ -402,15 +402,15 @@ suite('CostTracker', () => {
 
 			const previousRecords: UsageRecord[] = [{
 				timestamp: lastMonth.getTime(),
-				model: 'whisper-1',
-				provider: 'openai',
+				model: 'nova-3',
+				provider: 'deepgram',
 				audioDurationSec: 60,
-				costUsd: 0.006,
+				costUsd: 0.0043,
 			}];
 			globalState = createFakeGlobalState(previousRecords);
 			tracker = new CostTracker(globalState);
 
-			tracker.trackWhisperUsage(30);
+			tracker.trackDeepgramUsage(30);
 
 			const persisted = globalState.update.firstCall.args[1] as UsageRecord[];
 			assert.strictEqual(persisted.length, 2);
@@ -419,7 +419,7 @@ suite('CostTracker', () => {
 		});
 
 		test('persists after each individual track call', () => {
-			tracker.trackWhisperUsage(60);
+			tracker.trackDeepgramUsage(60);
 			tracker.trackClaudeUsage(100, 50);
 			tracker.trackEmbeddingUsage(1000);
 

@@ -49,8 +49,8 @@ async function getDeepgramApiKey(secretStorage: vscode.SecretStorage): Promise<s
 class VerbaTranscriptionService extends TranscriptionService {
 	protected async promptForApiKey(): Promise<string | undefined> {
 		return vscode.window.showInputBox({
-			prompt: 'Enter your OpenAI API key for Whisper transcription',
-			placeHolder: 'sk-...',
+			prompt: 'Enter your Deepgram API key for transcription',
+			placeHolder: 'dg-...',
 			password: true,
 			ignoreFocusOut: true,
 		});
@@ -105,15 +105,15 @@ export function activate(context: vscode.ExtensionContext) {
 
 	function applyTranscriptionProvider(): void {
 		const config = vscode.workspace.getConfiguration('verba.transcription');
-		const provider = config.get<string>('provider', 'openai');
+		const provider = config.get<string>('provider', 'deepgram');
 		const modelName = config.get<string>('localModel', 'base');
 
-		if (provider !== 'openai' && provider !== 'local') {
+		if (provider !== 'deepgram' && provider !== 'local') {
 			vscode.window.showErrorMessage(
-				`Verba: Unknown transcription provider "${provider}". Valid values: "openai", "local". Falling back to OpenAI.`
+				`Verba: Unknown transcription provider "${provider}". Valid values: "deepgram", "local". Falling back to Deepgram.`
 			);
-			transcriptionService.setProvider('openai');
-			statusBar.setProvider('openai');
+			transcriptionService.setProvider('deepgram');
+			statusBar.setProvider('deepgram');
 			return;
 		}
 
@@ -122,9 +122,9 @@ export function activate(context: vscode.ExtensionContext) {
 			if (!modelInfo) {
 				const validNames = WHISPER_MODELS.map(m => m.name).join(', ');
 				vscode.window.showErrorMessage(
-					`Verba: Unknown model "${modelName}". Valid models: ${validNames}. Falling back to OpenAI provider.`
+					`Verba: Unknown model "${modelName}". Valid models: ${validNames}. Falling back to Deepgram provider.`
 				);
-				transcriptionService.setProvider('openai');
+				transcriptionService.setProvider('deepgram');
 				return;
 			}
 			transcriptionService.setProvider(provider);
@@ -136,7 +136,7 @@ export function activate(context: vscode.ExtensionContext) {
 		} else {
 			transcriptionService.setProvider(provider);
 			statusBar.setProvider(provider);
-			console.log('[Verba] Transcription provider: openai');
+			console.log('[Verba] Transcription provider: deepgram');
 		}
 	}
 	applyTranscriptionProvider();
@@ -340,18 +340,18 @@ export function activate(context: vscode.ExtensionContext) {
 				const fileStats = fs.statSync(filePath);
 				console.log(`[Verba] WAV file: ${filePath} (${fileStats.size} bytes)`);
 
-				// Step 1: Transcribe via Whisper (uses cached glossary from applyGlossary)
+				// Step 1: Transcribe (uses cached glossary from applyGlossary)
 				const rawTranscript = await transcriptionService.process(filePath, currentGlossary);
-				console.log(`[Verba] Whisper transcript (${rawTranscript.length} chars): ${rawTranscript.substring(0, 200)}`);
+				console.log(`[Verba] Transcript (${rawTranscript.length} chars): ${rawTranscript.substring(0, 200)}`);
 
-				// Track Whisper usage from WAV file duration (only for OpenAI API, not local whisper.cpp)
-				const transcriptionProvider = vscode.workspace.getConfiguration('verba.transcription').get<string>('provider', 'openai');
-				if (transcriptionProvider === 'openai') {
+				// Track Deepgram usage from WAV file duration (only for Deepgram API, not local whisper.cpp)
+				const transcriptionProvider = vscode.workspace.getConfiguration('verba.transcription').get<string>('provider', 'deepgram');
+				if (transcriptionProvider === 'deepgram') {
 					const wavDurationSec = getWavDurationSec(filePath);
 					if (wavDurationSec > 0) {
-						costTracker.trackWhisperUsage(wavDurationSec);
+						costTracker.trackDeepgramUsage(wavDurationSec);
 					} else {
-						console.warn('[Verba] WAV duration is 0 — Whisper cost tracking skipped for this recording');
+						console.warn('[Verba] WAV duration is 0 — Deepgram cost tracking skipped for this recording');
 					}
 				}
 
@@ -960,9 +960,9 @@ export function activate(context: vscode.ExtensionContext) {
 	const manageApiKeysCommand = vscode.commands.registerCommand('dictation.manageApiKeys', async () => {
 		try {
 			const keys = [
-				{ label: 'OpenAI', storageKey: 'openai-api-key', prefix: 'sk-' },
-				{ label: 'Anthropic', storageKey: 'anthropic-api-key', prefix: 'sk-ant-' },
 				{ label: 'Deepgram', storageKey: DEEPGRAM_API_KEY_STORAGE_KEY, prefix: 'dg-' },
+				{ label: 'Anthropic', storageKey: 'anthropic-api-key', prefix: 'sk-ant-' },
+				{ label: 'OpenAI (Embeddings)', storageKey: 'openai-api-key', prefix: 'sk-' },
 			];
 
 			const items = await Promise.all(keys.map(async (k) => {
@@ -1323,6 +1323,13 @@ export function activate(context: vscode.ExtensionContext) {
 			return;
 		}
 
+		// Continuous mode requires an active editor — fallback to single-shot for terminal
+		if (!vscode.window.activeTextEditor) {
+			console.log('[Verba] No active editor — falling back to single-shot dictation');
+			await vscode.commands.executeCommand('dictation.start');
+			return;
+		}
+
 		// Template selection (same logic as handleDictation's else branch)
 		try {
 			const templates = loadTemplates();
@@ -1445,25 +1452,7 @@ export function activate(context: vscode.ExtensionContext) {
 						const separator = continuousSegmentsInserted > 0 ? '\n' : '';
 						const textToInsert = separator + transcript;
 
-						// Capture pre-edit state for undo tracking
-						const editorBeforeInsert = vscode.window.activeTextEditor;
-						let preEditSelections: PreEditSelection[] | undefined;
-						if (editorBeforeInsert) {
-							preEditSelections = editorBeforeInsert.selections
-								.map(sel => ({
-									startLine: sel.start.line,
-									startCharacter: sel.start.character,
-									endLine: sel.end.line,
-									endCharacter: sel.end.character,
-									isEmpty: sel.isEmpty,
-									originalText: sel.isEmpty ? '' : editorBeforeInsert.document.getText(sel),
-								}))
-								.sort((a, b) => a.startLine !== b.startLine
-									? a.startLine - b.startLine
-									: a.startCharacter - b.startCharacter);
-						}
-
-						// Insert text
+						// Insert text (no undo tracking in continuous mode)
 						const insertionResult = await insertText(
 							textToInsert,
 							vscode.window.activeTextEditor,
@@ -1471,18 +1460,6 @@ export function activate(context: vscode.ExtensionContext) {
 							executeCommand,
 							preferTerminalForContinuous,
 						);
-
-						// Record undo (per segment)
-						if (insertionResult.target === 'editor' && editorBeforeInsert && preEditSelections) {
-							const insertedRanges = computeInsertedRanges(preEditSelections, textToInsert);
-							recordDictation({
-								type: 'editor',
-								documentUri: editorBeforeInsert.document.uri.toString(),
-								insertedText: textToInsert,
-								insertedRanges,
-								originalTexts: preEditSelections.map(s => s.originalText),
-							});
-						}
 
 						// Record history (per segment)
 						try {

@@ -10,7 +10,7 @@ All Verba settings are configured in VS Code's `settings.json`.
 | `verba.templates` | Array | 8 built-in templates | Prompt templates for post-processing. See [Templates](templates.md). |
 | `verba.terminal.executeCommand` | Boolean | `false` | If `true`, sends Enter after inserting text into the terminal. |
 | `verba.glossary` | Array | `[]` | Terms preserved during transcription and cleanup (limit: ~80 terms). |
-| `verba.transcription.provider` | String | `"openai"` | Transcription provider: `openai` (API) or `local` (whisper.cpp). |
+| `verba.transcription.provider` | String | `"deepgram"` | Transcription provider: `deepgram` (API) or `local` (whisper.cpp). |
 | `verba.transcription.localModel` | String | `"base"` | Whisper model for local transcription: `tiny`, `base`, `small`, `medium`, `large-v3-turbo`. |
 | `verba.contextSearch.provider` | String | `"auto"` | Context search provider: `auto`, `grepai`, or `openai`. |
 | `verba.contextSearch.maxResults` | Number | `5` | Number of context snippets per dictation (1-20). |
@@ -33,7 +33,7 @@ By default, Verba uses the system default microphone. To select a specific devic
 
 ## Glossary / Dictionary
 
-Define terms (product names, technical jargon, abbreviations) that must be preserved exactly during transcription and cleanup. Glossary terms are sent as hints to Whisper and as protection instructions to Claude.
+Define terms (product names, technical jargon, abbreviations) that must be preserved exactly during transcription and cleanup. Glossary terms are sent as hints to Deepgram and as protection instructions to Claude.
 
 **Global terms** are configured in `settings.json`:
 
@@ -49,14 +49,14 @@ Define terms (product names, technical jargon, abbreviations) that must be prese
 ["Verba", "CleanupService", "TranscriptionService", "ffmpeg"]
 ```
 
-Both sources are merged automatically. For best results, keep the combined glossary under ~80 terms (~224 Whisper prompt tokens). If this limit is exceeded, a warning is shown and excess terms may be ignored by Whisper.
+Both sources are merged automatically. For best results, keep the combined glossary under ~80 terms (~300 Deepgram keyword tokens). If this limit is exceeded, a warning is shown and excess terms may be ignored by Deepgram.
 
 !!! tip
     Place `.verba-glossary.json` under version control so that all team members share the same glossary. Changes to the file are picked up automatically.
 
 ## Offline Transcription (whisper.cpp)
 
-By default, Verba uses the OpenAI Whisper API for transcription. You can switch to local, offline transcription via [whisper.cpp](https://github.com/ggml-org/whisper.cpp) for full privacy and zero API costs.
+By default, Verba uses the Deepgram Nova-3 API for transcription. You can switch to local, offline transcription via [whisper.cpp](https://github.com/ggml-org/whisper.cpp) for full privacy and zero API costs.
 
 ### Setup
 

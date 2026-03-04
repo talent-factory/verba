@@ -14,6 +14,17 @@ export const STOPWORDS = new Set([
 	'module', 'exports', 'require', 'import',
 	'describe', 'suite', 'test', 'expect', 'assert',
 	'setup', 'teardown', 'before', 'after',
+	// Common English words (from bold markdown / headings)
+	'and', 'are', 'but', 'can', 'for', 'from', 'has', 'have', 'its',
+	'may', 'must', 'not', 'should', 'that', 'the', 'this', 'was',
+	'which', 'who', 'whose', 'will', 'with', 'when',
+	// Generic verbs / participles extracted from docs
+	'accepts', 'bound', 'definition', 'gets', 'including', 'named',
+	'names', 'previously', 'provides', 'receives', 'referenced',
+	'returning', 'returns', 'run', 'sent', 'used',
+	// Generic programming identifiers
+	'attribute', 'argument', 'function', 'header', 'name',
+	'node', 'object', 'value', 'hello', 'login',
 ]);
 
 export function filterTerms(raw: string[], existingTerms: string[]): string[] {
@@ -119,12 +130,12 @@ export class GlossaryGenerator {
 		const headingRegex = /^#{1,3}\s+(.+)$/gm;
 		let match: RegExpExecArray | null;
 		while ((match = headingRegex.exec(content)) !== null) {
-			terms.push(match[1]);
+			terms.push(match[1].replace(/:$/, ''));
 		}
 		// Bold terms
 		const boldRegex = /\*\*([^*]+)\*\*/g;
 		while ((match = boldRegex.exec(content)) !== null) {
-			terms.push(match[1]);
+			terms.push(match[1].replace(/:$/, ''));
 		}
 		return terms;
 	}
@@ -152,7 +163,7 @@ export class GlossaryGenerator {
 		}
 
 		// 2. Scan source files for symbols
-		const excludePattern = '{**/node_modules/**,**/dist/**,**/out/**,**/.git/**,**/.verba/**,**/__pycache__/**,**/target/**,**/build/**}';
+		const excludePattern = '{**/node_modules/**,**/dist/**,**/out/**,**/.git/**,**/.verba/**,**/__pycache__/**,**/target/**,**/build/**,**/test/**,**/tests/**,**/*.test.*,**/*.spec.*,**/*.d.ts}';
 		const sourceFiles = await getVscode().workspace.findFiles('**/*.{ts,java,py}', excludePattern);
 
 		let skippedFiles = 0;

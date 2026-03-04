@@ -1,14 +1,14 @@
 /**
- * Tracks API usage costs for Whisper, Claude, and embedding models.
+ * Tracks API usage costs for Deepgram, Claude, and embedding models.
  * Persists cost records via VS Code globalState for cross-session totals.
  */
 
 const STORAGE_KEY = 'verba.costRecords';
 
-// Pricing as of 2026-02 — verify at https://openai.com/pricing and https://www.anthropic.com/pricing
-// These model names (whisper-1, claude-haiku-4-5-20251001, text-embedding-3-small) must match
+// Pricing as of 2026-03 — verify at https://deepgram.com/pricing and https://www.anthropic.com/pricing
+// These model names (nova-3, claude-haiku-4-5-20251001, text-embedding-3-small) must match
 // the models used in transcriptionService.ts, cleanupService.ts, and embeddingService.ts.
-const WHISPER_COST_PER_MINUTE = 0.006;        // OpenAI Whisper: $0.006/min
+const DEEPGRAM_COST_PER_MINUTE = 0.0043;      // Deepgram Nova-3: $0.0043/min
 const CLAUDE_INPUT_COST_PER_MILLION = 1.00;    // Claude Haiku 4.5: $1.00/1M input tokens
 const CLAUDE_OUTPUT_COST_PER_MILLION = 5.00;   // Claude Haiku 4.5: $5.00/1M output tokens
 const EMBEDDING_COST_PER_MILLION = 0.020;      // text-embedding-3-small: $0.020/1M tokens
@@ -16,7 +16,7 @@ const EMBEDDING_COST_PER_MILLION = 0.020;      // text-embedding-3-small: $0.020
 export interface UsageRecord {
 	timestamp: number;
 	model: string;
-	provider: 'openai' | 'anthropic';
+	provider: 'openai' | 'anthropic' | 'deepgram';
 	inputTokens?: number;
 	outputTokens?: number;
 	audioDurationSec?: number;
@@ -46,16 +46,16 @@ export class CostTracker {
 				typeof (r as any)?.costUsd === 'number'
 				&& typeof (r as any)?.timestamp === 'number'
 				&& typeof (r as any)?.model === 'string'
-				&& ((r as any)?.provider === 'openai' || (r as any)?.provider === 'anthropic'),
+				&& ((r as any)?.provider === 'openai' || (r as any)?.provider === 'anthropic' || (r as any)?.provider === 'deepgram'),
 		);
 	}
 
-	trackWhisperUsage(audioDurationSec: number): void {
-		const costUsd = (audioDurationSec / 60) * WHISPER_COST_PER_MINUTE;
+	trackDeepgramUsage(audioDurationSec: number): void {
+		const costUsd = (audioDurationSec / 60) * DEEPGRAM_COST_PER_MINUTE;
 		const record: UsageRecord = {
 			timestamp: Date.now(),
-			model: 'whisper-1',
-			provider: 'openai',
+			model: 'nova-3',
+			provider: 'deepgram',
 			audioDurationSec,
 			costUsd,
 		};

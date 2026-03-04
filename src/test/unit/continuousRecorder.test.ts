@@ -244,11 +244,11 @@ suite('ContinuousRecorder (Deepgram)', () => {
 
 		test('logs ffmpeg stderr for diagnostics', async () => {
 			await startRecording();
-			const warnStub = sinon.stub(console, 'warn');
+			const logStub = sinon.stub(console, 'log');
 			fakeProcess.stderr.emit('data', Buffer.from('some ffmpeg warning'));
-			assert.ok(warnStub.calledOnce, 'Should log stderr');
-			assert.ok(warnStub.firstCall.args[1].includes('some ffmpeg warning'));
-			warnStub.restore();
+			assert.ok(logStub.calledOnce, 'Should log stderr');
+			assert.ok(logStub.firstCall.args[1].includes('some ffmpeg warning'));
+			logStub.restore();
 		});
 	});
 

@@ -2,7 +2,7 @@
   "name": "verba",
   "displayName": "Verba",
   "description": "The Developer's Dictation Extension – Voice dictation with AI-powered post-processing for VS Code",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "publisher": "talent-factory",
   "repository": {
     "type": "git",

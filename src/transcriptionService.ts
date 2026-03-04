@@ -70,7 +70,7 @@ export class TranscriptionService {
 		};
 
 		if (glossary?.length) {
-			options.keywords = glossary.map(term => `${term}:2`);
+			options.keyterm = glossary.map(term => `${term}:2`);
 		}
 
 		let response: any;

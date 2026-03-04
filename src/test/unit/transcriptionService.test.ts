@@ -234,7 +234,7 @@ suite('TranscriptionService', () => {
 			);
 		});
 
-		test('passes glossary terms as keywords with boost to Deepgram', async () => {
+		test('passes glossary terms as keyterm with boost to Deepgram', async () => {
 			secretStorage.get.resolves('dg-test-key');
 			fakeClient.listen.prerecorded.transcribeFile.resolves(deepgramResponse('Visual Studio Code is great'));
 			sinon.stub(fs, 'readFileSync').returns(Buffer.from('fake-wav'));
@@ -242,10 +242,10 @@ suite('TranscriptionService', () => {
 			await service.process('/tmp/test.wav', ['Visual Studio Code', 'Kubernetes']);
 
 			const [, options] = fakeClient.listen.prerecorded.transcribeFile.firstCall.args;
-			assert.deepStrictEqual(options.keywords, ['Visual Studio Code:2', 'Kubernetes:2']);
+			assert.deepStrictEqual(options.keyterm, ['Visual Studio Code:2', 'Kubernetes:2']);
 		});
 
-		test('omits keywords when glossary is empty', async () => {
+		test('omits keyterm when glossary is empty', async () => {
 			secretStorage.get.resolves('dg-test-key');
 			fakeClient.listen.prerecorded.transcribeFile.resolves(deepgramResponse('Hello world'));
 			sinon.stub(fs, 'readFileSync').returns(Buffer.from('fake-wav'));
@@ -253,10 +253,10 @@ suite('TranscriptionService', () => {
 			await service.process('/tmp/test.wav', []);
 
 			const [, options] = fakeClient.listen.prerecorded.transcribeFile.firstCall.args;
-			assert.strictEqual(options.keywords, undefined);
+			assert.strictEqual(options.keyterm, undefined);
 		});
 
-		test('omits keywords when glossary is undefined', async () => {
+		test('omits keyterm when glossary is undefined', async () => {
 			secretStorage.get.resolves('dg-test-key');
 			fakeClient.listen.prerecorded.transcribeFile.resolves(deepgramResponse('Hello world'));
 			sinon.stub(fs, 'readFileSync').returns(Buffer.from('fake-wav'));
@@ -264,7 +264,7 @@ suite('TranscriptionService', () => {
 			await service.process('/tmp/test.wav');
 
 			const [, options] = fakeClient.listen.prerecorded.transcribeFile.firstCall.args;
-			assert.strictEqual(options.keywords, undefined);
+			assert.strictEqual(options.keyterm, undefined);
 		});
 	});
 

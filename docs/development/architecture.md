@@ -45,6 +45,14 @@ The context search uses one of two providers:
 - **grepai** — External CLI tool that provides semantic search over the codebase.
 - **OpenAI Embeddings** — Local vector store built from chunked project files, queried via cosine similarity.
 
+## Transcription Provider
+
+Verba uses **Deepgram Nova-3** for cloud transcription (both single-shot and continuous mode). This replaced OpenAI Whisper after systematic evaluation of 7 providers -- Whisper's hallucination problem on short audio segments made it unreliable for continuous dictation. Deepgram was chosen for its built-in VAD, WebSocket streaming, lower cost ($0.0043/min vs $0.006/min), and minimal hallucinations.
+
+Local offline transcription via **whisper.cpp** remains available as an alternative.
+
+For the full evaluation and decision rationale, see [ADR: Deepgram Migration](adr-deepgram-migration.md).
+
 ## Cross-Platform Audio
 
 The `recorder.ts` module handles platform differences:

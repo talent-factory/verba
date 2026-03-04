@@ -1,6 +1,6 @@
 site_name: Verba
 site_description: The Developer's Dictation Extension — Voice dictation with AI-powered post-processing for VS Code
-site_url: https://talent-factory.github.io/verba
+site_url: https://talent-factory.github.io/verba/
 repo_url: https://github.com/talent-factory/verba
 repo_name: talent-factory/verba
 
@@ -67,5 +67,6 @@ nav:
     - Configuration: guide/configuration.md
   - Development:
     - Architecture: development/architecture.md
+    - ADR - Deepgram Migration: development/adr-deepgram-migration.md
     - Contributing: development/contributing.md
   - Changelog: changelog.md

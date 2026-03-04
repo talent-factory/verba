@@ -87,6 +87,32 @@ suite('TranscriptionService', () => {
 			assert.strictEqual(options.detect_language, true);
 		});
 
+		test('uses fixed language when setLanguage is called with non-auto value', async () => {
+			secretStorage.get.resolves('dg-test-key');
+			fakeClient.listen.prerecorded.transcribeFile.resolves(deepgramResponse('Hallo Welt'));
+			sinon.stub(fs, 'readFileSync').returns(Buffer.from('fake-wav'));
+
+			service.setLanguage('de');
+			await service.process('/tmp/test.wav');
+
+			const [, options] = fakeClient.listen.prerecorded.transcribeFile.firstCall.args;
+			assert.strictEqual(options.language, 'de');
+			assert.strictEqual(options.detect_language, undefined, 'detect_language should not be set for fixed language');
+		});
+
+		test('uses multi language with detect_language when setLanguage is auto', async () => {
+			secretStorage.get.resolves('dg-test-key');
+			fakeClient.listen.prerecorded.transcribeFile.resolves(deepgramResponse('Hello'));
+			sinon.stub(fs, 'readFileSync').returns(Buffer.from('fake-wav'));
+
+			service.setLanguage('auto');
+			await service.process('/tmp/test.wav');
+
+			const [, options] = fakeClient.listen.prerecorded.transcribeFile.firstCall.args;
+			assert.strictEqual(options.language, 'multi');
+			assert.strictEqual(options.detect_language, true);
+		});
+
 		test('prompts for API key when none is stored', async () => {
 			secretStorage.get.resolves(undefined);
 			promptApiKeyStub.resolves('dg-new-key');

@@ -156,6 +156,13 @@ export function activate(context: vscode.ExtensionContext) {
 	}
 	applyTranscriptionProvider();
 
+	function applyLanguageSetting(): void {
+		const language = vscode.workspace.getConfiguration('verba').get<string>('language', 'auto');
+		transcriptionService.setLanguage(language);
+		console.log(`[Verba] Transcription language: ${language === 'auto' ? 'multi (auto-detect)' : language}`);
+	}
+	applyLanguageSetting();
+
 	function applyGlossary(): void {
 		currentGlossary = loadGlossary();
 		cleanupService.setGlossary(currentGlossary);
@@ -768,6 +775,9 @@ export function activate(context: vscode.ExtensionContext) {
 				vscode.window.showWarningMessage('Verba: Failed to reload transcription settings. Changes may not take effect until VS Code is restarted.');
 			}
 			statusBar.setIdle(selectedTemplate?.name);
+		}
+		if (e.affectsConfiguration('verba.language')) {
+			applyLanguageSetting();
 		}
 	});
 	context.subscriptions.push(settingsWatcher);
@@ -1404,6 +1414,8 @@ export function activate(context: vscode.ExtensionContext) {
 
 			// Create recorder
 			continuousRecorder = new ContinuousRecorder(deepgramApiKey);
+			const continuousLanguage = vscode.workspace.getConfiguration('verba').get<string>('language', 'auto');
+			continuousRecorder.setLanguage(continuousLanguage);
 			continuousSegmentsInserted = 0;
 			continuousSegmentQueue = Promise.resolve();
 

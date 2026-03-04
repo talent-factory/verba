@@ -52,10 +52,17 @@ export class ContinuousRecorder extends EventEmitter {
 	private sendFailureCount: number = 0;
 	private static readonly MAX_SEND_FAILURES = 10;
 
+	private _language: string = 'auto';
+
 	constructor(private deepgramApiKey: string) {
 		super();
 		// Prevent unhandled 'error' events during startup (before extension registers listeners)
 		this.on('error', () => {});
+	}
+
+	/** Sets the language for Deepgram streaming. `'auto'` uses multilingual mode. */
+	setLanguage(language: string): void {
+		this._language = language;
 	}
 
 	/** Whether a recording is currently in progress. */
@@ -109,9 +116,10 @@ export class ContinuousRecorder extends EventEmitter {
 		// Create Deepgram live connection
 		const { createClient, LiveTranscriptionEvents } = getDeepgramSdk();
 		const client = createClient(this.deepgramApiKey);
+		const isAutoLanguage = this._language === 'auto';
 		this.connection = client.listen.live({
 			model: 'nova-3',
-			language: 'multi',
+			language: isAutoLanguage ? 'multi' : this._language,
 			smart_format: true,
 			interim_results: true,
 			utterance_end_ms: 1500,

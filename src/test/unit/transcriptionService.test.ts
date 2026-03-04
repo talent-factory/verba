@@ -274,7 +274,7 @@ suite('TranscriptionService', () => {
 			fakeClient.listen.prerecorded.transcribeFile.resolves(deepgramResponse('Hello'));
 			sinon.stub(fs, 'readFileSync').returns(Buffer.from('fake-wav'));
 
-			// Generate 200 terms like "term0:2" (7 chars → ceil(7/3)=3 tokens). Budget 350 → ~116 fit.
+			// Generate 200 terms like "term0:2" (7 chars → ceil(7/3)=3 tokens). Budget 200 → ~66 fit.
 			// But "term100:2"=9 chars→3 tokens, so expect truncation well below 200.
 			const bigGlossary = Array.from({ length: 200 }, (_, i) => `term${i}`);
 			await service.process('/tmp/test.wav', bigGlossary);
@@ -282,7 +282,7 @@ suite('TranscriptionService', () => {
 			const [, options] = fakeClient.listen.prerecorded.transcribeFile.firstCall.args;
 			assert.ok(Array.isArray(options.keyterm));
 			assert.ok(options.keyterm.length < 200, `Expected truncation, got ${options.keyterm.length} terms`);
-			assert.ok(options.keyterm.length >= 80, `Expected at least 80 terms, got ${options.keyterm.length}`);
+			assert.ok(options.keyterm.length >= 40, `Expected at least 40 terms, got ${options.keyterm.length}`);
 			// All entries should have :2 boost suffix
 			assert.ok(options.keyterm.every((kt: string) => kt.endsWith(':2')));
 		});

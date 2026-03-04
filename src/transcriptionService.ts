@@ -73,7 +73,7 @@ export class TranscriptionService {
 			options.keywords = glossary.map(term => `${term}:2`);
 		}
 
-		let response;
+		let response: any;
 		try {
 			response = await client.listen.prerecorded.transcribeFile(audioBuffer, options);
 		} catch (err: unknown) {
@@ -88,7 +88,18 @@ export class TranscriptionService {
 			throw new Error(`Transcription failed: ${detail}`);
 		}
 
-		const rawText = response?.result?.results?.channels?.[0]?.alternatives?.[0]?.transcript || '';
+		// Deepgram SDK returns { result, error } union — check for error response
+		if (response?.error) {
+			const errMsg = response.error?.message || JSON.stringify(response.error);
+			throw new Error(`Transcription failed: ${errMsg}`);
+		}
+
+		if (!response?.result) {
+			console.error('[Verba] Deepgram response has no result:', JSON.stringify(response, null, 2).substring(0, 500));
+			throw new Error('Transcription failed: Deepgram returned no result');
+		}
+
+		const rawText = response.result.results?.channels?.[0]?.alternatives?.[0]?.transcript || '';
 		console.log(`[Verba] Deepgram raw response (${rawText.length} chars): ${rawText.substring(0, 200)}`);
 
 		return this.validateTranscript(rawText);

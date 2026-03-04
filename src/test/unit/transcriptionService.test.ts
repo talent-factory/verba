@@ -170,6 +170,34 @@ suite('TranscriptionService', () => {
 			);
 		});
 
+		test('throws descriptive error when Deepgram returns error response', async () => {
+			secretStorage.get.resolves('dg-test-key');
+			fakeClient.listen.prerecorded.transcribeFile.resolves({
+				result: null,
+				error: { message: 'Invalid audio format' },
+			});
+			sinon.stub(fs, 'readFileSync').returns(Buffer.from('fake-wav'));
+
+			await assert.rejects(
+				() => service.process('/tmp/test.wav'),
+				/Transcription failed: Invalid audio format/
+			);
+		});
+
+		test('throws when Deepgram returns no result', async () => {
+			secretStorage.get.resolves('dg-test-key');
+			fakeClient.listen.prerecorded.transcribeFile.resolves({
+				result: null,
+				error: null,
+			});
+			sinon.stub(fs, 'readFileSync').returns(Buffer.from('fake-wav'));
+
+			await assert.rejects(
+				() => service.process('/tmp/test.wav'),
+				/Deepgram returned no result/
+			);
+		});
+
 		test('throws silence error when transcript is only dots or ellipsis', async () => {
 			secretStorage.get.resolves('dg-test-key');
 			sinon.stub(fs, 'readFileSync').returns(Buffer.from('fake-wav'));

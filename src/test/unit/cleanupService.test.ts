@@ -871,6 +871,20 @@ suite('CleanupService', () => {
 			assert.ok(callArgs.system.includes('The transcript language is: deu'),
 				'should accept 3-letter language codes');
 		});
+
+		test('accepts BCP-47 codes with region tag (e.g. de-CH)', async () => {
+			secretStorage.get.resolves('sk-ant-test-key');
+			fakeClient.messages.create.resolves({
+				content: [{ type: 'text', text: 'cleaned' }],
+			});
+
+			const context: PipelineContext = { detectedLanguage: 'de-CH' };
+			await service.process('test input', context);
+
+			const callArgs = fakeClient.messages.create.firstCall.args[0];
+			assert.ok(callArgs.system.includes('The transcript language is: de-CH'),
+				'should accept BCP-47 codes with region tag');
+		});
 	});
 
 	suite('processStreaming()', () => {

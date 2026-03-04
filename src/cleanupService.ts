@@ -169,7 +169,7 @@ export class CleanupService implements ProcessingStage {
 		input: string,
 	): Promise<{ client: Anthropic; systemPrompt: string; userMessage: string }> {
 		const langCode = context?.detectedLanguage;
-		const languageHint = langCode && /^[a-z]{2,3}$/.test(langCode)
+		const languageHint = langCode && /^[a-z]{2,3}(-[A-Za-z]{2,4})?$/.test(langCode)
 			? `\nThe transcript language is: ${langCode}. Respond in the same language.\n`
 			: '';
 		const glossaryInstruction = this.glossary.length > 0

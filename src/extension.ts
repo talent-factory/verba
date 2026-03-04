@@ -87,7 +87,7 @@ function resolveLanguage(autoDetected: string | undefined): string | undefined {
 	const setting = vscode.workspace.getConfiguration('verba').get<string>('language', 'auto');
 	const lang = setting !== 'auto' ? setting : autoDetected;
 	if (!lang) { return undefined; }
-	if (!/^[a-z]{2,3}$/.test(lang)) {
+	if (!/^[a-z]{2,3}(-[A-Za-z]{2,4})?$/.test(lang)) {
 		console.warn(`[Verba] Invalid language value "${lang}" — expected ISO 639-1 code (e.g. "de", "en"). Ignoring.`);
 		return undefined;
 	}

@@ -16,7 +16,7 @@ Basierend auf Marktanalyse (Feb 2026) gegen Wispr Flow, SuperWhisper, VoiceInk, 
 | 7 | Adaptive Personal Dictionary | Mittel | Mittel | [TF-263](https://linear.app/talent-factory/issue/TF-263) | Auto-Glossar aus Projekt-Kontext (Package-Namen, Klassen, Symbole). Wispr Flow lernt Begriffe automatisch. |
 | 8 | Diktat-History mit Volltextsuche | Niedrig | Niedrig | [TF-264](https://linear.app/talent-factory/issue/TF-264) | Vergangene Diktate wiederfinden und erneut einfuegen. SuperWhisper hat das als Major-Update (Jan 2026). |
 | 9 | Multi-Cursor / Selection-aware Dictation | Mittel | Mittel | [TF-265](https://linear.app/talent-factory/issue/TF-265) | VS Code Multi-Cursor und Selection nutzen. Kein Konkurrent bietet das — einzigartiger IDE-USP. |
-| 10 | Noise Gate / Auto-Pause | Niedrig | Niedrig | [TF-266](https://linear.app/talent-factory/issue/TF-266) | ffmpeg Noise Gate gegen Whisper-Halluzinationen bei Hintergrundgeraeuschen. Kein Konkurrent bietet das. |
+| ~~10~~ | ~~Noise Gate / Auto-Pause~~ | — | — | [TF-266](https://linear.app/talent-factory/issue/TF-266) | ~~Cancelled~~ — Obsolet durch Deepgram-Migration (TF-272). Deepgram Nova-3 hat built-in VAD und halluziniert nicht bei Hintergrundgeraeuschen. Siehe [ADR](development/adr-deepgram-migration.md). |
 
 ## Marketing
 

@@ -194,19 +194,26 @@ Each template consists of `name` (displayed in Quick Pick), `prompt` (instructio
 ## Architecture
 
 ```
-Microphone --> ffmpeg (WAV) --> Deepgram API     --> Claude API --> Editor/Terminal
+Microphone --> ffmpeg (WAV) --> Deepgram API    --> Claude API --> Editor/Terminal
                             \-> whisper.cpp CLI /   (Template)
 ```
 
 | Module | Purpose |
 |--------|---------|
 | `recorder.ts` | ffmpeg child process for audio recording (macOS/Linux/Windows) |
-| `transcriptionService.ts` | Transcription via Deepgram Nova-3 API or local whisper.cpp CLI (glossary hints) |
-| `cleanupService.ts` | Anthropic Claude API integration (streaming, course correction, voice commands, glossary) |
+| `transcriptionService.ts` | Transcription via Deepgram pre-recorded API or local whisper.cpp CLI (glossary hints) |
+| `cleanupService.ts` | Anthropic Claude API integration (streaming, course correction, voice commands, glossary, text expansions) |
 | `pipeline.ts` | Processing stage orchestration |
 | `templatePicker.ts` | Quick Pick menu for template selection |
-| `insertText.ts` | Text insertion into editor or terminal |
+| `insertText.ts` | Text insertion into editor or terminal (multi-cursor, selection replacement) |
 | `statusBarManager.ts` | Status bar display (Idle/Recording/Transcribing/Processing with character counter) |
+| `costTracker.ts` | API usage cost tracking with persistence via globalState |
+| `costOverviewPanel.ts` | WebView panel for cost overview (card layout, session/total toggle) |
+| `wavDuration.ts` | WAV file duration calculation from PCM header (for Deepgram cost tracking) |
+| `glossaryGenerator.ts` | Scans workspace for project-specific glossary terms (metadata, symbols, docs) |
+| `historyManager.ts` | Dictation history with globalState persistence and full-text search |
+| `historyCommands.ts` | Quick Pick UI for browsing, searching, and acting on history entries |
+| `continuousRecorder.ts` | Deepgram WebSocket streaming, ffmpeg audio capture, EventEmitter |
 
 ## Development
 

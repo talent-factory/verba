@@ -168,6 +168,10 @@ export class CleanupService implements ProcessingStage {
 		context: PipelineContext | undefined,
 		input: string,
 	): Promise<{ client: Anthropic; systemPrompt: string; userMessage: string }> {
+		const langCode = context?.detectedLanguage;
+		const languageHint = langCode && /^[a-z]{2,3}(-[A-Za-z]{2,4})?$/.test(langCode)
+			? `\nThe transcript language is: ${langCode}. Respond in the same language.\n`
+			: '';
 		const glossaryInstruction = this.glossary.length > 0
 			? `\nBehalte folgende Begriffe exakt bei (nicht uebersetzen, nicht kuerzen, nicht aendern): ${this.glossary.join(', ')}.`
 			: '';
@@ -175,8 +179,8 @@ export class CleanupService implements ProcessingStage {
 			? `\nExpandiere folgende Abkuerzungen im Text (ersetze die Kurzform durch die Langform): ${this.expansions.map(e => `"${sanitize(e.abbreviation)}" → "${sanitize(e.expansion)}"`).join(', ')}.`
 			: '';
 		const systemPrompt = context?.templatePrompt
-			? TEMPLATE_FRAMING + glossaryInstruction + expansionInstruction + '\n' + context.templatePrompt
-			: CLEANUP_SYSTEM_PROMPT + glossaryInstruction + expansionInstruction;
+			? TEMPLATE_FRAMING + languageHint + glossaryInstruction + expansionInstruction + '\n' + context.templatePrompt
+			: CLEANUP_SYSTEM_PROMPT + languageHint + glossaryInstruction + expansionInstruction;
 		const apiKey = await this.getApiKey();
 		const client = this.getClient(apiKey);
 

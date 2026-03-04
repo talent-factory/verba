@@ -19,6 +19,7 @@ const FakeLiveTranscriptionEvents = {
 class FakeDeepgramConnection extends EventEmitter {
 	send = sinon.stub();
 	requestClose = sinon.stub();
+	finish = sinon.stub();
 }
 
 function createFakeDeepgramSdk(fakeConnection: FakeDeepgramConnection) {
@@ -141,6 +142,17 @@ suite('ContinuousRecorder (Deepgram)', () => {
 		// Advance clock to pass the 500ms ffmpeg startup heuristic
 		await clock.tickAsync(500);
 		await startPromise;
+	}
+
+	/**
+	 * Completes a stop() call by:
+	 * 1. Emitting 'close' on ffmpeg to complete the ffmpeg shutdown
+	 * 2. Advancing the clock by 2000ms to resolve the Deepgram drain timeout
+	 */
+	async function completeStop(stopPromise: Promise<void>): Promise<void> {
+		fakeProcess.emit('close', 0);
+		await clock.tickAsync(2000);
+		await stopPromise;
 	}
 
 	suite('constructor and properties', () => {
@@ -304,6 +316,62 @@ suite('ContinuousRecorder (Deepgram)', () => {
 			assert.strictEqual(interimTexts.length, 0);
 		});
 
+		test('duplicate UtteranceEnd for same text does not re-emit', async () => {
+			await startRecording();
+
+			const transcriptEvents: TranscriptEvent[] = [];
+			cr.on('transcript', (evt: TranscriptEvent) => transcriptEvents.push(evt));
+
+			// First utterance
+			fakeConnection.emit(FakeLiveTranscriptionEvents.Transcript, {
+				channel: { alternatives: [{ transcript: 'Same text' }] },
+				is_final: true,
+			});
+			fakeConnection.emit(FakeLiveTranscriptionEvents.UtteranceEnd);
+
+			// Deepgram re-sends the same is_final transcript and UtteranceEnd
+			fakeConnection.emit(FakeLiveTranscriptionEvents.Transcript, {
+				channel: { alternatives: [{ transcript: 'Same text' }] },
+				is_final: true,
+			});
+			fakeConnection.emit(FakeLiveTranscriptionEvents.UtteranceEnd);
+
+			assert.strictEqual(transcriptEvents.length, 1, 'Should only emit once for duplicate text');
+			assert.strictEqual(transcriptEvents[0].text, 'Same text');
+		});
+
+		test('different text after duplicate is emitted normally', async () => {
+			await startRecording();
+
+			const transcriptEvents: TranscriptEvent[] = [];
+			cr.on('transcript', (evt: TranscriptEvent) => transcriptEvents.push(evt));
+
+			// First utterance
+			fakeConnection.emit(FakeLiveTranscriptionEvents.Transcript, {
+				channel: { alternatives: [{ transcript: 'First' }] },
+				is_final: true,
+			});
+			fakeConnection.emit(FakeLiveTranscriptionEvents.UtteranceEnd);
+
+			// Duplicate (suppressed)
+			fakeConnection.emit(FakeLiveTranscriptionEvents.Transcript, {
+				channel: { alternatives: [{ transcript: 'First' }] },
+				is_final: true,
+			});
+			fakeConnection.emit(FakeLiveTranscriptionEvents.UtteranceEnd);
+
+			// New different utterance
+			fakeConnection.emit(FakeLiveTranscriptionEvents.Transcript, {
+				channel: { alternatives: [{ transcript: 'Second' }] },
+				is_final: true,
+			});
+			fakeConnection.emit(FakeLiveTranscriptionEvents.UtteranceEnd);
+
+			assert.strictEqual(transcriptEvents.length, 2);
+			assert.strictEqual(transcriptEvents[0].text, 'First');
+			assert.strictEqual(transcriptEvents[1].text, 'Second');
+		});
+
 		test('UtteranceEnd with no pending transcript does not emit', async () => {
 			await startRecording();
 
@@ -331,23 +399,64 @@ suite('ContinuousRecorder (Deepgram)', () => {
 
 			assert.strictEqual(transcriptEvents.length, 0, 'Should not emit before stop');
 
-			const stopPromise = cr.stop();
-			fakeProcess.emit('close', 0);
-			await stopPromise;
+			await completeStop(cr.stop());
 
 			assert.strictEqual(transcriptEvents.length, 1, 'Should flush on stop');
 			assert.strictEqual(transcriptEvents[0].text, 'unsent text');
 			assert.strictEqual(transcriptEvents[0].isFinal, true);
 		});
 
+		test('drain period allows Deepgram to deliver remaining transcripts', async () => {
+			await startRecording();
+
+			const transcriptEvents: TranscriptEvent[] = [];
+			cr.on('transcript', (evt: TranscriptEvent) => transcriptEvents.push(evt));
+
+			// Start stop — ffmpeg closes first
+			const stopPromise = cr.stop();
+			fakeProcess.emit('close', 0);
+
+			// Flush microtasks so stop() advances past ffmpeg close to drain phase
+			await clock.tickAsync(0);
+
+			// During drain period, Deepgram delivers remaining transcript
+			fakeConnection.emit(FakeLiveTranscriptionEvents.Transcript, {
+				channel: { alternatives: [{ transcript: 'final words from Deepgram' }] },
+				is_final: true,
+			});
+			fakeConnection.emit(FakeLiveTranscriptionEvents.UtteranceEnd);
+
+			// UtteranceEnd resolves drain early (no need to wait full 2s)
+			await stopPromise;
+
+			assert.strictEqual(transcriptEvents.length, 1);
+			assert.strictEqual(transcriptEvents[0].text, 'final words from Deepgram');
+		});
+
+		test('events after stop completes are ignored', async () => {
+			await startRecording();
+
+			const transcriptEvents: TranscriptEvent[] = [];
+			cr.on('transcript', (evt: TranscriptEvent) => transcriptEvents.push(evt));
+
+			await completeStop(cr.stop());
+
+			// Events arriving AFTER stop should be ignored (_stopping flag)
+			fakeConnection.emit(FakeLiveTranscriptionEvents.Transcript, {
+				channel: { alternatives: [{ transcript: 'After stop' }] },
+				is_final: true,
+			});
+			fakeConnection.emit(FakeLiveTranscriptionEvents.UtteranceEnd);
+			assert.strictEqual(transcriptEvents.length, 0, 'Events after stop must be ignored');
+		});
+
 		test('stops ffmpeg and closes Deepgram connection', async () => {
 			await startRecording();
 
-			const stopPromise = cr.stop();
-			fakeProcess.emit('close', 0);
-			await stopPromise;
+			await completeStop(cr.stop());
 
 			assert.ok(fakeProcess.stdin.write.calledWith('q', sinon.match.func), 'Should send q to ffmpeg');
+			assert.ok(fakeConnection.finish.calledOnce, 'Should call finish() to signal end-of-audio');
 			assert.ok(fakeConnection.requestClose.calledOnce, 'Should close Deepgram connection');
 		});
 
@@ -355,9 +464,7 @@ suite('ContinuousRecorder (Deepgram)', () => {
 			await startRecording();
 			assert.strictEqual(cr.isRecording, true);
 
-			const stopPromise = cr.stop();
-			fakeProcess.emit('close', 0);
-			await stopPromise;
+			await completeStop(cr.stop());
 
 			assert.strictEqual(cr.isRecording, false);
 		});
@@ -368,9 +475,7 @@ suite('ContinuousRecorder (Deepgram)', () => {
 			const stoppedSpy = sinon.spy();
 			cr.on('stopped', stoppedSpy);
 
-			const stopPromise = cr.stop();
-			fakeProcess.emit('close', 0);
-			await stopPromise;
+			await completeStop(cr.stop());
 
 			assert.ok(stoppedSpy.calledOnce, 'Should emit stopped event');
 		});
@@ -392,9 +497,7 @@ suite('ContinuousRecorder (Deepgram)', () => {
 				}
 			);
 
-			const stopPromise = cr.stop();
-			fakeProcess.emit('close', 0);
-			await stopPromise;
+			await completeStop(cr.stop());
 
 			assert.ok(fakeProcess.kill.calledWith('SIGKILL'), 'Should fall back to SIGKILL');
 		});
@@ -403,9 +506,7 @@ suite('ContinuousRecorder (Deepgram)', () => {
 			await startRecording();
 			(fakeProcess.stdin as any).destroyed = true;
 
-			const stopPromise = cr.stop();
-			fakeProcess.emit('close', 0);
-			await stopPromise;
+			await completeStop(cr.stop());
 
 			assert.ok(fakeProcess.kill.calledWith('SIGKILL'), 'Should fall back to SIGKILL');
 		});

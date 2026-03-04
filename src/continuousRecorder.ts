@@ -42,8 +42,10 @@ export class ContinuousRecorder extends EventEmitter {
 	private ffmpegProcess: ChildProcess | null = null;
 	private connection: any = null;  // LiveClient from @deepgram/sdk
 	private _isRecording: boolean = false;
+	private _stopping: boolean = false;
 	private _utteranceCount: number = 0;
 	private pendingTranscript: string = '';
+	private lastEmittedText: string = '';
 
 	constructor(private deepgramApiKey: string) { super(); }
 
@@ -93,6 +95,7 @@ export class ContinuousRecorder extends EventEmitter {
 
 		// Set up Deepgram event handlers
 		this.connection.on(LiveTranscriptionEvents.Transcript, (data: any) => {
+			if (this._stopping) { return; }
 			const transcript = data.channel?.alternatives?.[0]?.transcript || '';
 			if (!transcript) { return; }
 			if (data.is_final) {
@@ -103,15 +106,17 @@ export class ContinuousRecorder extends EventEmitter {
 		});
 
 		this.connection.on(LiveTranscriptionEvents.UtteranceEnd, () => {
-			if (this.pendingTranscript) {
+			if (this._stopping) { return; }
+			if (this.pendingTranscript && this.pendingTranscript !== this.lastEmittedText) {
+				this.lastEmittedText = this.pendingTranscript;
 				const idx = this._utteranceCount++;
 				this.emit('transcript', {
 					text: this.pendingTranscript,
 					isFinal: true,
 					utteranceIndex: idx,
 				} as TranscriptEvent);
-				this.pendingTranscript = '';
 			}
+			this.pendingTranscript = '';
 		});
 
 		this.connection.on(LiveTranscriptionEvents.Error, (error: any) => {
@@ -167,7 +172,9 @@ export class ContinuousRecorder extends EventEmitter {
 				if (this.ffmpegProcess && !this.ffmpegProcess.killed) {
 					this._isRecording = true;
 					this._utteranceCount = 0;
+					this._stopping = false;
 					this.pendingTranscript = '';
+					this.lastEmittedText = '';
 					resolve();
 				} else {
 					reject(new Error('ffmpeg terminated during startup'));
@@ -194,18 +201,7 @@ export class ContinuousRecorder extends EventEmitter {
 			throw new Error('No continuous recording in progress');
 		}
 
-		// Flush pending transcript
-		if (this.pendingTranscript) {
-			const idx = this._utteranceCount++;
-			this.emit('transcript', {
-				text: this.pendingTranscript,
-				isFinal: true,
-				utteranceIndex: idx,
-			} as TranscriptEvent);
-			this.pendingTranscript = '';
-		}
-
-		// Stop ffmpeg
+		// Step 1: Stop ffmpeg (stop sending audio to Deepgram)
 		if (this.ffmpegProcess) {
 			const proc = this.ffmpegProcess;
 			this.ffmpegProcess = null;
@@ -230,7 +226,38 @@ export class ContinuousRecorder extends EventEmitter {
 			});
 		}
 
-		// Close Deepgram
+		// Step 2: Let Deepgram finish processing buffered audio.
+		// Signal end-of-audio, then wait for final UtteranceEnd or timeout.
+		if (this.connection) {
+			try {
+				if (typeof this.connection.finish === 'function') {
+					this.connection.finish();
+				}
+			} catch { /**/ }
+
+			const { LiveTranscriptionEvents } = getDeepgramSdk();
+			await new Promise<void>((resolve) => {
+				const timeout = setTimeout(resolve, 2000);
+				this.connection?.on(LiveTranscriptionEvents.UtteranceEnd, () => {
+					clearTimeout(timeout);
+					resolve();
+				});
+			});
+		}
+
+		// Step 3: Block further Deepgram events and flush remaining text
+		this._stopping = true;
+		if (this.pendingTranscript) {
+			const idx = this._utteranceCount++;
+			this.emit('transcript', {
+				text: this.pendingTranscript,
+				isFinal: true,
+				utteranceIndex: idx,
+			} as TranscriptEvent);
+			this.pendingTranscript = '';
+		}
+
+		// Step 4: Close Deepgram connection
 		if (this.connection) {
 			try { this.connection.requestClose(); } catch { /**/ }
 			this.connection = null;

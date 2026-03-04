@@ -17,7 +17,7 @@ Verba requires three things to work:
 | Requirement | Purpose |
 |-------------|---------|
 | [ffmpeg](https://ffmpeg.org/) | Audio recording from your microphone |
-| OpenAI API Key | Whisper transcription |
+| Deepgram API Key | Nova-3 transcription |
 | Anthropic API Key | Claude post-processing |
 
 ### Installing ffmpeg

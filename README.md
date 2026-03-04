@@ -13,7 +13,7 @@
 </p>
 
 <p align="center">
-  Verba records speech via your microphone, transcribes it with OpenAI Whisper, and post-processes the transcript with Claude — all directly inside VS Code. Filler words are removed, sentences are smoothed, and the result is inserted at your cursor position.
+  Verba records speech via your microphone, transcribes it with Deepgram Nova-3, and post-processes the transcript with Claude — all directly inside VS Code. Filler words are removed, sentences are smoothed, and the result is inserted at your cursor position.
 </p>
 
 ---
@@ -37,7 +37,7 @@
 ## Prerequisites
 
 - [ffmpeg](https://ffmpeg.org/) must be installed (audio recording)
-- OpenAI API Key (Whisper transcription) -- *or* [whisper-cpp](https://github.com/ggml-org/whisper.cpp) for offline transcription
+- Deepgram API Key (Nova-3 transcription) -- *or* [whisper-cpp](https://github.com/ggml-org/whisper.cpp) for offline transcription
 - Anthropic API Key (Claude post-processing)
 
 ### Installing ffmpeg
@@ -138,7 +138,7 @@ Use the **Claude Code Prompt** template to dictate tasks for Claude Code. Verba 
     text appears incrementally during post-processing"
 4. Cmd+Shift+D → recording stops
 5. Verba:
-   a) Transcribes via Whisper
+   a) Transcribes via Deepgram
    b) Searches codebase context (pipeline.ts, cleanupService.ts, ...)
    c) Claude generates an optimized prompt:
 
@@ -186,7 +186,7 @@ Each template consists of `name` (displayed in Quick Pick), `prompt` (instructio
 | `verba.templates` | Array | 8 built-in templates | Prompt templates for post-processing |
 | `verba.terminal.executeCommand` | Boolean | `false` | Submit text in terminal with Enter |
 | `verba.glossary` | Array | `[]` | Terms preserved during transcription and cleanup (recommended limit: ~80 terms) |
-| `verba.transcription.provider` | String | `"openai"` | Transcription provider: `openai` (API) or `local` (whisper.cpp) |
+| `verba.transcription.provider` | String | `"deepgram"` | Transcription provider: `deepgram` (API) or `local` (whisper.cpp) |
 | `verba.transcription.localModel` | String | `"base"` | Whisper model for local transcription: `tiny`, `base`, `small`, `medium`, `large-v3-turbo` |
 | `verba.contextSearch.provider` | String | `"auto"` | Context search provider: `auto` uses grepai if available, otherwise OpenAI Embeddings |
 | `verba.contextSearch.maxResults` | Number | `5` | Number of context snippets per dictation (1--20) |
@@ -194,14 +194,14 @@ Each template consists of `name` (displayed in Quick Pick), `prompt` (instructio
 ## Architecture
 
 ```
-Microphone --> ffmpeg (WAV) --> Whisper API     --> Claude API --> Editor/Terminal
+Microphone --> ffmpeg (WAV) --> Deepgram API     --> Claude API --> Editor/Terminal
                             \-> whisper.cpp CLI /   (Template)
 ```
 
 | Module | Purpose |
 |--------|---------|
 | `recorder.ts` | ffmpeg child process for audio recording (macOS/Linux/Windows) |
-| `transcriptionService.ts` | Transcription via OpenAI Whisper API or local whisper.cpp CLI (glossary hints) |
+| `transcriptionService.ts` | Transcription via Deepgram Nova-3 API or local whisper.cpp CLI (glossary hints) |
 | `cleanupService.ts` | Anthropic Claude API integration (streaming, course correction, voice commands, glossary) |
 | `pipeline.ts` | Processing stage orchestration |
 | `templatePicker.ts` | Quick Pick menu for template selection |

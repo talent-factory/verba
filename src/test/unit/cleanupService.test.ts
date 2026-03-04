@@ -1305,6 +1305,19 @@ suite('CleanupService', () => {
 			assert.strictEqual(fakeClient.messages.stream.callCount, 1, 'should not retry 401');
 		});
 
+		test('streaming does not retry 429 errors', async () => {
+			secretStorage.get.resolves('sk-ant-test-key');
+			const rateLimitError = new Error('Rate limited');
+			(rateLimitError as any).status = 429;
+			fakeClient.messages.stream.returns(createFakeStream([], { throwDuring: rateLimitError }));
+
+			await assert.rejects(
+				() => service.processStreaming('test', undefined, sinon.stub()),
+				/rate limit reached/,
+			);
+			assert.strictEqual(fakeClient.messages.stream.callCount, 1, 'should not retry 429');
+		});
+
 		test('onChunk callback failure does not crash the stream', async () => {
 			secretStorage.get.resolves('sk-ant-test-key');
 			fakeClient.messages.stream.returns(createFakeStream(['Hello', ' world']));

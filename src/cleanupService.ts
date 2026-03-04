@@ -105,7 +105,9 @@ export class CleanupService implements ProcessingStage {
 				if (isOverloadedError(err) && attempt < MAX_ATTEMPTS) {
 					const delay = RETRY_BASE_DELAY_MS * Math.pow(2, attempt - 1);
 					console.log(`[Verba] API overloaded (attempt ${attempt}/${MAX_ATTEMPTS}), retrying in ${delay}ms…`);
-					this.onRetry?.(attempt + 1, MAX_ATTEMPTS);
+					try { this.onRetry?.(attempt + 1, MAX_ATTEMPTS); } catch (cbErr) {
+						console.warn('[Verba] onRetry callback failed (non-fatal):', cbErr);
+					}
 					await this.sleep(delay);
 					continue;
 				}
@@ -196,7 +198,9 @@ export class CleanupService implements ProcessingStage {
 				if (isOverloadedError(err) && attempt < MAX_ATTEMPTS) {
 					const delay = RETRY_BASE_DELAY_MS * Math.pow(2, attempt - 1);
 					console.log(`[Verba] API overloaded during streaming (attempt ${attempt}/${MAX_ATTEMPTS}), retrying in ${delay}ms…`);
-					this.onRetry?.(attempt + 1, MAX_ATTEMPTS);
+					try { this.onRetry?.(attempt + 1, MAX_ATTEMPTS); } catch (cbErr) {
+						console.warn('[Verba] onRetry callback failed (non-fatal):', cbErr);
+					}
 					await this.sleep(delay);
 					continue;
 				}

@@ -101,6 +101,7 @@ export function activate(context: vscode.ExtensionContext) {
 	let continuousSegmentQueue: Promise<void> = Promise.resolve();
 	let continuousSegmentsInserted = 0;
 	let continuousAbortController: AbortController | null = null;
+	let continuousStopInProgress = false;
 
 	function applyTranscriptionProvider(): void {
 		const config = vscode.workspace.getConfiguration('verba.transcription');
@@ -1288,6 +1289,7 @@ export function activate(context: vscode.ExtensionContext) {
 
 		// Stop continuous recording if already active
 		if (continuousRecorder?.isRecording) {
+			continuousStopInProgress = true;
 			try {
 				console.log(`[Verba] Stopping continuous recording (${continuousSegmentsInserted} segments so far)`);
 				await continuousRecorder.stop();
@@ -1309,6 +1311,8 @@ export function activate(context: vscode.ExtensionContext) {
 					continuousRecorder.dispose();
 					continuousRecorder = null;
 				}
+			} finally {
+				continuousStopInProgress = false;
 			}
 			return;
 		}
@@ -1523,7 +1527,7 @@ export function activate(context: vscode.ExtensionContext) {
 
 			// Handle unexpected stop (e.g. ffmpeg crash) — reset UI
 			continuousRecorder.on('stopped', () => {
-				if (continuousRecorder?.isRecording === false) {
+				if (!continuousStopInProgress && continuousRecorder) {
 					console.log('[Verba] Continuous recorder stopped unexpectedly, resetting UI');
 					statusBar.setIdle(selectedTemplate?.name);
 					continuousRecorder.dispose();
@@ -1544,7 +1548,14 @@ export function activate(context: vscode.ExtensionContext) {
 			statusBar.setIdle(selectedTemplate?.name);
 			console.error('[Verba] Start continuous recording failed:', err);
 			const message = err instanceof Error ? err.message : String(err);
-			vscode.window.showErrorMessage(`Verba: ${message}`);
+			if (message.includes('auth') || message.includes('401') || message.includes('403') || message.includes('connection failed')) {
+				await context.secrets.delete(DEEPGRAM_API_KEY_STORAGE_KEY);
+				vscode.window.showErrorMessage(
+					'Verba: Deepgram API key invalid. It has been removed — you will be prompted for a new key on the next attempt. Or use "Verba: Manage API Keys".'
+				);
+			} else {
+				vscode.window.showErrorMessage(`Verba: ${message}`);
+			}
 		}
 	});
 

@@ -46,8 +46,14 @@ export class ContinuousRecorder extends EventEmitter {
 	private _utteranceCount: number = 0;
 	private pendingTranscript: string = '';
 	private lastEmittedText: string = '';
+	private sendFailureCount: number = 0;
+	private static readonly MAX_SEND_FAILURES = 10;
 
-	constructor(private deepgramApiKey: string) { super(); }
+	constructor(private deepgramApiKey: string) {
+		super();
+		// Prevent unhandled 'error' events during startup (before extension registers listeners)
+		this.on('error', () => {});
+	}
 
 	/** Whether a recording is currently in progress. */
 	get isRecording(): boolean { return this._isRecording; }
@@ -124,6 +130,14 @@ export class ContinuousRecorder extends EventEmitter {
 			this.emit('error', error instanceof Error ? error : new Error(String(error)));
 		});
 
+		this.connection.on(LiveTranscriptionEvents.Close, () => {
+			// Only report unexpected closes — during stop(), ffmpegProcess is already null
+			if (this._isRecording && !this._stopping && this.ffmpegProcess) {
+				console.error('[Verba] Deepgram WebSocket closed unexpectedly');
+				this.emit('error', new Error('Deepgram connection closed unexpectedly. Transcription may be incomplete.'));
+			}
+		});
+
 		// Wait for Deepgram connection to open
 		await new Promise<void>((resolve, reject) => {
 			const timeout = setTimeout(() => reject(new Error('Deepgram connection timed out (10s)')), 10000);
@@ -155,9 +169,20 @@ export class ContinuousRecorder extends EventEmitter {
 		// Pipe ffmpeg stdout to Deepgram
 		this.ffmpegProcess.stdout?.on('data', (chunk: Buffer) => {
 			try {
-				if (this.connection) { this.connection.send(chunk); }
+				if (this.connection) {
+					this.connection.send(chunk);
+					this.sendFailureCount = 0;
+				}
 			} catch (e) {
-				console.error('[Verba] Deepgram send failed:', e);
+				this.sendFailureCount++;
+				if (this.sendFailureCount <= 3) {
+					console.error(`[Verba] Deepgram send failed (${this.sendFailureCount}):`, e);
+				}
+				if (this.sendFailureCount >= ContinuousRecorder.MAX_SEND_FAILURES) {
+					this.emit('error', new Error('Deepgram connection broken (multiple send failures). Stopping recording.'));
+					this.dispose();
+					this.emit('stopped');
+				}
 			}
 		});
 
@@ -180,6 +205,7 @@ export class ContinuousRecorder extends EventEmitter {
 					this._stopping = false;
 					this.pendingTranscript = '';
 					this.lastEmittedText = '';
+					this.sendFailureCount = 0;
 					resolve();
 				} else {
 					reject(new Error('ffmpeg terminated during startup'));
@@ -214,9 +240,16 @@ export class ContinuousRecorder extends EventEmitter {
 				const killTimer = setTimeout(() => {
 					try { proc.kill('SIGKILL'); } catch (e) { console.error('[Verba] ffmpeg SIGKILL failed:', e); }
 				}, 3000);
+				// Force-resolve after 5s to prevent hanging forever
+				const maxTimer = setTimeout(() => {
+					console.error('[Verba] ffmpeg did not exit within 5s, force-continuing');
+					clearTimeout(killTimer);
+					resolve();
+				}, 5000);
 				proc.removeAllListeners('close');
 				proc.on('close', () => {
 					clearTimeout(killTimer);
+					clearTimeout(maxTimer);
 					resolve();
 				});
 				if (proc.stdin && !(proc.stdin as any).destroyed) {

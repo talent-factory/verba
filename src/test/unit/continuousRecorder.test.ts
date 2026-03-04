@@ -219,8 +219,6 @@ suite('ContinuousRecorder (Deepgram)', () => {
 		});
 
 		test('rejects when Deepgram connection emits error during open', async () => {
-			// Suppress unhandled 'error' on ContinuousRecorder EventEmitter
-			cr.on('error', () => {});
 			const startPromise = cr.start();
 			fakeConnection.emit(FakeLiveTranscriptionEvents.Error, 'auth failure');
 			await assert.rejects(startPromise, /Deepgram connection failed/);
@@ -617,6 +615,93 @@ suite('ContinuousRecorder (Deepgram)', () => {
 			assert.strictEqual(errorEvents.length, 1);
 			assert.ok(errorEvents[0] instanceof Error);
 			assert.ok(errorEvents[0].message.includes('string error'));
+		});
+
+		test('Deepgram Close event emits error when recording', async () => {
+			await startRecording();
+
+			const errorEvents: Error[] = [];
+			cr.on('error', (err: Error) => errorEvents.push(err));
+
+			fakeConnection.emit(FakeLiveTranscriptionEvents.Close);
+
+			assert.strictEqual(errorEvents.length, 1);
+			assert.ok(errorEvents[0].message.includes('closed unexpectedly'));
+		});
+
+		test('Deepgram Close event is ignored during stop', async () => {
+			await startRecording();
+
+			const errorEvents: Error[] = [];
+			cr.on('error', (err: Error) => errorEvents.push(err));
+
+			// Simulate stop sequence
+			const stopPromise = cr.stop();
+			fakeProcess.emit('close', 0);
+			await clock.tickAsync(0);
+
+			// Close event during drain should not emit error
+			fakeConnection.emit(FakeLiveTranscriptionEvents.Close);
+			await clock.tickAsync(2000);
+			await stopPromise;
+
+			// Only check for "closed unexpectedly" — there should be none
+			const unexpectedCloseErrors = errorEvents.filter(e => e.message.includes('closed unexpectedly'));
+			assert.strictEqual(unexpectedCloseErrors.length, 0, 'Close during stop should not emit error');
+		});
+
+		test('send circuit breaker stops recording after repeated failures', async () => {
+			await startRecording();
+
+			const errorEvents: Error[] = [];
+			const stoppedSpy = sinon.spy();
+			cr.on('error', (err: Error) => errorEvents.push(err));
+			cr.on('stopped', stoppedSpy);
+
+			// Make send() throw
+			fakeConnection.send.throws(new Error('WebSocket CLOSED'));
+
+			// Send 10 audio chunks (MAX_SEND_FAILURES)
+			for (let i = 0; i < 10; i++) {
+				fakeProcess.stdout.emit('data', Buffer.from([0x01]));
+			}
+
+			// Should have emitted error and stopped
+			const breakerErrors = errorEvents.filter(e => e.message.includes('multiple send failures'));
+			assert.strictEqual(breakerErrors.length, 1, 'Should emit circuit breaker error');
+			assert.ok(stoppedSpy.calledOnce, 'Should emit stopped');
+			assert.strictEqual(cr.isRecording, false);
+		});
+
+		test('send failure counter resets on successful send', async () => {
+			await startRecording();
+
+			const errorEvents: Error[] = [];
+			cr.on('error', (err: Error) => errorEvents.push(err));
+
+			// Fail 5 times, then succeed, then fail 5 more — should not trip breaker
+			fakeConnection.send.throws(new Error('WebSocket error'));
+			for (let i = 0; i < 5; i++) {
+				fakeProcess.stdout.emit('data', Buffer.from([0x01]));
+			}
+
+			fakeConnection.send.reset();
+			fakeConnection.send.returns(undefined);
+			fakeProcess.stdout.emit('data', Buffer.from([0x01])); // success resets counter
+
+			fakeConnection.send.throws(new Error('WebSocket error'));
+			for (let i = 0; i < 5; i++) {
+				fakeProcess.stdout.emit('data', Buffer.from([0x01]));
+			}
+
+			const breakerErrors = errorEvents.filter(e => e.message.includes('multiple send failures'));
+			assert.strictEqual(breakerErrors.length, 0, 'Should not trip breaker after reset');
+			assert.strictEqual(cr.isRecording, true);
+		});
+
+		test('constructor registers default error handler to prevent unhandled errors', () => {
+			const recorder = new ContinuousRecorder('test-key');
+			assert.ok(recorder.listenerCount('error') >= 1, 'Should have default error handler');
 		});
 	});
 });

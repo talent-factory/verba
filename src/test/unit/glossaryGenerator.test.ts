@@ -13,6 +13,11 @@ suite('filterTerms', () => {
 		assert.deepStrictEqual(result, ['Pipeline', 'Verba']);
 	});
 
+	test('removes common English stopwords from bold markdown', () => {
+		const result = filterTerms(['must', 'should', 'with', 'that', 'Verba', 'returns', 'function'], []);
+		assert.deepStrictEqual(result, ['Verba']);
+	});
+
 	test('removes already existing glossary terms', () => {
 		const result = filterTerms(['Verba', 'Claude', 'Whisper'], ['Claude']);
 		assert.deepStrictEqual(result, ['Verba', 'Whisper']);
@@ -225,6 +230,23 @@ Some text here.
 		assert.ok(result.includes('Top Level'));
 		assert.ok(!result.includes('Deep Heading'));
 		assert.ok(!result.includes('Even Deeper'));
+	});
+
+	test('strips trailing colons from headings', () => {
+		const md = `## API Keys:\n## Architecture\n### Setup:\n`;
+		const result = GlossaryGenerator.parseDocs(md);
+		assert.ok(result.includes('API Keys'));
+		assert.ok(result.includes('Architecture'));
+		assert.ok(result.includes('Setup'));
+		assert.ok(!result.some(t => t.endsWith(':')));
+	});
+
+	test('strips trailing colons from bold terms', () => {
+		const md = `This is about **Language:** and **Verba** integration.`;
+		const result = GlossaryGenerator.parseDocs(md);
+		assert.ok(result.includes('Language'));
+		assert.ok(result.includes('Verba'));
+		assert.ok(!result.some(t => t.endsWith(':')));
 	});
 
 	test('returns empty for content without headings or bold', () => {

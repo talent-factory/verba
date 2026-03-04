@@ -265,6 +265,94 @@ suite('CleanupService', () => {
 			);
 		});
 
+		test('retries on 529 overloaded error and succeeds on second attempt', async () => {
+			secretStorage.get.resolves('sk-ant-test-key');
+			const overloadedError = new Error('Overloaded');
+			(overloadedError as any).status = 529;
+
+			fakeClient.messages.create
+				.onFirstCall().rejects(overloadedError)
+				.onSecondCall().resolves({
+					content: [{ type: 'text', text: 'Cleaned after retry' }],
+					usage: { input_tokens: 10, output_tokens: 5 },
+				});
+
+			// Stub sleep to avoid real delays
+			const sleepStub = sinon.stub(service as any, 'sleep').resolves();
+
+			const result = await service.process('test input');
+
+			assert.strictEqual(result, 'Cleaned after retry');
+			assert.strictEqual(fakeClient.messages.create.callCount, 2);
+			assert.ok(sleepStub.calledOnce);
+			assert.strictEqual(sleepStub.firstCall.args[0], 1000, 'first retry delay should be 1000ms');
+		});
+
+		test('retries on 529 up to 3 attempts then throws', async () => {
+			secretStorage.get.resolves('sk-ant-test-key');
+			const overloadedError = new Error('Overloaded');
+			(overloadedError as any).status = 529;
+			fakeClient.messages.create.rejects(overloadedError);
+
+			const sleepStub = sinon.stub(service as any, 'sleep').resolves();
+
+			await assert.rejects(
+				() => service.process('test'),
+				/overloaded/
+			);
+			assert.strictEqual(fakeClient.messages.create.callCount, 3);
+			assert.strictEqual(sleepStub.callCount, 2, 'should sleep between attempts');
+			assert.strictEqual(sleepStub.firstCall.args[0], 1000);
+			assert.strictEqual(sleepStub.secondCall.args[0], 2000);
+		});
+
+		test('calls onRetry callback during 529 retry', async () => {
+			secretStorage.get.resolves('sk-ant-test-key');
+			const overloadedError = new Error('Overloaded');
+			(overloadedError as any).status = 529;
+
+			fakeClient.messages.create
+				.onFirstCall().rejects(overloadedError)
+				.onSecondCall().resolves({
+					content: [{ type: 'text', text: 'ok' }],
+				});
+
+			sinon.stub(service as any, 'sleep').resolves();
+			const onRetrySpy = sinon.spy();
+			service.onRetry = onRetrySpy;
+
+			await service.process('test');
+
+			assert.ok(onRetrySpy.calledOnce);
+			assert.deepStrictEqual(onRetrySpy.firstCall.args, [2, 3]);
+		});
+
+		test('does not retry 401 errors', async () => {
+			secretStorage.get.resolves('sk-ant-test-key');
+			const authError = new Error('Unauthorized');
+			(authError as any).status = 401;
+			fakeClient.messages.create.rejects(authError);
+
+			await assert.rejects(
+				() => service.process('test'),
+				/Invalid Anthropic API key/
+			);
+			assert.strictEqual(fakeClient.messages.create.callCount, 1, 'should not retry 401');
+		});
+
+		test('does not retry 429 errors', async () => {
+			secretStorage.get.resolves('sk-ant-test-key');
+			const rateLimitError = new Error('Rate limited');
+			(rateLimitError as any).status = 429;
+			fakeClient.messages.create.rejects(rateLimitError);
+
+			await assert.rejects(
+				() => service.process('test'),
+				/rate limit reached/
+			);
+			assert.strictEqual(fakeClient.messages.create.callCount, 1, 'should not retry 429');
+		});
+
 		test('uses custom system prompt from context when provided', async () => {
 			secretStorage.get.resolves('sk-ant-test-key');
 			fakeClient.messages.create.resolves({
@@ -783,6 +871,110 @@ suite('CleanupService', () => {
 
 	});
 
+	suite('language hint', () => {
+		test('includes language hint in system prompt when detectedLanguage is provided', async () => {
+			secretStorage.get.resolves('sk-ant-test-key');
+			fakeClient.messages.create.resolves({
+				content: [{ type: 'text', text: 'cleaned' }],
+			});
+
+			const context: PipelineContext = { detectedLanguage: 'de' };
+			await service.process('test input', context);
+
+			const callArgs = fakeClient.messages.create.firstCall.args[0];
+			assert.ok(callArgs.system.includes('The transcript language is: de'),
+				'system prompt should contain language hint');
+			assert.ok(callArgs.system.includes('Respond in the same language'),
+				'system prompt should instruct Claude to respond in the same language');
+		});
+
+		test('includes language hint with template prompt when detectedLanguage is provided', async () => {
+			secretStorage.get.resolves('sk-ant-test-key');
+			fakeClient.messages.create.resolves({
+				content: [{ type: 'text', text: 'cleaned' }],
+			});
+
+			const context: PipelineContext = {
+				templatePrompt: 'Write a commit message.',
+				detectedLanguage: 'en',
+			};
+			await service.process('test input', context);
+
+			const callArgs = fakeClient.messages.create.firstCall.args[0];
+			assert.ok(callArgs.system.includes('The transcript language is: en'),
+				'template system prompt should contain language hint');
+		});
+
+		test('omits language hint when detectedLanguage is undefined', async () => {
+			secretStorage.get.resolves('sk-ant-test-key');
+			fakeClient.messages.create.resolves({
+				content: [{ type: 'text', text: 'cleaned' }],
+			});
+
+			await service.process('test input');
+
+			const callArgs = fakeClient.messages.create.firstCall.args[0];
+			assert.ok(!callArgs.system.includes('The transcript language is'),
+				'system prompt should not contain language hint when no language detected');
+		});
+
+		test('omits language hint when context has no detectedLanguage', async () => {
+			secretStorage.get.resolves('sk-ant-test-key');
+			fakeClient.messages.create.resolves({
+				content: [{ type: 'text', text: 'cleaned' }],
+			});
+
+			const context: PipelineContext = { templatePrompt: 'Write a commit message.' };
+			await service.process('test input', context);
+
+			const callArgs = fakeClient.messages.create.firstCall.args[0];
+			assert.ok(!callArgs.system.includes('The transcript language is'),
+				'system prompt should not contain language hint when detectedLanguage is absent');
+		});
+
+		test('rejects invalid language code to prevent prompt injection', async () => {
+			secretStorage.get.resolves('sk-ant-test-key');
+			fakeClient.messages.create.resolves({
+				content: [{ type: 'text', text: 'cleaned' }],
+			});
+
+			const context: PipelineContext = { detectedLanguage: 'invalid-code' };
+			await service.process('test input', context);
+
+			const callArgs = fakeClient.messages.create.firstCall.args[0];
+			assert.ok(!callArgs.system.includes('The transcript language is'),
+				'should reject non-ISO 639-1 language codes');
+		});
+
+		test('accepts 3-letter ISO 639-2 language codes', async () => {
+			secretStorage.get.resolves('sk-ant-test-key');
+			fakeClient.messages.create.resolves({
+				content: [{ type: 'text', text: 'cleaned' }],
+			});
+
+			const context: PipelineContext = { detectedLanguage: 'deu' };
+			await service.process('test input', context);
+
+			const callArgs = fakeClient.messages.create.firstCall.args[0];
+			assert.ok(callArgs.system.includes('The transcript language is: deu'),
+				'should accept 3-letter language codes');
+		});
+
+		test('accepts BCP-47 codes with region tag (e.g. de-CH)', async () => {
+			secretStorage.get.resolves('sk-ant-test-key');
+			fakeClient.messages.create.resolves({
+				content: [{ type: 'text', text: 'cleaned' }],
+			});
+
+			const context: PipelineContext = { detectedLanguage: 'de-CH' };
+			await service.process('test input', context);
+
+			const callArgs = fakeClient.messages.create.firstCall.args[0];
+			assert.ok(callArgs.system.includes('The transcript language is: de-CH'),
+				'should accept BCP-47 codes with region tag');
+		});
+	});
+
 	suite('processStreaming()', () => {
 		function createFakeStream(chunks: string[], options?: { throwDuring?: Error }) {
 			return {
@@ -1044,6 +1236,88 @@ suite('CleanupService', () => {
 			);
 		});
 
+		test('retries streaming on 529 overloaded error and succeeds', async () => {
+			secretStorage.get.resolves('sk-ant-test-key');
+			const overloadedError = new Error('Overloaded');
+			(overloadedError as any).status = 529;
+
+			fakeClient.messages.stream
+				.onFirstCall().returns(createFakeStream([], { throwDuring: overloadedError }))
+				.onSecondCall().returns(createFakeStream(['Retry', ' success']));
+
+			const sleepStub = sinon.stub(service as any, 'sleep').resolves();
+			const onChunk = sinon.stub();
+
+			const result = await service.processStreaming('test', undefined, onChunk);
+
+			assert.strictEqual(result, 'Retry success');
+			assert.strictEqual(fakeClient.messages.stream.callCount, 2);
+			assert.ok(sleepStub.calledOnce);
+			assert.strictEqual(sleepStub.firstCall.args[0], 1000);
+		});
+
+		test('streaming retries up to 3 attempts on 529 then throws', async () => {
+			secretStorage.get.resolves('sk-ant-test-key');
+			const overloadedError = new Error('Overloaded');
+			(overloadedError as any).status = 529;
+
+			fakeClient.messages.stream.returns(createFakeStream([], { throwDuring: overloadedError }));
+
+			const sleepStub = sinon.stub(service as any, 'sleep').resolves();
+
+			await assert.rejects(
+				() => service.processStreaming('test', undefined, sinon.stub()),
+				/overloaded/,
+			);
+			assert.strictEqual(fakeClient.messages.stream.callCount, 3);
+			assert.strictEqual(sleepStub.callCount, 2);
+		});
+
+		test('streaming calls onRetry during 529 retry', async () => {
+			secretStorage.get.resolves('sk-ant-test-key');
+			const overloadedError = new Error('Overloaded');
+			(overloadedError as any).status = 529;
+
+			fakeClient.messages.stream
+				.onFirstCall().returns(createFakeStream([], { throwDuring: overloadedError }))
+				.onSecondCall().returns(createFakeStream(['ok']));
+
+			sinon.stub(service as any, 'sleep').resolves();
+			const onRetrySpy = sinon.spy();
+			service.onRetry = onRetrySpy;
+
+			await service.processStreaming('test', undefined, sinon.stub());
+
+			assert.ok(onRetrySpy.calledOnce);
+			assert.deepStrictEqual(onRetrySpy.firstCall.args, [2, 3]);
+		});
+
+		test('streaming does not retry 401 errors', async () => {
+			secretStorage.get.resolves('sk-ant-test-key');
+			const authError = new Error('Unauthorized');
+			(authError as any).status = 401;
+			fakeClient.messages.stream.returns(createFakeStream([], { throwDuring: authError }));
+
+			await assert.rejects(
+				() => service.processStreaming('test', undefined, sinon.stub()),
+				/Invalid Anthropic API key/,
+			);
+			assert.strictEqual(fakeClient.messages.stream.callCount, 1, 'should not retry 401');
+		});
+
+		test('streaming does not retry 429 errors', async () => {
+			secretStorage.get.resolves('sk-ant-test-key');
+			const rateLimitError = new Error('Rate limited');
+			(rateLimitError as any).status = 429;
+			fakeClient.messages.stream.returns(createFakeStream([], { throwDuring: rateLimitError }));
+
+			await assert.rejects(
+				() => service.processStreaming('test', undefined, sinon.stub()),
+				/rate limit reached/,
+			);
+			assert.strictEqual(fakeClient.messages.stream.callCount, 1, 'should not retry 429');
+		});
+
 		test('onChunk callback failure does not crash the stream', async () => {
 			secretStorage.get.resolves('sk-ant-test-key');
 			fakeClient.messages.stream.returns(createFakeStream(['Hello', ' world']));
@@ -1122,6 +1396,41 @@ suite('CleanupService', () => {
 			await service.processStreaming('raw input', undefined, sinon.stub());
 
 			assert.strictEqual(service.lastUsage, undefined);
+		});
+
+		test('includes language hint in streaming system prompt when detectedLanguage is provided', async () => {
+			secretStorage.get.resolves('sk-ant-test-key');
+			fakeClient.messages.stream.returns(createFakeStream(['cleaned']));
+
+			const context: PipelineContext = { detectedLanguage: 'de' };
+			await service.processStreaming('test input', context, sinon.stub());
+
+			const callArgs = fakeClient.messages.stream.firstCall.args[0];
+			assert.ok(callArgs.system.includes('The transcript language is: de'),
+				'streaming system prompt should contain language hint');
+		});
+
+		test('omits language hint in streaming when detectedLanguage is absent', async () => {
+			secretStorage.get.resolves('sk-ant-test-key');
+			fakeClient.messages.stream.returns(createFakeStream(['cleaned']));
+
+			await service.processStreaming('test input', undefined, sinon.stub());
+
+			const callArgs = fakeClient.messages.stream.firstCall.args[0];
+			assert.ok(!callArgs.system.includes('The transcript language is'),
+				'streaming system prompt should not contain language hint when absent');
+		});
+
+		test('rejects invalid language codes in streaming prompt', async () => {
+			secretStorage.get.resolves('sk-ant-test-key');
+			fakeClient.messages.stream.returns(createFakeStream(['cleaned']));
+
+			const context: PipelineContext = { detectedLanguage: 'invalid-code' };
+			await service.processStreaming('test input', context, sinon.stub());
+
+			const callArgs = fakeClient.messages.stream.firstCall.args[0];
+			assert.ok(!callArgs.system.includes('The transcript language is'),
+				'should reject non-ISO 639-1 language codes');
 		});
 	});
 });

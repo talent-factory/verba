@@ -52,8 +52,9 @@ suite('insertText', () => {
 		const cursor = sel(5, 10, 5, 10);
 		const editor = fakeEditor([cursor]);
 
-		await insertText('hello world', editor as any, undefined, false);
+		const result = await insertText('hello world', editor as any, undefined, false);
 
+		assert.strictEqual(result.target, 'editor');
 		assert.ok(editor.edit.calledOnce);
 		const insertStub = (editor as any)._lastInsertStub;
 		assert.ok(insertStub.calledOnce);
@@ -65,8 +66,9 @@ suite('insertText', () => {
 		const sendTextStub = sinon.stub();
 		const fakeTerminal = { sendText: sendTextStub };
 
-		await insertText('hello world', undefined, fakeTerminal as any, false);
+		const result = await insertText('hello world', undefined, fakeTerminal as any, false);
 
+		assert.strictEqual(result.target, 'terminal');
 		assert.ok(sendTextStub.calledOnce);
 		assert.deepStrictEqual(sendTextStub.firstCall.args, ['hello world', false]);
 	});
@@ -110,8 +112,9 @@ suite('insertText', () => {
 		const sendTextStub = sinon.stub();
 		const fakeTerminal = { sendText: sendTextStub };
 
-		await insertText('hello', editor as any, fakeTerminal as any, false, true);
+		const result = await insertText('hello', editor as any, fakeTerminal as any, false, true);
 
+		assert.strictEqual(result.target, 'terminal');
 		assert.ok(sendTextStub.calledOnce, 'terminal.sendText should be called');
 		assert.ok(editor.edit.notCalled, 'editor.edit should not be called');
 	});

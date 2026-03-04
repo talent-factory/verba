@@ -7,7 +7,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-blue)](#)
 
-Verba records speech via your microphone, transcribes it with **OpenAI Whisper**, and post-processes the transcript with **Claude** — all directly inside VS Code. Filler words are removed, sentences are smoothed, and the result is inserted at your cursor position.
+Verba records speech via your microphone, transcribes it with **Deepgram Nova-3**, and post-processes the transcript with **Claude** — all directly inside VS Code. Filler words are removed, sentences are smoothed, and the result is inserted at your cursor position.
 
 ![Verba Dictation Workflow](images/screenshots/dictation-workflow.gif)
 

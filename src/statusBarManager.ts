@@ -4,7 +4,7 @@ import type { TranscriptionProvider } from './transcriptionService';
 /** Manages the Verba status bar item, reflecting the current dictation state. */
 export class StatusBarManager {
 	private item: vscode.StatusBarItem;
-	private _provider: TranscriptionProvider = 'openai';
+	private _provider: TranscriptionProvider = 'deepgram';
 
 	constructor() {
 		this.item = vscode.window.createStatusBarItem(
@@ -27,7 +27,7 @@ export class StatusBarManager {
 			? `$(mic) Verba: ${templateName}`
 			: '$(mic) Verba';
 		this.item.backgroundColor = undefined;
-		const providerLabel = this._provider === 'local' ? 'Local (whisper.cpp)' : 'OpenAI Whisper';
+		const providerLabel = this._provider === 'local' ? 'Local (whisper.cpp)' : 'Deepgram Nova-3';
 		this.item.tooltip = templateName
 			? `Provider: ${providerLabel} · Template: ${templateName} — Click to start dictation`
 			: `Provider: ${providerLabel} — Click to start dictation`;
@@ -42,6 +42,19 @@ export class StatusBarManager {
 		this.item.tooltip = 'Click to stop dictation';
 	}
 
+	/** Shows continuous recording state with optional segment count and processing indicator. */
+	setRecordingContinuous(segmentsInserted?: number, processingSegment?: boolean): void {
+		if (processingSegment && segmentsInserted !== undefined) {
+			this.item.text = `$(circle-filled) Recording | Processing seg ${segmentsInserted + 1}...`;
+		} else if (segmentsInserted !== undefined && segmentsInserted > 0) {
+			this.item.text = `$(circle-filled) Recording (${segmentsInserted} segments inserted)`;
+		} else {
+			this.item.text = '$(circle-filled) Continuous Recording...';
+		}
+		this.item.backgroundColor = new vscode.ThemeColor('statusBarItem.errorBackground');
+		this.item.tooltip = 'Click to stop continuous dictation';
+	}
+
 	/** Shows a spinner while transcription is in progress, indicating the active provider. */
 	setTranscribing(): void {
 		const suffix = this._provider === 'local' ? ' (local)' : '';
@@ -49,7 +62,7 @@ export class StatusBarManager {
 		this.item.backgroundColor = undefined;
 		this.item.tooltip = this._provider === 'local'
 			? 'Transcribing audio via whisper.cpp...'
-			: 'Transcribing audio via OpenAI Whisper...';
+			: 'Transcribing audio via Deepgram Nova-3...';
 	}
 
 	/** Shows a spinner during Claude post-processing, optionally with a live character count. */
@@ -59,6 +72,13 @@ export class StatusBarManager {
 			: '$(loading~spin) Processing...';
 		this.item.backgroundColor = undefined;
 		this.item.tooltip = 'Processing dictation...';
+	}
+
+	/** Shows a retry indicator when the API is temporarily overloaded. */
+	setRetrying(attempt: number, maxAttempts: number): void {
+		this.item.text = `$(loading~spin) API busy, retrying (${attempt}/${maxAttempts})...`;
+		this.item.backgroundColor = undefined;
+		this.item.tooltip = 'Anthropic API is overloaded, retrying...';
 	}
 
 	/** Disposes the underlying VS Code status bar item. */

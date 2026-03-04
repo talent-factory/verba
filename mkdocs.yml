@@ -1,34 +1,40 @@
 site_name: Verba
 site_description: The Developer's Dictation Extension — Voice dictation with AI-powered post-processing for VS Code
-site_url: https://talent-factory.github.io/verba
+site_url: https://talent-factory.github.io/verba/
 repo_url: https://github.com/talent-factory/verba
 repo_name: talent-factory/verba
 
 theme:
   name: material
+  logo: images/logo.svg
+  favicon: images/favicon.ico
   palette:
     - media: "(prefers-color-scheme: light)"
       scheme: default
-      primary: deep purple
-      accent: amber
+      primary: custom
+      accent: custom
       toggle:
         icon: material/brightness-7
         name: Switch to dark mode
     - media: "(prefers-color-scheme: dark)"
       scheme: slate
-      primary: deep purple
-      accent: amber
+      primary: custom
+      accent: custom
       toggle:
         icon: material/brightness-4
         name: Switch to light mode
   features:
+    - navigation.tabs
     - navigation.sections
-    - navigation.expand
     - navigation.top
+    - navigation.indexes
     - search.highlight
     - content.code.copy
   icon:
     repo: fontawesome/brands/github
+
+extra_css:
+  - stylesheets/theme.css
 
 markdown_extensions:
   - admonition
@@ -61,5 +67,6 @@ nav:
     - Configuration: guide/configuration.md
   - Development:
     - Architecture: development/architecture.md
+    - ADR - Deepgram Migration: development/adr-deepgram-migration.md
     - Contributing: development/contributing.md
   - Changelog: changelog.md

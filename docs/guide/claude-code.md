@@ -20,7 +20,7 @@ Use Verba's **Claude Code Prompt** template to dictate tasks for Claude Code. Ve
     text appears incrementally during post-processing"
 4. Cmd+Shift+D  →  recording stops
 5. Verba:
-   a) Transcribes via Whisper
+   a) Transcribes via Deepgram
    b) Searches codebase context (pipeline.ts, cleanupService.ts, ...)
    c) Claude generates an optimized prompt:
 

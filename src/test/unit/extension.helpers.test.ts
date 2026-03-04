@@ -313,3 +313,4 @@ suite('WHISPER_MODELS', () => {
 		assert.ok(WHISPER_MODEL_BASE_URL.startsWith('https://huggingface.co/'));
 	});
 });
+

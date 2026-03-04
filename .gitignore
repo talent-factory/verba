@@ -6,7 +6,11 @@ node_modules/
 .grepai/
 .verba/
 .serena/
+.worktrees/
 
+# Ignore personal Documentation
+docs/plans/*.md
 site/
 
 .claude/settings.local.json
+.claude/handoffs/**

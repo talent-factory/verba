@@ -6,6 +6,8 @@ export interface PipelineContext {
 	contextSnippets?: string[];
 	/** Text that was selected in the editor when recording started. */
 	selectedText?: string;
+	/** ISO 639-1 language code detected by the transcription provider (e.g. "de", "en"). */
+	detectedLanguage?: string;
 }
 
 /** A single step in the dictation processing pipeline. */

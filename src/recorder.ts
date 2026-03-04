@@ -3,6 +3,227 @@ import * as path from 'path';
 import * as os from 'os';
 import * as fs from 'fs';
 
+// ── Standalone ffmpeg helper functions ──────────────────────────────────
+// Exported so that both FfmpegRecorder and ContinuousRecorder can use them.
+
+/** Returns platform-specific candidate paths where ffmpeg might be installed. */
+export function getFfmpegCandidatePaths(): string[] {
+	switch (process.platform) {
+		case 'darwin':
+			return ['/opt/homebrew/bin/ffmpeg', '/usr/local/bin/ffmpeg'];
+		case 'linux':
+			return ['/usr/bin/ffmpeg', '/usr/local/bin/ffmpeg'];
+		case 'win32': {
+			const paths = [
+				'C:\\ProgramData\\chocolatey\\bin\\ffmpeg.exe',
+				path.join(os.homedir(), 'scoop', 'shims', 'ffmpeg.exe'),
+				'C:\\ffmpeg\\bin\\ffmpeg.exe',
+			];
+			const programFiles = process.env['ProgramFiles'];
+			if (programFiles) {
+				paths.push(path.join(programFiles, 'ffmpeg', 'bin', 'ffmpeg.exe'));
+			}
+			const localAppData = process.env['LOCALAPPDATA'];
+			if (localAppData) {
+				paths.push(path.join(localAppData, 'Microsoft', 'WinGet', 'Links', 'ffmpeg.exe'));
+			}
+			return paths;
+		}
+		default:
+			return [];
+	}
+}
+
+/** Returns a platform-specific hint on how to install ffmpeg. */
+export function getFfmpegInstallHint(): string {
+	switch (process.platform) {
+		case 'darwin':
+			return 'Install it via: brew install ffmpeg';
+		case 'linux':
+			return 'Install it via: sudo apt install ffmpeg (Debian/Ubuntu) or sudo dnf install ffmpeg (Fedora)';
+		case 'win32':
+			return 'Download from https://ffmpeg.org/download.html and add to PATH';
+		default:
+			return 'Install ffmpeg and ensure it is available in PATH';
+	}
+}
+
+/**
+ * Finds the ffmpeg binary on the system.
+ *
+ * Checks common platform-specific paths first (avoids shell overhead and
+ * PATH issues in VS Code's sandboxed environment), then falls back to
+ * which(1) (Unix) or where (Windows) via spawnSync.
+ */
+export function findFfmpeg(): string | null {
+	const candidates = getFfmpegCandidatePaths();
+
+	for (const candidate of candidates) {
+		if (fs.existsSync(candidate)) {
+			return candidate;
+		}
+	}
+
+	if (process.platform === 'win32') {
+		const result = spawnSync('where', ['ffmpeg'], {
+			encoding: 'utf-8',
+			timeout: 5000,
+			windowsHide: true,
+		});
+		const stdout = (result.stdout || '').trim();
+		if (stdout) {
+			return stdout.split(/\r?\n/)[0];
+		}
+	} else {
+		try {
+			const result = execSync('which ffmpeg', {
+				encoding: 'utf-8',
+				timeout: 5000,
+			}).trim();
+			if (result) {
+				return result;
+			}
+		} catch (err: unknown) {
+			const detail = err instanceof Error ? err.message : String(err);
+			console.warn(`[Verba] "which ffmpeg" lookup failed: ${detail}`);
+		}
+	}
+
+	return null;
+}
+
+/** Lists available DirectShow audio input devices via ffmpeg (Windows). */
+function listAudioDevicesFromFfmpeg(ffmpegPath: string): string[] {
+	const result = spawnSync(ffmpegPath, [
+		'-list_devices', 'true', '-f', 'dshow', '-i', 'dummy',
+	], {
+		encoding: 'utf-8',
+		timeout: 10000,
+		windowsHide: true,
+	});
+
+	if (result.error) {
+		console.warn(`[Verba] ffmpeg list_devices failed: ${result.error.message}`);
+		return [];
+	}
+
+	const stderr = result.stderr || '';
+	if (!stderr) {
+		console.warn('[Verba] ffmpeg list_devices produced no stderr output');
+		return [];
+	}
+
+	const lines = stderr.split('\n');
+	const devices: string[] = [];
+
+	// ffmpeg v8+ lists devices as: "DeviceName" (audio)
+	// Older versions use a section header: "DirectShow audio devices"
+	// Support both formats.
+	let inAudioSection = false;
+
+	for (const line of lines) {
+		// New format (ffmpeg v8+): "DeviceName" (audio)
+		const inlineMatch = line.match(/"([^"]+)"\s+\(audio\)/);
+		if (inlineMatch) {
+			devices.push(inlineMatch[1]);
+			continue;
+		}
+
+		// Legacy format: section header followed by device names
+		if (line.includes('DirectShow audio devices')) {
+			inAudioSection = true;
+			continue;
+		}
+		if (inAudioSection) {
+			if (line.includes('Alternative name')) { continue; }
+			if (line.includes('DirectShow video') || line.includes('DirectShow ')) {
+				inAudioSection = false;
+				continue;
+			}
+			const match = line.match(/"([^"]+)"/);
+			if (match) {
+				devices.push(match[1]);
+			}
+		}
+	}
+
+	if (devices.length === 0) {
+		console.warn(`[Verba] ffmpeg found no audio devices in output (${stderr.length} bytes, ${lines.length} lines)`);
+	}
+
+	return devices;
+}
+
+/** Detects a Windows audio input device via PowerShell. */
+function detectWindowsAudioDevicePowerShell(): string | null {
+	const result = spawnSync('powershell.exe', [
+		'-NoProfile', '-NonInteractive', '-Command',
+		'Get-CimInstance Win32_SoundDevice | Where-Object { $_.StatusInfo -eq 3 -or $_.Status -eq "OK" } | Select-Object -First 1 -ExpandProperty Name',
+	], {
+		encoding: 'utf-8',
+		timeout: 10000,
+		windowsHide: true,
+	});
+
+	const name = (result.stdout || '').trim();
+	if (!name) {
+		return null;
+	}
+
+	// Win32_SoundDevice gives the driver name, not the DirectShow device name.
+	// DirectShow names typically follow "Mikrofon (<DriverName>)" or similar.
+	// Try both the raw name and common patterns with ffmpeg to see which works.
+	return `audio=${name}`;
+}
+
+/** Detects the default Windows audio input device (ffmpeg dshow + PowerShell fallback). */
+export function detectWindowsAudioDevice(ffmpegPath: string): string {
+	const devices = listAudioDevicesFromFfmpeg(ffmpegPath);
+	if (devices.length > 0) {
+		return `audio=${devices[0]}`;
+	}
+
+	// Fallback: query Windows audio endpoints via PowerShell
+	const psDevice = detectWindowsAudioDevicePowerShell();
+	if (psDevice) {
+		console.log(`[Verba] Found audio device via PowerShell: ${psDevice}`);
+		return psDevice;
+	}
+
+	throw new Error(
+		'No audio input device found. Check that a microphone is connected and recognized by Windows.'
+	);
+}
+
+/** Returns the platform-specific ffmpeg input format and device for audio recording. */
+export function getPlatformAudioConfig(ffmpegPath: string, preferredDevice?: string): { inputFormat: string; inputDevice: string } {
+	switch (process.platform) {
+		case 'darwin':
+			return {
+				inputFormat: 'avfoundation',
+				inputDevice: preferredDevice ? `:${preferredDevice}` : ':default',
+			};
+		case 'linux':
+			return {
+				inputFormat: 'pulse',
+				inputDevice: preferredDevice || 'default',
+			};
+		case 'win32': {
+			const device = preferredDevice
+				? `audio=${preferredDevice}`
+				: detectWindowsAudioDevice(ffmpegPath);
+			console.log(`[Verba] Using audio device: ${device}`);
+			return { inputFormat: 'dshow', inputDevice: device };
+		}
+		default:
+			throw new Error(
+				`Unsupported platform: ${process.platform}. Verba supports macOS, Linux, and Windows.`
+			);
+	}
+}
+
+// ── FfmpegRecorder class ────────────────────────────────────────────────
+
 /**
  * Records microphone audio to a WAV file using ffmpeg as a child process.
  *
@@ -44,9 +265,9 @@ export class FfmpegRecorder {
 			throw new Error('Recording already in progress');
 		}
 
-		const ffmpegPath = this.findFfmpeg();
+		const ffmpegPath = findFfmpeg();
 		if (!ffmpegPath) {
-			throw new Error(`ffmpeg not found. ${this.getFfmpegInstallHint()}`);
+			throw new Error(`ffmpeg not found. ${getFfmpegInstallHint()}`);
 		}
 
 		const { inputFormat, inputDevice } = this.getPlatformAudioConfig(ffmpegPath, preferredDevice);
@@ -237,6 +458,29 @@ export class FfmpegRecorder {
 		}
 	}
 
+	/** Lists available audio input devices for the current platform. */
+	listAudioDevices(): string[] {
+		const ffmpegPath = findFfmpeg();
+		if (!ffmpegPath) {
+			return [];
+		}
+		switch (process.platform) {
+			case 'darwin':
+				return this.listMacOSAudioDevices(ffmpegPath);
+			case 'linux':
+				return this.listLinuxAudioDevices();
+			case 'win32':
+				return listAudioDevicesFromFfmpeg(ffmpegPath);
+			default:
+				return [];
+		}
+	}
+
+	/**
+	 * Returns platform-specific ffmpeg input format and device.
+	 * Instance method delegates to standalone helpers but preserves `this.detectWindowsAudioDevice()`
+	 * call chain so existing tests that stub it on the prototype continue to work.
+	 */
 	private getPlatformAudioConfig(ffmpegPath: string, preferredDevice?: string): { inputFormat: string; inputDevice: string } {
 		switch (process.platform) {
 			case 'darwin':
@@ -263,101 +507,9 @@ export class FfmpegRecorder {
 		}
 	}
 
+	/** Delegates to standalone detectWindowsAudioDevice. Kept as instance method for test compatibility. */
 	private detectWindowsAudioDevice(ffmpegPath: string): string {
-		const devices = this.listAudioDevicesFromFfmpeg(ffmpegPath);
-		if (devices.length > 0) {
-			return `audio=${devices[0]}`;
-		}
-
-		// Fallback: query Windows audio endpoints via PowerShell
-		const psDevice = this.detectWindowsAudioDevicePowerShell();
-		if (psDevice) {
-			console.log(`[Verba] Found audio device via PowerShell: ${psDevice}`);
-			return psDevice;
-		}
-
-		throw new Error(
-			'No audio input device found. Check that a microphone is connected and recognized by Windows.'
-		);
-	}
-
-	/** Lists available audio input devices for the current platform. */
-	listAudioDevices(): string[] {
-		const ffmpegPath = this.findFfmpeg();
-		if (!ffmpegPath) {
-			return [];
-		}
-		switch (process.platform) {
-			case 'darwin':
-				return this.listMacOSAudioDevices(ffmpegPath);
-			case 'linux':
-				return this.listLinuxAudioDevices();
-			case 'win32':
-				return this.listAudioDevicesFromFfmpeg(ffmpegPath);
-			default:
-				return [];
-		}
-	}
-
-	private listAudioDevicesFromFfmpeg(ffmpegPath: string): string[] {
-		const result = spawnSync(ffmpegPath, [
-			'-list_devices', 'true', '-f', 'dshow', '-i', 'dummy',
-		], {
-			encoding: 'utf-8',
-			timeout: 10000,
-			windowsHide: true,
-		});
-
-		if (result.error) {
-			console.warn(`[Verba] ffmpeg list_devices failed: ${result.error.message}`);
-			return [];
-		}
-
-		const stderr = result.stderr || '';
-		if (!stderr) {
-			console.warn('[Verba] ffmpeg list_devices produced no stderr output');
-			return [];
-		}
-
-		const lines = stderr.split('\n');
-		const devices: string[] = [];
-
-		// ffmpeg v8+ lists devices as: "DeviceName" (audio)
-		// Older versions use a section header: "DirectShow audio devices"
-		// Support both formats.
-		let inAudioSection = false;
-
-		for (const line of lines) {
-			// New format (ffmpeg v8+): "DeviceName" (audio)
-			const inlineMatch = line.match(/"([^"]+)"\s+\(audio\)/);
-			if (inlineMatch) {
-				devices.push(inlineMatch[1]);
-				continue;
-			}
-
-			// Legacy format: section header followed by device names
-			if (line.includes('DirectShow audio devices')) {
-				inAudioSection = true;
-				continue;
-			}
-			if (inAudioSection) {
-				if (line.includes('Alternative name')) { continue; }
-				if (line.includes('DirectShow video') || line.includes('DirectShow ')) {
-					inAudioSection = false;
-					continue;
-				}
-				const match = line.match(/"([^"]+)"/);
-				if (match) {
-					devices.push(match[1]);
-				}
-			}
-		}
-
-		if (devices.length === 0) {
-			console.warn(`[Verba] ffmpeg found no audio devices in output (${stderr.length} bytes, ${lines.length} lines)`);
-		}
-
-		return devices;
+		return detectWindowsAudioDevice(ffmpegPath);
 	}
 
 	private listMacOSAudioDevices(ffmpegPath: string): string[] {
@@ -438,109 +590,8 @@ export class FfmpegRecorder {
 		return devices;
 	}
 
-	private detectWindowsAudioDevicePowerShell(): string | null {
-		const result = spawnSync('powershell.exe', [
-			'-NoProfile', '-NonInteractive', '-Command',
-			'Get-CimInstance Win32_SoundDevice | Where-Object { $_.StatusInfo -eq 3 -or $_.Status -eq "OK" } | Select-Object -First 1 -ExpandProperty Name',
-		], {
-			encoding: 'utf-8',
-			timeout: 10000,
-			windowsHide: true,
-		});
-
-		const name = (result.stdout || '').trim();
-		if (!name) {
-			return null;
-		}
-
-		// Win32_SoundDevice gives the driver name, not the DirectShow device name.
-		// DirectShow names typically follow "Mikrofon (<DriverName>)" or similar.
-		// Try both the raw name and common patterns with ffmpeg to see which works.
-		return `audio=${name}`;
-	}
-
 	private cleanup(): void {
 		this._isRecording = false;
 		this.process = null;
-	}
-
-	private getFfmpegCandidatePaths(): string[] {
-		switch (process.platform) {
-			case 'darwin':
-				return ['/opt/homebrew/bin/ffmpeg', '/usr/local/bin/ffmpeg'];
-			case 'linux':
-				return ['/usr/bin/ffmpeg', '/usr/local/bin/ffmpeg'];
-			case 'win32': {
-				const paths = [
-					'C:\\ProgramData\\chocolatey\\bin\\ffmpeg.exe',
-					path.join(os.homedir(), 'scoop', 'shims', 'ffmpeg.exe'),
-					'C:\\ffmpeg\\bin\\ffmpeg.exe',
-				];
-				const programFiles = process.env['ProgramFiles'];
-				if (programFiles) {
-					paths.push(path.join(programFiles, 'ffmpeg', 'bin', 'ffmpeg.exe'));
-				}
-				const localAppData = process.env['LOCALAPPDATA'];
-				if (localAppData) {
-					paths.push(path.join(localAppData, 'Microsoft', 'WinGet', 'Links', 'ffmpeg.exe'));
-				}
-				return paths;
-			}
-			default:
-				return [];
-		}
-	}
-
-	private getFfmpegInstallHint(): string {
-		switch (process.platform) {
-			case 'darwin':
-				return 'Install it via: brew install ffmpeg';
-			case 'linux':
-				return 'Install it via: sudo apt install ffmpeg (Debian/Ubuntu) or sudo dnf install ffmpeg (Fedora)';
-			case 'win32':
-				return 'Download from https://ffmpeg.org/download.html and add to PATH';
-			default:
-				return 'Install ffmpeg and ensure it is available in PATH';
-		}
-	}
-
-	// Check common platform-specific paths first (avoids shell overhead and
-	// PATH issues in VS Code's sandboxed environment), then fall back to
-	// which(1) (Unix) or where (Windows) via spawnSync.
-	private findFfmpeg(): string | null {
-		const candidates = this.getFfmpegCandidatePaths();
-
-		for (const candidate of candidates) {
-			if (fs.existsSync(candidate)) {
-				return candidate;
-			}
-		}
-
-		if (process.platform === 'win32') {
-			const result = spawnSync('where', ['ffmpeg'], {
-				encoding: 'utf-8',
-				timeout: 5000,
-				windowsHide: true,
-			});
-			const stdout = (result.stdout || '').trim();
-			if (stdout) {
-				return stdout.split(/\r?\n/)[0];
-			}
-		} else {
-			try {
-				const result = execSync('which ffmpeg', {
-					encoding: 'utf-8',
-					timeout: 5000,
-				}).trim();
-				if (result) {
-					return result;
-				}
-			} catch (err: unknown) {
-				const detail = err instanceof Error ? err.message : String(err);
-				console.warn(`[Verba] "which ffmpeg" lookup failed: ${detail}`);
-			}
-		}
-
-		return null;
 	}
 }

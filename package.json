@@ -17,7 +17,7 @@
   "keywords": [
     "dictation",
     "voice",
-    "whisper",
+    "deepgram",
     "speech-to-text",
     "ai"
   ],
@@ -79,6 +79,31 @@
         "command": "dictation.generateGlossary",
         "title": "Generate Glossary from Project",
         "category": "Verba"
+      },
+      {
+        "command": "dictation.undo",
+        "title": "Undo Last Dictation",
+        "category": "Verba"
+      },
+      {
+        "command": "dictation.showHistory",
+        "title": "Dictation History",
+        "category": "Verba"
+      },
+      {
+        "command": "dictation.searchHistory",
+        "title": "Search Dictation History",
+        "category": "Verba"
+      },
+      {
+        "command": "dictation.clearHistory",
+        "title": "Clear Dictation History",
+        "category": "Verba"
+      },
+      {
+        "command": "dictation.startContinuous",
+        "title": "Toggle Continuous Dictation",
+        "category": "Verba"
       }
     ],
     "keybindings": [
@@ -98,6 +123,16 @@
         "command": "dictation.selectTemplate",
         "key": "ctrl+alt+t",
         "mac": "cmd+alt+t"
+      },
+      {
+        "command": "dictation.undo",
+        "key": "ctrl+alt+z",
+        "mac": "cmd+alt+z"
+      },
+      {
+        "command": "dictation.startContinuous",
+        "key": "ctrl+shift+alt+d",
+        "mac": "cmd+shift+alt+d"
       }
     ],
     "configuration": {
@@ -229,14 +264,33 @@
           },
           "description": "Text expansions: abbreviations that are automatically expanded during post-processing. Define abbreviation/expansion pairs (e.g. 'mfg' → 'Mit freundlichen Grüssen'). Workspace-specific expansions can be added via '.verba-expansions.json'."
         },
+        "verba.language": {
+          "type": "string",
+          "default": "auto",
+          "enum": [
+            "auto",
+            "de",
+            "en",
+            "fr",
+            "es",
+            "it",
+            "pt",
+            "nl",
+            "pl",
+            "ja",
+            "ko",
+            "zh"
+          ],
+          "description": "Language for post-processing. 'auto' uses Deepgram's detected language to hint Claude about the transcript language."
+        },
         "verba.transcription.provider": {
           "type": "string",
-          "default": "openai",
+          "default": "deepgram",
           "enum": [
-            "openai",
+            "deepgram",
             "local"
           ],
-          "description": "Transcription provider: 'openai' uses the Whisper API (requires API key), 'local' uses whisper.cpp CLI for offline transcription (requires whisper-cpp installed)."
+          "description": "Transcription provider: 'deepgram' uses the Deepgram Nova-3 API (requires API key), 'local' uses whisper.cpp CLI for offline transcription (requires whisper-cpp installed)."
         },
         "verba.transcription.localModel": {
           "type": "string",
@@ -266,6 +320,13 @@
             "openai"
           ],
           "description": "Context search provider: 'auto' uses grepai if installed, otherwise OpenAI Embeddings. 'grepai' or 'openai' forces a specific provider."
+        },
+        "verba.history.maxEntries": {
+          "type": "number",
+          "default": 500,
+          "minimum": 10,
+          "maximum": 5000,
+          "description": "Maximum number of dictation history entries to keep. Oldest entries are removed when the limit is reached. Takes effect after restarting VS Code."
         }
       }
     }
@@ -295,6 +356,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
+    "@deepgram/sdk": "^4.11.3",
     "openai": "^6.22.0"
   }
 }

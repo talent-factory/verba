@@ -5,9 +5,10 @@ import * as https from 'https';
 import { FfmpegRecorder } from './recorder';
 import { StatusBarManager } from './statusBarManager';
 import { PipelineContext } from './pipeline';
-import { TranscriptionService, TranscriptionProvider } from './transcriptionService';
+import { TranscriptionService, TranscriptionProvider, TranscriptionResult } from './transcriptionService';
 import { CleanupService, Expansion } from './cleanupService';
-import { insertText } from './insertText';
+import { insertText, InsertionResult } from './insertText';
+import { recordDictation, clearLastDictation, computeInsertedRanges, executeUndo, UndoEditor, PreEditSelection } from './undoManager';
 import { selectTemplate, findTemplateForLanguage, Template } from './templatePicker';
 import { ContextProvider } from './contextProvider';
 import { EmbeddingService } from './embeddingService';
@@ -15,18 +16,40 @@ import { Indexer } from './indexer';
 import { GrepaiProvider } from './grepaiProvider';
 import { CostTracker } from './costTracker';
 import { CostOverviewPanel } from './costOverviewPanel';
+import { HistoryManager, HistoryRecord } from './historyManager';
+import { buildHistoryItems, buildActionItems, HistoryQuickPickItem, ActionQuickPickItem } from './historyCommands';
 import { getWavDurationSec } from './wavDuration';
 import { GlossaryGenerator } from './glossaryGenerator';
+import { ContinuousRecorder, TranscriptEvent } from './continuousRecorder';
 import {
 	WHISPER_MODELS, WHISPER_MODEL_BASE_URL,
 	isTrustedDownloadHost, cleanupFile, isValidExpansion,
 } from './extensionHelpers';
 
+const DEEPGRAM_API_KEY_STORAGE_KEY = 'verba.deepgramApiKey';
+
+async function getDeepgramApiKey(secretStorage: vscode.SecretStorage): Promise<string> {
+	const stored = await secretStorage.get(DEEPGRAM_API_KEY_STORAGE_KEY);
+	if (stored) { return stored; }
+
+	const newKey = await vscode.window.showInputBox({
+		prompt: 'Enter your Deepgram API key (required for continuous dictation)',
+		placeHolder: 'dg-...',
+		password: true,
+		ignoreFocusOut: true,
+	});
+	if (!newKey) {
+		throw new Error('Deepgram API key is required for continuous dictation. Get one at console.deepgram.com.');
+	}
+	await secretStorage.store(DEEPGRAM_API_KEY_STORAGE_KEY, newKey);
+	return newKey;
+}
+
 class VerbaTranscriptionService extends TranscriptionService {
 	protected async promptForApiKey(): Promise<string | undefined> {
 		return vscode.window.showInputBox({
-			prompt: 'Enter your OpenAI API key for Whisper transcription',
-			placeHolder: 'sk-...',
+			prompt: 'Enter your Deepgram API key for transcription',
+			placeHolder: 'dg-...',
 			password: true,
 			ignoreFocusOut: true,
 		});
@@ -45,29 +68,66 @@ class VerbaCleanupService extends CleanupService {
 }
 
 
+function wrapVscodeEditor(editor: vscode.TextEditor): UndoEditor {
+	return {
+		getTextInRange: (startLine, startChar, endLine, endChar) =>
+			editor.document.getText(new vscode.Range(startLine, startChar, endLine, endChar)),
+		applyEdits: (edits) =>
+			editor.edit((editBuilder) => {
+				for (const e of edits) {
+					editBuilder.replace(new vscode.Range(e.startLine, e.startChar, e.endLine, e.endChar), e.newText);
+				}
+			}),
+	};
+}
+
+/** Resolves the effective language: manual setting overrides auto-detection. Returns undefined if no valid language. */
+function resolveLanguage(autoDetected: string | undefined): string | undefined {
+	const setting = vscode.workspace.getConfiguration('verba').get<string>('language', 'auto');
+	const lang = setting !== 'auto' ? setting : autoDetected;
+	if (!lang) { return undefined; }
+	if (!/^[a-z]{2,3}(-[A-Za-z]{2,4})?$/.test(lang)) {
+		console.warn(`[Verba] Invalid language value "${lang}" — expected ISO 639-1 code (e.g. "de", "en"). Ignoring.`);
+		return undefined;
+	}
+	return lang;
+}
+
 /** Activates the Verba extension: registers commands, wires up services, and initializes the status bar. */
 export function activate(context: vscode.ExtensionContext) {
 	const recorder = new FfmpegRecorder();
 	const statusBar = new StatusBarManager();
 	const transcriptionService = new VerbaTranscriptionService(context.secrets);
 	const cleanupService = new VerbaCleanupService(context.secrets);
+	cleanupService.onRetry = (attempt, maxAttempts) => {
+		statusBar.setRetrying(attempt, maxAttempts);
+	};
 	const costTracker = new CostTracker(context.globalState);
+	const maxHistoryEntries = vscode.workspace.getConfiguration('verba').get<number>('history.maxEntries', 500);
+	const historyManager = new HistoryManager(context.globalState, maxHistoryEntries);
 	let selectedTemplate: Template | undefined;
 	let preferTerminal = false;
 	let processingAbortController: AbortController | null = null;
 	let currentGlossary: string[] = [];
 
+	// Continuous dictation state
+	let continuousRecorder: ContinuousRecorder | null = null;
+	let continuousSegmentQueue: Promise<void> = Promise.resolve();
+	let continuousSegmentsInserted = 0;
+	let continuousAbortController: AbortController | null = null;
+	let continuousStopInProgress = false;
+
 	function applyTranscriptionProvider(): void {
 		const config = vscode.workspace.getConfiguration('verba.transcription');
-		const provider = config.get<string>('provider', 'openai');
+		const provider = config.get<string>('provider', 'deepgram');
 		const modelName = config.get<string>('localModel', 'base');
 
-		if (provider !== 'openai' && provider !== 'local') {
+		if (provider !== 'deepgram' && provider !== 'local') {
 			vscode.window.showErrorMessage(
-				`Verba: Unknown transcription provider "${provider}". Valid values: "openai", "local". Falling back to OpenAI.`
+				`Verba: Unknown transcription provider "${provider}". Valid values: "deepgram", "local". Falling back to Deepgram.`
 			);
-			transcriptionService.setProvider('openai');
-			statusBar.setProvider('openai');
+			transcriptionService.setProvider('deepgram');
+			statusBar.setProvider('deepgram');
 			return;
 		}
 
@@ -76,9 +136,9 @@ export function activate(context: vscode.ExtensionContext) {
 			if (!modelInfo) {
 				const validNames = WHISPER_MODELS.map(m => m.name).join(', ');
 				vscode.window.showErrorMessage(
-					`Verba: Unknown model "${modelName}". Valid models: ${validNames}. Falling back to OpenAI provider.`
+					`Verba: Unknown model "${modelName}". Valid models: ${validNames}. Falling back to Deepgram provider.`
 				);
-				transcriptionService.setProvider('openai');
+				transcriptionService.setProvider('deepgram');
 				return;
 			}
 			transcriptionService.setProvider(provider);
@@ -90,10 +150,26 @@ export function activate(context: vscode.ExtensionContext) {
 		} else {
 			transcriptionService.setProvider(provider);
 			statusBar.setProvider(provider);
-			console.log('[Verba] Transcription provider: openai');
+			console.log('[Verba] Transcription provider: deepgram');
 		}
 	}
 	applyTranscriptionProvider();
+
+	function applyLanguageSetting(): string {
+		const raw = vscode.workspace.getConfiguration('verba').get<string>('language', 'auto');
+		let language = raw;
+		if (raw !== 'auto' && !/^[a-z]{2,3}(-[A-Za-z]{2,4})?$/.test(raw)) {
+			console.warn(`[Verba] Invalid language setting "${raw}", falling back to auto`);
+			vscode.window.showWarningMessage(
+				`Verba: Language "${raw}" is not a valid language code (e.g. "de", "en", "fr"). Falling back to auto-detect.`
+			);
+			language = 'auto';
+		}
+		transcriptionService.setLanguage(language);
+		console.log(`[Verba] Transcription language: ${language === 'auto' ? 'multi (auto-detect)' : language}`);
+		return language;
+	}
+	applyLanguageSetting();
 
 	function applyGlossary(): void {
 		currentGlossary = loadGlossary();
@@ -294,18 +370,19 @@ export function activate(context: vscode.ExtensionContext) {
 				const fileStats = fs.statSync(filePath);
 				console.log(`[Verba] WAV file: ${filePath} (${fileStats.size} bytes)`);
 
-				// Step 1: Transcribe via Whisper (uses cached glossary from applyGlossary)
-				const rawTranscript = await transcriptionService.process(filePath, currentGlossary);
-				console.log(`[Verba] Whisper transcript (${rawTranscript.length} chars): ${rawTranscript.substring(0, 200)}`);
+				// Step 1: Transcribe (uses cached glossary from applyGlossary)
+				const transcriptionResult = await transcriptionService.process(filePath, currentGlossary);
+				const rawTranscript = transcriptionResult.text;
+				console.log(`[Verba] Transcript (${rawTranscript.length} chars, lang=${transcriptionResult.detectedLanguage ?? 'unknown'}): ${rawTranscript.substring(0, 200)}`);
 
-				// Track Whisper usage from WAV file duration (only for OpenAI API, not local whisper.cpp)
-				const transcriptionProvider = vscode.workspace.getConfiguration('verba.transcription').get<string>('provider', 'openai');
-				if (transcriptionProvider === 'openai') {
+				// Track Deepgram usage from WAV file duration (only for Deepgram API, not local whisper.cpp)
+				const transcriptionProvider = vscode.workspace.getConfiguration('verba.transcription').get<string>('provider', 'deepgram');
+				if (transcriptionProvider === 'deepgram') {
 					const wavDurationSec = getWavDurationSec(filePath);
 					if (wavDurationSec > 0) {
-						costTracker.trackWhisperUsage(wavDurationSec);
+						costTracker.trackDeepgramUsage(wavDurationSec);
 					} else {
-						console.warn('[Verba] WAV duration is 0 — Whisper cost tracking skipped for this recording');
+						console.warn('[Verba] WAV duration is 0 — Deepgram cost tracking skipped for this recording');
 					}
 				}
 
@@ -328,9 +405,12 @@ export function activate(context: vscode.ExtensionContext) {
 				}
 
 				// Step 3: Claude post-processing (pass captured selection as context only with a template)
-				const pipelineContext: PipelineContext | undefined = selectedTemplate
-					? { templatePrompt: selectedTemplate.prompt, contextSnippets, selectedText: capturedSelectedText }
-					: undefined;
+				const pipelineContext: PipelineContext = {
+					templatePrompt: selectedTemplate?.prompt,
+					contextSnippets,
+					selectedText: capturedSelectedText,
+					detectedLanguage: resolveLanguage(transcriptionResult.detectedLanguage),
+				};
 				statusBar.setProcessing();
 				const abortController = new AbortController();
 				processingAbortController = abortController;
@@ -364,13 +444,67 @@ export function activate(context: vscode.ExtensionContext) {
 				console.log(`[Verba] Final text (${transcript.length} chars): ${transcript.substring(0, 200)}`);
 
 				const executeCommand = vscode.workspace.getConfiguration('verba.terminal').get<boolean>('executeCommand', false);
-				await insertText(
+
+				// Capture pre-edit state for undo tracking
+				const editorBeforeInsert = vscode.window.activeTextEditor;
+				let preEditSelections: PreEditSelection[] | undefined;
+				if (editorBeforeInsert && !preferTerminal) {
+					preEditSelections = editorBeforeInsert.selections
+						.map(sel => ({
+							startLine: sel.start.line,
+							startCharacter: sel.start.character,
+							endLine: sel.end.line,
+							endCharacter: sel.end.character,
+							isEmpty: sel.isEmpty,
+							originalText: sel.isEmpty ? '' : editorBeforeInsert.document.getText(sel),
+						}))
+						.sort((a, b) => a.startLine !== b.startLine
+							? a.startLine - b.startLine
+							: a.startCharacter - b.startCharacter);
+				}
+
+				const insertionResult = await insertText(
 					transcript,
 					vscode.window.activeTextEditor,
 					vscode.window.activeTerminal,
 					executeCommand,
 					preferTerminal,
 				);
+
+				// Record dictation for undo
+				if (insertionResult.target === 'editor' && editorBeforeInsert && preEditSelections) {
+					const insertedRanges = computeInsertedRanges(preEditSelections, transcript);
+					recordDictation({
+						type: 'editor',
+						documentUri: editorBeforeInsert.document.uri.toString(),
+						insertedText: transcript,
+						insertedRanges,
+						originalTexts: preEditSelections.map(s => s.originalText),
+					});
+				} else if (insertionResult.target === 'terminal') {
+					recordDictation({
+						type: 'terminal',
+						insertedText: transcript,
+						wasExecuted: executeCommand,
+					});
+				} else {
+					console.warn('[Verba] Editor insertion reported but pre-edit state unavailable — undo not recorded');
+					clearLastDictation();
+				}
+
+				try {
+					historyManager.addRecord({
+						timestamp: Date.now(),
+						rawTranscript,
+						cleanedText: transcript,
+						templateName: selectedTemplate?.name ?? 'Default Cleanup',
+						target: insertionResult.target,
+						languageId: vscode.window.activeTextEditor?.document.languageId,
+						workspaceFolder: vscode.workspace.workspaceFolders?.[0]?.name,
+					});
+				} catch (historyErr: unknown) {
+					console.warn('[Verba] Failed to record dictation in history:', historyErr);
+				}
 
 				capturedSelectedText = undefined;
 				statusBar.setIdle(selectedTemplate?.name);
@@ -390,6 +524,12 @@ export function activate(context: vscode.ExtensionContext) {
 				}
 			}
 		} else {
+			// Prevent starting if continuous recording is active
+			if (continuousRecorder?.isRecording) {
+				vscode.window.showWarningMessage('Verba: Continuous recording in progress. Stop it first.');
+				return;
+			}
+
 			try {
 				preferTerminal = forTerminal;
 				const templates = loadTemplates();
@@ -644,6 +784,12 @@ export function activate(context: vscode.ExtensionContext) {
 			}
 			statusBar.setIdle(selectedTemplate?.name);
 		}
+		if (e.affectsConfiguration('verba.language')) {
+			try { applyLanguageSetting(); } catch (err) {
+				console.error('[Verba] Failed to reload language setting:', err);
+				vscode.window.showWarningMessage('Verba: Failed to reload language setting. Changes may not take effect until VS Code is restarted.');
+			}
+		}
 	});
 	context.subscriptions.push(settingsWatcher);
 
@@ -854,8 +1000,9 @@ export function activate(context: vscode.ExtensionContext) {
 	const manageApiKeysCommand = vscode.commands.registerCommand('dictation.manageApiKeys', async () => {
 		try {
 			const keys = [
-				{ label: 'OpenAI', storageKey: 'openai-api-key', prefix: 'sk-' },
+				{ label: 'Deepgram', storageKey: DEEPGRAM_API_KEY_STORAGE_KEY, prefix: 'dg-' },
 				{ label: 'Anthropic', storageKey: 'anthropic-api-key', prefix: 'sk-ant-' },
+				{ label: 'OpenAI (Embeddings)', storageKey: 'openai-api-key', prefix: 'sk-' },
 			];
 
 			const items = await Promise.all(keys.map(async (k) => {
@@ -1014,11 +1161,437 @@ export function activate(context: vscode.ExtensionContext) {
 		}
 	});
 
+	const undoCommand = vscode.commands.registerCommand('dictation.undo', async () => {
+		const result = await executeUndo({
+			getActiveTerminal: () => vscode.window.activeTerminal ?? undefined,
+			findEditorForUri: (uri) => {
+				const ed = vscode.window.visibleTextEditors.find(e => e.document.uri.toString() === uri);
+				return ed ? wrapVscodeEditor(ed) : undefined;
+			},
+			openDocument: async (uri) => {
+				const doc = await vscode.workspace.openTextDocument(vscode.Uri.parse(uri));
+				return wrapVscodeEditor(await vscode.window.showTextDocument(doc));
+			},
+		});
+
+		switch (result.status) {
+			case 'no-record':
+				vscode.window.showInformationMessage('Verba: No dictation to undo.');
+				break;
+			case 'terminal-was-executed':
+				vscode.window.showInformationMessage('Verba: Cannot undo — text was already executed in terminal.');
+				break;
+			case 'terminal-no-terminal':
+				vscode.window.showWarningMessage('Verba: No active terminal to undo in. Undo record discarded.');
+				break;
+			case 'terminal-undone':
+				vscode.window.setStatusBarMessage('$(discard) Verba: sent undo to terminal (verify result)', 5000);
+				break;
+			case 'editor-document-unavailable':
+				vscode.window.showErrorMessage('Verba: Cannot undo — the original document could not be opened. It may have been moved, renamed, or deleted.');
+				break;
+			case 'editor-document-changed':
+				vscode.window.showWarningMessage('Verba: The document has changed since the last dictation. Undo aborted.');
+				break;
+			case 'editor-undone':
+				vscode.window.setStatusBarMessage('$(discard) Verba: dictation undone', 5000);
+				break;
+			case 'editor-edit-failed':
+				vscode.window.showErrorMessage('Verba: Failed to undo dictation — the edit was rejected.');
+				break;
+			case 'error':
+				vscode.window.showErrorMessage(`Verba: Could not undo dictation: ${result.message}`);
+				break;
+		}
+	});
+
+	// --- History Commands ---
+
+	async function handleHistoryAction(record: HistoryRecord): Promise<void> {
+		const actionItems = buildActionItems();
+		const action = await vscode.window.showQuickPick<ActionQuickPickItem>(actionItems, {
+			placeHolder: 'Choose an action',
+		});
+		if (!action) { return; }
+
+		try {
+			switch (action.id) {
+				case 'insert': {
+					const editor = vscode.window.activeTextEditor;
+					const terminal = vscode.window.activeTerminal;
+					if (editor) {
+						const success = await editor.edit((editBuilder) => {
+							for (const sel of editor.selections) {
+								editBuilder.replace(sel, record.cleanedText);
+							}
+						});
+						if (!success) {
+							vscode.window.showWarningMessage('Verba: Could not insert text. The editor may be read-only or was closed.');
+						}
+					} else if (terminal) {
+						terminal.sendText(record.cleanedText, false);
+					} else {
+						vscode.window.showWarningMessage('Verba: No active editor or terminal to insert into.');
+					}
+					break;
+				}
+				case 'copy':
+					await vscode.env.clipboard.writeText(record.cleanedText);
+					vscode.window.showInformationMessage('Verba: Copied to clipboard.');
+					break;
+				case 'details':
+					vscode.window.showInformationMessage(
+						[
+							`Template: ${record.templateName}`,
+							`Time: ${new Date(record.timestamp).toLocaleString()}`,
+							`Target: ${record.target}`,
+							`Raw transcript: ${record.rawTranscript}`,
+						].join('\n'),
+						{ modal: true },
+					);
+					break;
+			}
+		} catch (err: unknown) {
+			console.error('[Verba] History action failed:', err);
+			const message = err instanceof Error ? err.message : String(err);
+			vscode.window.showErrorMessage(`Verba: History action failed: ${message}`);
+		}
+	}
+
+	const showHistoryCommand = vscode.commands.registerCommand('dictation.showHistory', async () => {
+		const records = historyManager.getRecords();
+		if (records.length === 0) {
+			vscode.window.showInformationMessage('Verba: No dictation history yet.');
+			return;
+		}
+
+		const items = buildHistoryItems(records);
+		const picked = await vscode.window.showQuickPick<HistoryQuickPickItem>(items, {
+			placeHolder: `${records.length} dictations \u2014 type to filter`,
+			matchOnDescription: true,
+			matchOnDetail: true,
+		});
+		if (!picked) { return; }
+
+		await handleHistoryAction(picked.record);
+	});
+
+	const searchHistoryCommand = vscode.commands.registerCommand('dictation.searchHistory', async () => {
+		const query = await vscode.window.showInputBox({
+			placeHolder: 'Search dictation history...',
+		});
+		if (!query) { return; }
+
+		const results = historyManager.searchRecords(query);
+		if (results.length === 0) {
+			vscode.window.showInformationMessage('Verba: No matching history entries found.');
+			return;
+		}
+
+		const items = buildHistoryItems(results);
+		const picked = await vscode.window.showQuickPick<HistoryQuickPickItem>(items, {
+			placeHolder: `${results.length} result${results.length !== 1 ? 's' : ''} \u2014 type to filter`,
+			matchOnDescription: true,
+			matchOnDetail: true,
+		});
+		if (!picked) { return; }
+
+		await handleHistoryAction(picked.record);
+	});
+
+	const clearHistoryCommand = vscode.commands.registerCommand('dictation.clearHistory', async () => {
+		const count = historyManager.getRecordCount();
+		if (count === 0) {
+			vscode.window.showInformationMessage('Verba: History is already empty.');
+			return;
+		}
+
+		const confirm = await vscode.window.showWarningMessage(
+			`Verba: Delete all ${count} history entries?`,
+			{ modal: true },
+			'Delete All',
+		);
+		if (confirm === 'Delete All') {
+			historyManager.clearHistory();
+			vscode.window.showInformationMessage('Verba: Dictation history cleared.');
+		}
+	});
+
+	// --- Continuous Dictation Command ---
+
+	const startContinuousCommand = vscode.commands.registerCommand('dictation.startContinuous', async () => {
+		// Cancel ongoing segment processing if user triggers shortcut during streaming
+		if (continuousAbortController) {
+			continuousAbortController.abort();
+			continuousAbortController = null;
+			// Fall through to stop recording (don't return)
+		}
+
+		// Stop continuous recording if already active
+		if (continuousRecorder?.isRecording) {
+			continuousStopInProgress = true;
+			try {
+				console.log(`[Verba] Stopping continuous recording (${continuousSegmentsInserted} segments so far)`);
+				await continuousRecorder.stop();
+				console.log('[Verba] Recorder stopped, waiting for segment queue to drain...');
+				// Wait for all pending segment processing
+				await continuousSegmentQueue;
+				console.log(`[Verba] All segments processed (${continuousSegmentsInserted} total)`);
+				statusBar.setIdle(selectedTemplate?.name);
+				vscode.window.setStatusBarMessage(
+					`$(check) Verba: ${continuousSegmentsInserted} segment${continuousSegmentsInserted !== 1 ? 's' : ''} inserted`, 5000
+				);
+				continuousRecorder.dispose();
+				continuousRecorder = null;
+			} catch (err: unknown) {
+				statusBar.setIdle();
+				const message = err instanceof Error ? err.message : String(err);
+				vscode.window.showErrorMessage(`Verba: ${message}`);
+				if (continuousRecorder) {
+					continuousRecorder.dispose();
+					continuousRecorder = null;
+				}
+			} finally {
+				continuousStopInProgress = false;
+			}
+			return;
+		}
+
+		// Prevent starting if single-shot is recording
+		if (recorder.isRecording) {
+			vscode.window.showWarningMessage('Verba: Single-shot recording in progress. Stop it first.');
+			return;
+		}
+
+		// Continuous mode requires an active editor — fallback to single-shot for terminal
+		if (!vscode.window.activeTextEditor) {
+			console.log('[Verba] No active editor — falling back to single-shot dictation');
+			await vscode.commands.executeCommand('dictation.start');
+			return;
+		}
+
+		// Template selection (same logic as handleDictation's else branch)
+		try {
+			const templates = loadTemplates();
+			const lastUsedName = context.workspaceState.get<string>('verba.lastTemplateName');
+			let template: Template | undefined;
+
+			const autoSelect = vscode.workspace.getConfiguration('verba').get<boolean>('autoSelectTemplate', true);
+			if (autoSelect) {
+				const languageId = vscode.window.activeTextEditor?.document.languageId;
+				if (languageId) {
+					template = findTemplateForLanguage(templates, languageId);
+					if (template) {
+						console.log(`[Verba] Continuous: Auto-selected template "${template.name}" for language "${languageId}"`);
+					}
+				}
+			}
+			if (!template && lastUsedName) {
+				template = templates.find(t => t.name === lastUsedName);
+			}
+			if (!template) {
+				template = await selectTemplate(
+					templates,
+					undefined,
+					(items, options) => vscode.window.showQuickPick(items, options) as any,
+				);
+				if (!template) { return; }
+				await context.workspaceState.update('verba.lastTemplateName', template.name);
+			}
+
+			// Capture template locally — don't mutate shared selectedTemplate
+			const continuousTemplate = template;
+
+			// Capture selected text (once at recording start, shared across all segments)
+			const activeEditor = vscode.window.activeTextEditor;
+			let capturedText: string | undefined;
+			if (activeEditor) {
+				const sel = activeEditor.selection;
+				if (!sel.isEmpty) {
+					capturedText = activeEditor.document.getText(sel);
+				}
+			}
+
+			// Guard: template referencing <selection> requires actual selection
+			if (!capturedText && continuousTemplate.prompt.includes('<selection>')) {
+				vscode.window.showWarningMessage(
+					'Verba: This template requires text to be selected in the editor.'
+				);
+				return;
+			}
+
+			// Get Deepgram API key
+			const deepgramApiKey = await getDeepgramApiKey(context.secrets);
+
+			// Create recorder
+			continuousRecorder = new ContinuousRecorder(deepgramApiKey);
+			const continuousLanguage = applyLanguageSetting(); // returns validated language
+			continuousRecorder.setLanguage(continuousLanguage);
+			continuousSegmentsInserted = 0;
+			continuousSegmentQueue = Promise.resolve();
+
+			// Continuous dictation targets the editor
+			const executeCommand = vscode.workspace.getConfiguration('verba.terminal').get<boolean>('executeCommand', false);
+			const preferTerminalForContinuous = false;
+
+			// Listen for transcripts (Deepgram already transcribed — no Whisper needed)
+			continuousRecorder.on('transcript', (event: TranscriptEvent) => {
+				continuousSegmentQueue = continuousSegmentQueue.then(async () => {
+					try {
+						statusBar.setRecordingContinuous(continuousSegmentsInserted, true);
+
+						const rawTranscript = event.text;
+
+						// Claude cleanup
+						const pipelineContext: PipelineContext = {
+							templatePrompt: continuousTemplate?.prompt,
+							selectedText: capturedText,
+							detectedLanguage: resolveLanguage(event.detectedLanguage),
+						};
+						const abortController = new AbortController();
+						continuousAbortController = abortController;
+
+						let transcript: string;
+						try {
+							transcript = await cleanupService.processStreaming(
+								rawTranscript,
+								pipelineContext,
+								(_charCount) => statusBar.setRecordingContinuous(continuousSegmentsInserted, true),
+								abortController.signal,
+							);
+							if (cleanupService.lastUsage) {
+								costTracker.trackClaudeUsage(
+									cleanupService.lastUsage.inputTokens,
+									cleanupService.lastUsage.outputTokens,
+								);
+								cleanupService.lastUsage = undefined;
+							}
+						} catch (err: unknown) {
+							if (err instanceof Error && (
+								err.name === 'AbortError'
+								|| err.message.includes('aborted')
+								|| err.message.includes('cancelled')
+								|| err.message.includes('canceled')
+							)) {
+								return; // Cancelled by user
+							}
+							const message = err instanceof Error ? err.message : String(err);
+							const httpStatus = err instanceof Error ? (err as any).status : undefined;
+							console.error('[Verba] Claude cleanup failed for segment:', err);
+
+							if (httpStatus === 401 || httpStatus === 403) {
+								vscode.window.showErrorMessage(
+									'Verba: Claude API key invalid or expired. Raw transcript inserted. Fix via "Verba: Manage API Keys".'
+								);
+							} else {
+								vscode.window.showWarningMessage(
+									`Verba: Post-processing failed for segment. Raw transcript inserted. (${message})`
+								);
+							}
+							transcript = rawTranscript;
+						} finally {
+							continuousAbortController = null;
+						}
+
+						// Prepend separator between segments (space or newline)
+						const separator = continuousSegmentsInserted > 0 ? '\n' : '';
+						const textToInsert = separator + transcript;
+
+						// Insert text (no undo tracking in continuous mode)
+						const insertionResult = await insertText(
+							textToInsert,
+							vscode.window.activeTextEditor,
+							vscode.window.activeTerminal,
+							executeCommand,
+							preferTerminalForContinuous,
+						);
+
+						// Record history (per segment)
+						try {
+							historyManager.addRecord({
+								timestamp: Date.now(),
+								rawTranscript,
+								cleanedText: transcript,
+								templateName: continuousTemplate.name ?? 'Default Cleanup',
+								target: insertionResult.target,
+								languageId: vscode.window.activeTextEditor?.document.languageId,
+								workspaceFolder: vscode.workspace.workspaceFolders?.[0]?.name,
+							});
+						} catch (historyErr: unknown) {
+							console.warn('[Verba] Failed to record segment in history:', historyErr);
+						}
+
+						continuousSegmentsInserted++;
+						statusBar.setRecordingContinuous(continuousSegmentsInserted);
+					} catch (err: unknown) {
+						console.error('[Verba] Segment processing failed:', err);
+						const message = err instanceof Error ? err.message : String(err);
+						vscode.window.showWarningMessage(`Verba: Segment failed: ${message}`);
+						statusBar.setRecordingContinuous(continuousSegmentsInserted);
+					}
+				});
+			});
+
+			// Show interim (partial) transcription in status bar
+			continuousRecorder.on('interim', (text: string) => {
+				statusBar.setRecordingContinuous(continuousSegmentsInserted);
+			});
+
+			let lastRecorderErrorTime = 0;
+			continuousRecorder.on('error', (err: Error) => {
+				console.error('[Verba] Continuous recorder error:', err);
+				const now = Date.now();
+				if (now - lastRecorderErrorTime > 10_000) {
+					lastRecorderErrorTime = now;
+					vscode.window.showWarningMessage(`Verba: Recording issue: ${err.message}`);
+				}
+			});
+
+			// Handle unexpected stop (e.g. ffmpeg crash) — reset UI
+			continuousRecorder.on('stopped', () => {
+				if (!continuousStopInProgress && continuousRecorder) {
+					console.log('[Verba] Continuous recorder stopped unexpectedly, resetting UI');
+					statusBar.setIdle(selectedTemplate?.name);
+					continuousRecorder.dispose();
+					continuousRecorder = null;
+				}
+			});
+
+			// Start recording
+			const preferredDevice = vscode.workspace.getConfiguration('verba').get<string>('audioDevice', '').trim() || undefined;
+			await continuousRecorder.start(preferredDevice);
+			statusBar.setRecordingContinuous();
+			selectedTemplate = continuousTemplate;
+			vscode.window.showInformationMessage(
+				`Verba: Continuous recording started (${continuousTemplate.name})...`
+			);
+		} catch (err: unknown) {
+			if (continuousRecorder) {
+				continuousRecorder.dispose();
+			}
+			continuousRecorder = null;
+			statusBar.setIdle(selectedTemplate?.name);
+			console.error('[Verba] Start continuous recording failed:', err);
+			const message = err instanceof Error ? err.message : String(err);
+			const httpStatus = err instanceof Error ? (err as any).status : undefined;
+			if (httpStatus === 401 || httpStatus === 403) {
+				await context.secrets.delete(DEEPGRAM_API_KEY_STORAGE_KEY);
+				vscode.window.showErrorMessage(
+					'Verba: Deepgram API key invalid. It has been removed — you will be prompted for a new key on the next attempt. Or use "Verba: Manage API Keys".'
+				);
+			} else {
+				vscode.window.showErrorMessage(`Verba: ${message}`);
+			}
+		}
+	});
+
 	context.subscriptions.push(
 		editorCommand, terminalCommand, selectDeviceCommand, selectTemplateCommand,
 		indexProjectCommand, downloadModelCommand, manageApiKeysCommand, showCostOverviewCommand,
-		generateGlossaryCommand, saveWatcher,
-		{ dispose: () => recorder.dispose() }, statusBar,
+		generateGlossaryCommand, undoCommand, showHistoryCommand, searchHistoryCommand, clearHistoryCommand,
+		startContinuousCommand,
+		saveWatcher,
+		{ dispose: () => { recorder.dispose(); if (continuousRecorder) { continuousRecorder.dispose(); } } }, statusBar,
 	);
 }
 

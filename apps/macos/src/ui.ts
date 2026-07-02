@@ -82,3 +82,43 @@ export async function promptForApiKey(label: string): Promise<string | undefined
 		input.focus();
 	});
 }
+
+/**
+ * Shows an Accessibility-permission onboarding message with a button that
+ * opens System Settings. Resolves once the user dismisses it — clicking
+ * "Open System Settings" does not dismiss the box, since the user needs to
+ * switch away to System Settings and back before retrying the hotkey.
+ */
+export async function showAccessibilityOnboarding(onOpenSettings: () => void): Promise<void> {
+	await reveal();
+	if (document.getElementById('accessibility-onboarding')) { return; }
+
+	const app = document.getElementById('app');
+	if (!app) { return; }
+
+	return new Promise((resolve) => {
+		const box = document.createElement('div');
+		box.id = 'accessibility-onboarding';
+
+		const message = document.createElement('p');
+		message.textContent =
+			'Verba needs Accessibility permission to paste into other apps. ' +
+			'Grant it in System Settings, then press the hotkey again to dictate.';
+
+		const openSettings = document.createElement('button');
+		openSettings.type = 'button';
+		openSettings.textContent = 'Open System Settings';
+		openSettings.addEventListener('click', () => { onOpenSettings(); });
+
+		const dismiss = document.createElement('button');
+		dismiss.type = 'button';
+		dismiss.textContent = 'Dismiss';
+		dismiss.addEventListener('click', () => {
+			box.remove();
+			resolve();
+		});
+
+		box.append(message, openSettings, dismiss);
+		app.appendChild(box);
+	});
+}

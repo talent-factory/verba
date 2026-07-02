@@ -332,7 +332,8 @@
     }
   },
   "workspaces": [
-    "packages/*"
+    "packages/*",
+    "apps/*"
   ],
   "scripts": {
     "vscode:prepublish": "npm run bundle",

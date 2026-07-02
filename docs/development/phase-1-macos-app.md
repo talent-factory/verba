@@ -136,7 +136,12 @@ Templates, glossary, and expansions are the same feature set — only the
    under `packages/core/` that builds independently to `dist/`; the extension
    consumes it via `@verba/core` (bundled by esbuild into `dist/extension.js`).
    Suite green (extension + core).
-2. **M1 — Tauri skeleton.** Menu-bar app, global hotkey, "hello" toast. No audio.
+2. **M1 — Tauri skeleton.** ✅ Scaffolded under `apps/macos/` — tray menu-bar app,
+   global hotkey (`Alt+Space`) → notification toast, and macOS host adapters
+   (`TauriNotifier`/`TauriSecretStore`/`TauriKeyValueStore`) + a
+   `DictationController` that constructs `@verba/core` services (frontend
+   type-checks against the package). No audio yet. The Rust/Tauri build targets
+   macOS and is not exercised in CI — see `apps/macos/README.md`.
 3. **M2 — Capture + transcription.** Mic → WAV → `DeepgramProvider` → show text
    in a window. Keychain-backed `SecretStore`.
 4. **M3 — Cleanup + paste.** `CleanupService` + `TextSink` paste into the

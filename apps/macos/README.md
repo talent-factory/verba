@@ -16,6 +16,9 @@ concerns (global hotkey, mic capture, Accessibility paste, keychain).
   `TauriKeyValueStore` (JSON file) — plus a window prompt for API keys.
 - ✅ Rust commands: `start_capture`/`stop_capture` (cpal → WAV),
   `read_audio_file`, `secret_*`, `kv_*`.
+- ✅ `NSMicrophoneUsageDescription` in `src-tauri/Info.plist` — without it,
+  macOS silently kills the process on first mic access (TCC), regardless of
+  the audio API used.
 - ⏳ **Next (M3):** run `CleanupService` on the transcript and paste into the
   frontmost app (`TextSink`) instead of just displaying it.
 

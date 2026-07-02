@@ -20,7 +20,10 @@ fn read_map(app: &AppHandle) -> Result<HashMap<String, Value>, String> {
         return Ok(HashMap::new());
     }
     let raw = fs::read_to_string(&path).map_err(|e| e.to_string())?;
-    Ok(serde_json::from_str(&raw).unwrap_or_default())
+    serde_json::from_str(&raw).or_else(|e| {
+        eprintln!("[Verba] store.json is corrupt, resetting to empty ({e}): {path:?}");
+        Ok(HashMap::new())
+    })
 }
 
 #[tauri::command]

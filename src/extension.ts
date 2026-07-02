@@ -4,9 +4,10 @@ import * as path from 'path';
 import * as https from 'https';
 import { FfmpegRecorder } from './recorder';
 import { StatusBarManager } from './statusBarManager';
-import { PipelineContext } from './pipeline';
+import { PipelineContext } from './core/pipeline';
 import { TranscriptionService, TranscriptionProvider, TranscriptionResult } from './transcriptionService';
-import { CleanupService, Expansion } from './cleanupService';
+import { CleanupService, Expansion } from './core/cleanupService';
+import { Notifier } from './core/adapters';
 import { insertText, InsertionResult } from './insertText';
 import { recordDictation, clearLastDictation, computeInsertedRanges, executeUndo, UndoEditor, PreEditSelection } from './undoManager';
 import { selectTemplate, findTemplateForLanguage, Template } from './templatePicker';
@@ -98,13 +99,18 @@ export function activate(context: vscode.ExtensionContext) {
 	const recorder = new FfmpegRecorder();
 	const statusBar = new StatusBarManager();
 	const transcriptionService = new VerbaTranscriptionService(context.secrets);
-	const cleanupService = new VerbaCleanupService(context.secrets);
+	const notifier: Notifier = {
+		warn: (message) => { void vscode.window.showWarningMessage(message).then(undefined, () => {}); },
+		info: (message) => { void vscode.window.showInformationMessage(message).then(undefined, () => {}); },
+		error: (message) => { void vscode.window.showErrorMessage(message).then(undefined, () => {}); },
+	};
+	const cleanupService = new VerbaCleanupService(context.secrets, notifier);
 	cleanupService.onRetry = (attempt, maxAttempts) => {
 		statusBar.setRetrying(attempt, maxAttempts);
 	};
-	const costTracker = new CostTracker(context.globalState);
+	const costTracker = new CostTracker(context.globalState, notifier);
 	const maxHistoryEntries = vscode.workspace.getConfiguration('verba').get<number>('history.maxEntries', 500);
-	const historyManager = new HistoryManager(context.globalState, maxHistoryEntries);
+	const historyManager = new HistoryManager(context.globalState, maxHistoryEntries, notifier);
 	let selectedTemplate: Template | undefined;
 	let preferTerminal = false;
 	let processingAbortController: AbortController | null = null;

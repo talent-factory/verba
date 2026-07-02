@@ -20,9 +20,13 @@ Microphone → ffmpeg (WAV) → Deepgram API → Claude API → Editor/Terminal
 |--------|---------------|
 | `extension.ts` | Extension entry point, command registration, activation |
 | `recorder.ts` | ffmpeg child process for audio recording (macOS/Linux/Windows) |
-| `transcriptionService.ts` | Transcription via Deepgram pre-recorded API or local whisper.cpp CLI (glossary hints) |
-| `cleanupService.ts` | Anthropic Claude API integration (streaming, course correction, voice commands, glossary, text expansions) |
-| `pipeline.ts` | Processing stage orchestration |
+| `transcriptionService.ts` | Thin orchestrator selecting between `core/deepgramProvider.ts` and `localWhisperProvider.ts` |
+| `localWhisperProvider.ts` | Desktop-only offline transcription via whisper.cpp CLI |
+| `core/adapters.ts` | Platform-agnostic adapter interfaces (`SecretStore`, `Notifier`, `KeyValueStore`, `AudioBytesReader`, forward-looking `AudioCapture`/`TextSink`/`ConfigProvider`) for the `@verba/core` boundary |
+| `core/cleanupService.ts` | Anthropic Claude API integration (streaming, course correction, voice commands, glossary, text expansions) |
+| `core/deepgramProvider.ts` | Portable Deepgram Nova-3 cloud transcription (audio bytes and API-key prompt injected) |
+| `core/transcription.ts` | Shared transcription contracts (`TranscriptionBackend`, `TranscriptionResult`) and transcript validation |
+| `core/pipeline.ts` | Processing stage orchestration |
 | `templatePicker.ts` | Quick Pick menu for template selection with auto-reuse |
 | `insertText.ts` | Text insertion into editor or terminal (multi-cursor, selection replacement) |
 | `statusBarManager.ts` | Status bar display (Idle/Recording/Transcribing/Processing with character counter) |

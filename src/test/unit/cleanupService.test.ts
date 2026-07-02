@@ -1,10 +1,10 @@
 import * as assert from 'assert';
 import * as sinon from 'sinon';
 
-import { CleanupService } from '../../cleanupService';
-import { PipelineContext } from '../../pipeline';
+import { CleanupService } from '../../core/cleanupService';
+import { PipelineContext } from '../../core/pipeline';
 
-// Fake SecretStorage matching the SecretStorage interface in cleanupService.ts
+// Fake SecretStore matching the SecretStore interface in core/adapters.ts
 function createFakeSecretStorage(): {
 	get: sinon.SinonStub;
 	store: sinon.SinonStub;
@@ -142,6 +142,22 @@ suite('CleanupService', () => {
 			const result = await service.process('raw input text');
 
 			assert.strictEqual(result, 'raw input text');
+		});
+
+		test('calls notifier.warn when falling back to raw input on empty response', async () => {
+			const notifier = { warn: sinon.stub() };
+			const notifiedService = new CleanupService(secretStorage as any, notifier);
+			(notifiedService as any)._client = fakeClient;
+			secretStorage.get.resolves('sk-ant-test-key');
+			fakeClient.messages.create.resolves({
+				content: [{ type: 'text', text: '' }],
+			});
+
+			const result = await notifiedService.process('raw input text');
+
+			assert.strictEqual(result, 'raw input text');
+			assert.ok(notifier.warn.calledOnce);
+			assert.ok(notifier.warn.firstCall.args[0].includes('Post-processing returned an empty response'));
 		});
 
 		test('returns raw input when response content block is not text type', async () => {

@@ -55,8 +55,8 @@ suite('TranscriptionService', () => {
 		secretStorage = createFakeSecretStorage();
 		fakeClient = createFakeDeepgramClient();
 		service = new TranscriptionService(secretStorage as any);
-		// Inject the fake client to avoid real API calls
-		(service as any)._client = fakeClient;
+		// Inject the fake client into the Deepgram provider to avoid real API calls
+		(service as any).deepgramProvider._client = fakeClient;
 		// Stub the prompt method to control API key flow
 		promptApiKeyStub = sinon.stub(service as any, 'promptForApiKey');
 	});
@@ -170,7 +170,7 @@ suite('TranscriptionService', () => {
 				/Invalid Deepgram API key/
 			);
 			assert.ok(secretStorage.delete.calledWith('verba.deepgramApiKey'));
-			assert.strictEqual((service as any)._client, null, 'client should be cleared after 401');
+			assert.strictEqual((service as any).deepgramProvider._client, null, 'client should be cleared after 401');
 		});
 
 		test('clears stored key on 403 forbidden error', async () => {
@@ -544,7 +544,7 @@ suite('TranscriptionService', () => {
 			existsSyncStub.returns(true);
 			// Simulate a process that is killed by the timeout (emits close with null exit code)
 			// We stub spawnWhisper directly to simulate the timeout flag
-			const spawnWhisperStub = sinon.stub(service as any, 'spawnWhisper').resolves({
+			const spawnWhisperStub = sinon.stub((service as any).localProvider, 'spawnWhisper').resolves({
 				stdout: '', stderr: '', exitCode: null, timedOut: true,
 			});
 
@@ -566,13 +566,13 @@ suite('TranscriptionService', () => {
 
 		test('finds whisper-cli at /opt/homebrew/bin/whisper-cli on macOS', () => {
 			existsSyncStub.callsFake((p: string) => p === '/opt/homebrew/bin/whisper-cli');
-			const result = (service as any).findWhisperCpp();
+			const result = (service as any).localProvider.findWhisperCpp();
 			assert.strictEqual(result, '/opt/homebrew/bin/whisper-cli');
 		});
 
 		test('finds whisper-cli at /usr/local/bin/whisper-cli on macOS', () => {
 			existsSyncStub.callsFake((p: string) => p === '/usr/local/bin/whisper-cli');
-			const result = (service as any).findWhisperCpp();
+			const result = (service as any).localProvider.findWhisperCpp();
 			assert.strictEqual(result, '/usr/local/bin/whisper-cli');
 		});
 
@@ -582,7 +582,7 @@ suite('TranscriptionService', () => {
 				status: 0, stdout: '/custom/path/whisper-cli\n', stderr: '',
 				error: undefined, pid: 0, output: [], signal: null,
 			});
-			const result = (service as any).findWhisperCpp();
+			const result = (service as any).localProvider.findWhisperCpp();
 			assert.strictEqual(result, '/custom/path/whisper-cli');
 		});
 
@@ -592,14 +592,14 @@ suite('TranscriptionService', () => {
 				status: 1, stdout: '', stderr: '', error: undefined,
 				pid: 0, output: [], signal: null,
 			});
-			const result = (service as any).findWhisperCpp();
+			const result = (service as any).localProvider.findWhisperCpp();
 			assert.strictEqual(result, null);
 		});
 
 		test('returns null when which command throws', () => {
 			existsSyncStub.returns(false);
 			sinon.stub(child_process, 'spawnSync').throws(new Error('ENOENT'));
-			const result = (service as any).findWhisperCpp();
+			const result = (service as any).localProvider.findWhisperCpp();
 			assert.strictEqual(result, null);
 		});
 	});

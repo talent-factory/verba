@@ -67,6 +67,7 @@ nav:
     - Configuration: guide/configuration.md
   - Development:
     - Architecture: development/architecture.md
+    - Cross-Platform Strategy: development/cross-platform-strategy.md
     - ADR - Deepgram Migration: development/adr-deepgram-migration.md
     - Contributing: development/contributing.md
   - Changelog: changelog.md

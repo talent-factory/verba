@@ -107,8 +107,10 @@ paste. They talk over Tauri's `invoke`/event IPC.
 - **Permissions / entitlements:**
   - **Microphone** — `NSMicrophoneUsageDescription`, `com.apple.security.device.audio-input`.
   - **Accessibility** — required to synthesize paste into other apps; user grants
-    it in System Settings → Privacy & Security → Accessibility. App must detect
-    and guide the user if not yet granted.
+    it in System Settings → Privacy & Security → Accessibility. Detected via
+    `AXIsProcessTrusted()` (M3); the app deep-links to the Accessibility pane
+    (`x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility`)
+    when ungranted rather than just instructing the user verbally.
 - **Distribution:** Developer ID signing + notarization for direct download.
   Mac App Store is a poor fit — its sandbox forbids the global input injection
   that `TextSink` relies on. **Recommendation: direct distribution** (DMG +
@@ -148,8 +150,39 @@ Templates, glossary, and expansions are the same feature set — only the
    secrets (`keyring`), JSON key-value store, and a window API-key prompt. The
    frontend type-checks; the Rust commands (esp. cpal capture) are authored but
    **not yet compiled** — build on a Mac (`apps/macos/README.md`).
-4. **M3 — Cleanup + paste.** `CleanupService` + `TextSink` paste into the
-   frontmost app. Accessibility permission onboarding.
+4. **M3 — Cleanup + paste.** ⏳ Planned — `controller.ts`'s `stopAndTranscribe()`
+   gains a step after `DeepgramProvider.transcribe()`: `CleanupService.process()`
+   (single-shot; `processStreaming()`'s live character-count UI is deferred to
+   M4) runs on the transcript, then a new `tryPaste()` replaces the M2
+   `showTranscript()`-only call.
+   - **Rust — new `paste.rs`:** `has_accessibility_permission()`
+     (`AXIsProcessTrusted()`), `open_accessibility_settings()` (opens
+     `x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility`),
+     `paste_text(text)`.
+   - **Paste mechanism is a spike, not a locked decision:** `paste_text` tries
+     AX value insertion into the frontmost app's focused element first (no
+     clipboard side-effect); if that app doesn't expose an accessible focused
+     text field (terminals, some Electron apps), it falls back to
+     save-clipboard → set-pasteboard → synthesize ⌘V via `CGEvent` →
+     restore-clipboard. **Risk:** the AX-insertion crate (`accessibility-sys` /
+     `core-foundation` / hand FFI to ApplicationServices) hasn't been verified
+     to compile yet — resolve this spike before committing to it as the
+     primary path.
+   - **Accessibility onboarding:** `tryPaste()` checks
+     `has_accessibility_permission` before pasting. If ungranted, the window
+     (reusing the M2 `promptForApiKey` UI pattern) shows a message with a
+     button that calls `open_accessibility_settings`, and falls back to
+     `showTranscript()` so the cleaned text isn't lost while the user grants
+     permission and retries the hotkey. On a `paste_text` failure after
+     permission is granted, fall back to `showTranscript()` + notifier error,
+     same pattern as M2's transcription error handling.
+   - **No capability changes needed** — custom Rust commands don't require
+     ACL entries in `capabilities/default.json` (same as M2).
+   - **Explicitly deferred to M4:** streaming cleanup feedback, template
+     picker, glossary/expansions wiring.
+   - Verify with a real `cargo check`/`cargo clippy` pass and manual paste
+     testing (TextEdit, Terminal, VS Code) before merge — M2's Rust code was
+     authored without a compiler; this app is now routinely built on macOS.
 5. **M4 — Parity polish.** Template picker, glossary/expansions, cost/history,
    settings UI.
 6. **M5 — Signing + notarization + updater.** Shippable DMG.
@@ -158,12 +191,12 @@ Templates, glossary, and expansions are the same feature set — only the
 
 ## 6. Open questions
 
-- **Mic capture:** native Rust (cpal) for a dependency-free binary, vs. an
-  ffmpeg sidecar to reuse the extension's mature device-selection logic. Leaning
-  cpal for M2, revisit if device selection gets hairy.
-- **Paste mechanism:** AX value insertion (cleaner, but flaky in some apps) vs.
-  pasteboard + synthetic ⌘V (robust, but clobbers the clipboard unless we
-  save/restore it). Leaning save/restore + ⌘V.
+- **Mic capture:** ✅ Resolved — native Rust (cpal), landed in M2.
+- **Paste mechanism:** ✅ Resolved as an M3 spike, not a pre-commitment — try AX
+  value insertion first (cleaner, no clipboard side-effect), fall back to
+  pasteboard + synthetic ⌘V (save/restore) when the frontmost app doesn't
+  expose an accessible focused text field. See the M3 milestone entry above
+  for the concrete fallback order and the AX-crate risk.
 - **Streaming/continuous mode:** ship single-shot first (M2–M4); continuous
   (Deepgram WebSocket) is a later milestone.
 - **Core packaging:** publish `@verba/core` to a registry, or keep it a private

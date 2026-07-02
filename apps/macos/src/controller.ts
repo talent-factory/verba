@@ -49,7 +49,12 @@ export class DictationController {
 
 	/** Requests permissions and loads persisted state. Call once at startup. */
 	async init(): Promise<void> {
-		await this.notifier.init();
+		// Don't block startup (and hotkey registration in main.ts) on the
+		// notification-permission dialog: it's best-effort per the Notifier
+		// contract, and on this menu-bar (Accessory-policy) app the system
+		// dialog isn't reliably raised to the front, so awaiting it can hang
+		// indefinitely with no visible sign anything is wrong.
+		void this.notifier.init();
 		await this.store.init();
 	}
 

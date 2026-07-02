@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { ProcessingStage, PipelineContext } from './pipeline';
-import { SecretStore, Notifier } from './core/adapters';
+import { SecretStore, Notifier } from './adapters';
 
 export interface Expansion {
 	abbreviation: string;

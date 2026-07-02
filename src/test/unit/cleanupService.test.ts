@@ -1,8 +1,8 @@
 import * as assert from 'assert';
 import * as sinon from 'sinon';
 
-import { CleanupService } from '../../cleanupService';
-import { PipelineContext } from '../../pipeline';
+import { CleanupService } from '../../core/cleanupService';
+import { PipelineContext } from '../../core/pipeline';
 
 // Fake SecretStorage matching the SecretStorage interface in cleanupService.ts
 function createFakeSecretStorage(): {

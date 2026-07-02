@@ -1,5 +1,4 @@
-//! JSON-file key/value store + audio file reader (M2).
-//! Backs the frontend `TauriKeyValueStore` and the core's `AudioBytesReader`.
+//! JSON-file key/value store (M2). Backs the frontend `TauriKeyValueStore`.
 
 use std::collections::HashMap;
 use std::fs;
@@ -38,11 +37,4 @@ pub fn kv_set(app: AppHandle, key: String, value: Value) -> Result<(), String> {
     let path = store_path(&app)?;
     let json = serde_json::to_string_pretty(&map).map_err(|e| e.to_string())?;
     fs::write(&path, json).map_err(|e| e.to_string())
-}
-
-/// Reads raw bytes of a recorded WAV so the core's Deepgram provider can upload
-/// them. Returned as a byte array over IPC.
-#[tauri::command]
-pub fn read_audio_file(path: String) -> Result<Vec<u8>, String> {
-    fs::read(&path).map_err(|e| e.to_string())
 }

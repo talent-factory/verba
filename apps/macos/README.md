@@ -1,31 +1,41 @@
 # Verba for macOS (Tauri)
 
 System-wide dictation menu-bar app — Phase 1 of the [cross-platform
-strategy](../../docs/development/cross-platform-strategy.md). It reuses
-[`@verba/core`](../../packages/core) unchanged; a Rust backend adds the native
-concerns (global hotkey, mic capture, Accessibility paste, keychain).
+strategy](../../docs/development/cross-platform-strategy.md). It builds on
+[`@verba/core`](../../packages/core) for shared dictation logic (pipeline,
+cleanup, adapter contracts); a Rust backend adds the native concerns (global
+hotkey, mic capture, Accessibility paste, keychain) plus a native Deepgram
+transcription call that replaces `@verba/core`'s SDK-based `DeepgramProvider`,
+which cannot run inside Tauri's WebView — see the Status section below.
 
-## Status: M2 — capture + transcription
+## Status: M3 in progress — onboarding UI done, paste still open
 
 - ✅ Menu-bar (tray) app with a Quit item; no Dock icon (macOS *accessory*
   activation).
 - ✅ Global hotkey (`Alt+Space`) **toggles microphone capture**; on stop the
-  recording is transcribed with `DeepgramProvider` and shown in the window.
+  recording is transcribed natively and shown in the window.
 - ✅ macOS host adapters implementing the core seams — `TauriNotifier`
   (notification plugin), `TauriSecretStore` (Keychain via `keyring`),
   `TauriKeyValueStore` (JSON file) — plus a window prompt for API keys.
 - ✅ Rust commands: `start_capture`/`stop_capture` (cpal → WAV),
-  `read_audio_file`, `secret_*`, `kv_*`.
+  `deepgram_transcribe` (native REST call — `@deepgram/sdk` refuses to run in
+  a browser/WebView context), `has_accessibility_permission` /
+  `open_accessibility_settings`, `secret_*`, `kv_*`.
 - ✅ `NSMicrophoneUsageDescription` in `src-tauri/Info.plist` — without it,
   macOS silently kills the process on first mic access (TCC), regardless of
   the audio API used.
-- ⏳ **Next (M3):** run `CleanupService` on the transcript and paste into the
+- ✅ Accessibility onboarding: after each transcription, an ungranted
+  permission shows an in-window message with a System-Settings deep-link,
+  falling through to the transcript display either way.
+- ⏳ **Next:** run `CleanupService` on the transcript and paste into the
   frontmost app (`TextSink`) instead of just displaying it.
 
-> The **TypeScript frontend type-checks** against `@verba/core`. The **Rust
-> commands are authored but not yet compiled here** (Tauri targets macOS; the
-> cpal capture in `src-tauri/src/audio.rs` is the piece most likely to need
-> iteration on a Mac). Build with `npm run tauri dev` on macOS.
+> **Manually verified end-to-end on real macOS hardware** (`npm run tauri
+> dev`): hotkey → recording → transcription → Accessibility check →
+> onboarding UI → transcript. Transcription uses a native Rust HTTP call
+> (`transcribe.rs`) rather than `@verba/core`'s SDK-based `DeepgramProvider`,
+> which cannot run in a WebView at all — see
+> `../../docs/development/phase-1-macos-app.md`'s M3 entry for why.
 
 ## Layout
 
@@ -66,9 +76,11 @@ npm run tauri dev
 
 ## Next milestones
 
-- **M2** — mic capture (Rust) → `DeepgramProvider.transcribe`; Keychain-backed
+- **M2** — ✅ shipped: mic capture (Rust) → transcription; Keychain-backed
   `TauriSecretStore`; a key-entry window.
-- **M3** — `CleanupService` + paste into the frontmost app (`TextSink` via
-  Accessibility / `CGEvent`); Accessibility permission onboarding.
+- **M3** — ✅ shipped: native Deepgram transcription (replacing the SDK-based
+  provider from M2, which can't run in the WebView) and Accessibility
+  permission onboarding (see Status above). ⏳ still open: `CleanupService` +
+  paste into the frontmost app (`TextSink` via Accessibility / `CGEvent`).
 - **M4/M5** — template picker, settings, glossary/expansions, cost/history;
   signing, notarization, updater.

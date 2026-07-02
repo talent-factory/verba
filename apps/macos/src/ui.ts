@@ -2,8 +2,8 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 
 /**
  * Minimal DOM UI for the (normally hidden) main window. M2 uses it to show a
- * transcript and to collect the Deepgram API key. A richer settings UI comes
- * in M4.
+ * transcript and to collect the Deepgram API key; M3 adds the Accessibility
+ * onboarding message. A richer settings UI comes in M4.
  */
 
 /** Brings the main window to the foreground. */
@@ -80,5 +80,55 @@ export async function promptForApiKey(label: string): Promise<string | undefined
 		form.append(input, submit, cancel);
 		app.appendChild(form);
 		input.focus();
+	});
+}
+
+/**
+ * Shows an Accessibility-permission onboarding message with a button that
+ * opens System Settings. Resolves once the user dismisses it — clicking
+ * "Open System Settings" does not dismiss the box, since the user needs to
+ * switch away to System Settings and back before retrying the hotkey.
+ */
+export async function showAccessibilityOnboarding(onOpenSettings: () => Promise<void>): Promise<void> {
+	await reveal();
+	if (document.getElementById('accessibility-onboarding')) { return; }
+
+	const app = document.getElementById('app');
+	if (!app) {
+		console.warn('[Verba] Cannot show Accessibility onboarding: #app element not found');
+		return;
+	}
+
+	return new Promise((resolve) => {
+		const box = document.createElement('div');
+		box.id = 'accessibility-onboarding';
+
+		const message = document.createElement('p');
+		message.textContent =
+			'Verba needs Accessibility permission to paste into other apps. ' +
+			'Grant it in System Settings, then press the hotkey again to dictate.';
+
+		const openSettings = document.createElement('button');
+		openSettings.type = 'button';
+		openSettings.textContent = 'Open System Settings';
+		openSettings.addEventListener('click', () => {
+			onOpenSettings().catch((err) => {
+				console.warn('[Verba] Failed to open Accessibility settings:', err);
+				message.textContent =
+					'Could not open System Settings automatically. Open it manually: ' +
+					'System Settings → Privacy & Security → Accessibility.';
+			});
+		});
+
+		const dismiss = document.createElement('button');
+		dismiss.type = 'button';
+		dismiss.textContent = 'Dismiss';
+		dismiss.addEventListener('click', () => {
+			box.remove();
+			resolve();
+		});
+
+		box.append(message, openSettings, dismiss);
+		app.appendChild(box);
 	});
 }

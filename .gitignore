@@ -1,5 +1,6 @@
 out/
 dist/
+dist-test/
 node_modules/
 .vscode-test/
 *.vsix
@@ -16,3 +17,4 @@ site/
 .claude/handoffs/**
 .claude/worktrees/
 .headroom/
+.superpowers/

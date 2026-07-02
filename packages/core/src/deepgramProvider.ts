@@ -11,7 +11,16 @@
 import { SecretStore, AudioBytesReader } from './adapters';
 import { TranscriptionBackend, TranscriptionResult, validateTranscript } from './transcription';
 
-const API_KEY_STORAGE_KEY = 'verba.deepgramApiKey';
+/** Keychain/secret-store key the Deepgram API key is persisted under. */
+export const API_KEY_STORAGE_KEY = 'verba.deepgramApiKey';
+
+/**
+ * User-facing message shown after an invalid key is detected and cleared, so
+ * every Deepgram-backed provider (SDK-based or a native REST reimplementation
+ * like the macOS app's) reports the same recovery instructions.
+ */
+export const INVALID_DEEPGRAM_API_KEY_MESSAGE =
+	'Invalid Deepgram API key. It has been removed — you will be prompted again on next use.';
 
 // Lazy-load @deepgram/sdk so the module can be imported in environments that
 // resolve the SDK differently (and to mirror the pattern used elsewhere).
@@ -21,6 +30,67 @@ function getDeepgramSdk(): typeof import('@deepgram/sdk') {
 
 /** Prompts the host user for a Deepgram API key. Returns undefined if cancelled. */
 export type ApiKeyPrompt = () => Promise<string | undefined>;
+
+/**
+ * Truncates glossary terms to fit within Deepgram's 500-token keyterm budget.
+ * Each keyterm is formatted as `term:2` (boost weight). Token count is estimated
+ * using character length (BPE ≈ 1 token per 3 characters), with a safety margin.
+ *
+ * Exported as a standalone, SDK/DOM-free function so any Deepgram-backed
+ * provider (this class, or a native reimplementation like the macOS app's
+ * `DeepgramTauriProvider`) shares the exact same truncation logic instead of
+ * maintaining a hand-copied duplicate that can silently drift.
+ */
+export function truncateKeyterms(glossary: string[]): string[] {
+	const MAX_TOKENS = 200; // Very conservative — Deepgram's BPE tokenizer counts significantly more than char/3 estimate; hard limit is 500
+	const keyterms: string[] = [];
+	let tokenCount = 0;
+
+	for (const term of glossary) {
+		const kt = `${term}:2`;
+		// BPE tokenizers produce roughly 1 token per 3 characters (conservative)
+		const estimated = Math.max(1, Math.ceil(kt.length / 3));
+		if (tokenCount + estimated > MAX_TOKENS) {
+			break;
+		}
+		keyterms.push(kt);
+		tokenCount += estimated;
+	}
+
+	if (keyterms.length < glossary.length) {
+		console.log(
+			`[Verba] Glossary truncated: ${keyterms.length}/${glossary.length} terms sent as keyterms (${tokenCount} estimated tokens, limit ${MAX_TOKENS})`
+		);
+	}
+
+	return keyterms;
+}
+
+/**
+ * Resolves the Deepgram API key: returns the stored key if present, otherwise
+ * prompts the host user and persists the result. Shared by every
+ * Deepgram-backed provider for the same reason as {@link truncateKeyterms}.
+ *
+ * @throws {Error} when the user cancels the prompt (no key stored yet).
+ */
+export async function resolveApiKey(
+	secretStorage: SecretStore,
+	promptForApiKey: ApiKeyPrompt,
+	storageKey: string = API_KEY_STORAGE_KEY
+): Promise<string> {
+	const stored = await secretStorage.get(storageKey);
+	if (stored) {
+		return stored;
+	}
+
+	const key = await promptForApiKey();
+	if (!key) {
+		throw new Error('Deepgram API key required for transcription.');
+	}
+
+	await secretStorage.store(storageKey, key);
+	return key;
+}
 
 export class DeepgramProvider implements TranscriptionBackend {
 	readonly name = 'Deepgram Transcription';
@@ -61,7 +131,7 @@ export class DeepgramProvider implements TranscriptionBackend {
 		};
 
 		if (glossary?.length) {
-			options.keyterm = this.truncateKeyterms(glossary);
+			options.keyterm = truncateKeyterms(glossary);
 		}
 
 		let response: any;
@@ -71,9 +141,7 @@ export class DeepgramProvider implements TranscriptionBackend {
 			if (err instanceof Error && ((err as any).status === 401 || (err as any).status === 403)) {
 				this._client = null;
 				await this.secretStorage.delete(API_KEY_STORAGE_KEY);
-				throw new Error(
-					'Invalid Deepgram API key. It has been removed — you will be prompted again on next use.'
-				);
+				throw new Error(INVALID_DEEPGRAM_API_KEY_MESSAGE);
 			}
 			const detail = err instanceof Error ? err.message : String(err);
 			throw new Error(`Transcription failed: ${detail}`);
@@ -98,49 +166,8 @@ export class DeepgramProvider implements TranscriptionBackend {
 		return { text: validateTranscript(rawText), detectedLanguage };
 	}
 
-	/**
-	 * Truncates glossary terms to fit within Deepgram's 500-token keyterm budget.
-	 * Each keyterm is formatted as `term:2` (boost weight). Token count is estimated
-	 * using character length (BPE ≈ 1 token per 3 characters), with a safety margin.
-	 */
-	private truncateKeyterms(glossary: string[]): string[] {
-		const MAX_TOKENS = 200; // Very conservative — Deepgram's BPE tokenizer counts significantly more than char/3 estimate; hard limit is 500
-		const keyterms: string[] = [];
-		let tokenCount = 0;
-
-		for (const term of glossary) {
-			const kt = `${term}:2`;
-			// BPE tokenizers produce roughly 1 token per 3 characters (conservative)
-			const estimated = Math.max(1, Math.ceil(kt.length / 3));
-			if (tokenCount + estimated > MAX_TOKENS) {
-				break;
-			}
-			keyterms.push(kt);
-			tokenCount += estimated;
-		}
-
-		if (keyterms.length < glossary.length) {
-			console.log(
-				`[Verba] Glossary truncated: ${keyterms.length}/${glossary.length} terms sent as keyterms (${tokenCount} estimated tokens, limit ${MAX_TOKENS})`
-			);
-		}
-
-		return keyterms;
-	}
-
 	private async getApiKey(): Promise<string> {
-		const stored = await this.secretStorage.get(API_KEY_STORAGE_KEY);
-		if (stored) {
-			return stored;
-		}
-
-		const key = await this.promptForApiKey();
-		if (!key) {
-			throw new Error('Deepgram API key required for transcription.');
-		}
-
-		await this.secretStorage.store(API_KEY_STORAGE_KEY, key);
-		return key;
+		return resolveApiKey(this.secretStorage, this.promptForApiKey, API_KEY_STORAGE_KEY);
 	}
 
 	private getClient(apiKey: string): any {

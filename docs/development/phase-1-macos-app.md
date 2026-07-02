@@ -72,16 +72,22 @@ full test suite green, separate from app code.
 └───────────────────────────────────────────────────────────────────────────┘
 ```
 
-The **orchestration and all API calls run in the TS frontend** via `@verba/core`
-(the Deepgram + Anthropic SDKs work in the WebView). The **Rust backend owns
-only what the web layer cannot do**: global input, native capture, and system
-paste. They talk over Tauri's `invoke`/event IPC.
+The **orchestration mostly runs in the TS frontend** via `@verba/core`, but not
+every SDK call can: `@deepgram/sdk`'s REST client throws unconditionally inside
+Tauri's WebView (see the M3 milestone below), so Deepgram transcription
+happens as a native Rust HTTP call (`transcribe.rs`) instead, behind a thin
+`DeepgramTauriProvider` that satisfies `@verba/core`'s `TranscriptionBackend`
+contract. Whether the Anthropic SDK (used by `CleanupService`) has the same
+restriction is unverified — that lands with M3's `CleanupService` wiring. The
+**Rust backend owns everything the web layer categorically cannot do**: global
+input, native capture, and system paste. They talk over Tauri's `invoke`/event
+IPC.
 
 ### Adapter implementations (the Phase 0 seams, realized for macOS)
 
 | Core adapter | macOS implementation |
 |--------------|----------------------|
-| `AudioBytesReader` / `AudioCapture` | Rust command records the mic (cpal, or an ffmpeg sidecar to reuse existing device logic) → returns WAV bytes / temp path |
+| `AudioCapture` | Rust command records the mic (cpal, or an ffmpeg sidecar to reuse existing device logic) → returns a WAV temp-file path. (`AudioBytesReader` is no longer used by this app — `DeepgramTauriProvider` reads the WAV file directly in Rust rather than shipping bytes to the TS frontend; see the M3 milestone.) |
 | `SecretStore` | Rust keychain access (`security-framework`), exposed via `invoke` |
 | `KeyValueStore` | JSON file in the app's config dir (`tauri::api::path`) |
 | `Notifier` | `tauri-plugin-notification` (native toasts) |
@@ -92,7 +98,9 @@ paste. They talk over Tauri's `invoke`/event IPC.
 1. User presses the global hotkey (e.g. `⌥Space`) → Rust emits `hotkey` event.
 2. Frontend starts capture (`invoke('start_capture')`); tray icon shows recording.
 3. Second press stops → Rust returns WAV bytes.
-4. Frontend runs `@verba/core`: `DeepgramProvider` → `CleanupService` (template).
+4. Frontend calls `DeepgramTauriProvider.transcribe()`, which invokes the
+   native Rust `deepgram_transcribe` command (not `@verba/core`'s
+   `DeepgramProvider` — see M3) → (once wired) `CleanupService` (template).
 5. Frontend calls `invoke('paste_text', { text })` → Rust pastes into the
    frontmost app.
 
@@ -123,7 +131,7 @@ paste. They talk over Tauri's `invoke`/event IPC.
 | Reused from `@verba/core` (unchanged) | New in `apps/macos` |
 |---------------------------------------|---------------------|
 | Pipeline, cleanup, prompt engineering | Rust backend (hotkey, capture, paste, keychain) |
-| Deepgram provider, transcription contracts | macOS adapter implementations |
+| Transcription contracts (`TranscriptionBackend`), keyterm truncation, API-key resolution | macOS adapter implementations, native Deepgram transcription (`transcribe.rs`, replacing the `DeepgramProvider` SDK call — see M3) |
 | Glossary, expansions, cost tracking, history logic | Menu-bar UI + settings |
 | Course correction, voice commands | Permission onboarding flow |
 
@@ -144,45 +152,54 @@ Templates, glossary, and expansions are the same feature set — only the
    `DictationController` that constructs `@verba/core` services (frontend
    type-checks against the package). No audio yet. The Rust/Tauri build targets
    macOS and is not exercised in CI — see `apps/macos/README.md`.
-3. **M2 — Capture + transcription.** ✅ Implemented — hotkey toggles mic capture
-   (Rust `start_capture`/`stop_capture`, cpal → WAV); on stop the recording is
-   transcribed via `DeepgramProvider` and shown in the window. Keychain-backed
-   secrets (`keyring`), JSON key-value store, and a window API-key prompt. The
-   frontend type-checks; the Rust commands (esp. cpal capture) are authored but
-   **not yet compiled** — build on a Mac (`apps/macos/README.md`).
-4. **M3 — Cleanup + paste.** ⏳ Planned — `controller.ts`'s `stopAndTranscribe()`
-   gains a step after `DeepgramProvider.transcribe()`: `CleanupService.process()`
-   (single-shot; `processStreaming()`'s live character-count UI is deferred to
-   M4) runs on the transcript, then a new `tryPaste()` replaces the M2
-   `showTranscript()`-only call.
-   - **Rust — new `paste.rs`:** `has_accessibility_permission()`
+3. **M2 — Capture + transcription.** ✅ Implemented and manually verified —
+   hotkey toggles mic capture (Rust `start_capture`/`stop_capture`, cpal →
+   WAV); on stop the recording is transcribed and shown in the window.
+   Keychain-backed secrets (`keyring`), JSON key-value store, and a window
+   API-key prompt. Transcription no longer goes through `@verba/core`'s
+   SDK-based `DeepgramProvider` — see the M3 entry below for why and what
+   replaced it.
+4. **M3 — Cleanup + paste.** ⏳ In progress — the onboarding-UI slice
+   (Accessibility permission check + System-Settings deep-link) is done and
+   manually verified end-to-end; `CleanupService` wiring and the real paste
+   mechanism are still planned. `controller.ts`'s `stopAndTranscribe()` checks
+   `has_accessibility_permission` after each transcription and shows an
+   onboarding message (with a button to open System Settings) when ungranted,
+   falling through unconditionally to the existing `showTranscript()` display
+   either way.
+   - **Rust — `paste.rs`:** `has_accessibility_permission()`
      (`AXIsProcessTrusted()`), `open_accessibility_settings()` (opens
-     `x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility`),
-     `paste_text(text)`.
-   - **Paste mechanism is a spike, not a locked decision:** `paste_text` tries
-     AX value insertion into the frontmost app's focused element first (no
+     `x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility`).
+     Both verified working on-device. `paste_text` (the actual paste) is not
+     yet implemented — see below.
+   - **Bug found during this slice's QA, fixed on the same branch: Deepgram
+     transcription via `@deepgram/sdk` cannot run in the macOS app at all.**
+     `@deepgram/sdk`'s `AbstractRestClient` constructor throws unconditionally
+     in any browser-like environment (Tauri's WebView included) unless a
+     `proxy` option is configured — this is a hard guard, not a soft CORS
+     limitation a custom `fetch` could work around. Fixed by adding a native
+     Rust command (`transcribe.rs::deepgram_transcribe`, using `reqwest`) that
+     makes the same REST call directly — no browser, no CORS. The macOS app
+     now has its own `DeepgramTauriProvider` (`apps/macos/src/`, implementing
+     `@verba/core`'s `TranscriptionBackend`) instead of reusing
+     `@verba/core`'s `DeepgramProvider`, mirroring how `localWhisperProvider.ts`
+     is already a desktop-only backend that lives outside `@verba/core`. This
+     also revealed that M1/M2 had never been manually run end-to-end before —
+     both were verified purely by type-checking and (for M2) an unverified
+     Rust compile.
+   - **Paste mechanism is a spike, not a locked decision:** `paste_text` will
+     try AX value insertion into the frontmost app's focused element first (no
      clipboard side-effect); if that app doesn't expose an accessible focused
-     text field (terminals, some Electron apps), it falls back to
-     save-clipboard → set-pasteboard → synthesize ⌘V via `CGEvent` →
-     restore-clipboard. **Risk:** the AX-insertion crate (`accessibility-sys` /
-     `core-foundation` / hand FFI to ApplicationServices) hasn't been verified
-     to compile yet — resolve this spike before committing to it as the
-     primary path.
-   - **Accessibility onboarding:** `tryPaste()` checks
-     `has_accessibility_permission` before pasting. If ungranted, the window
-     (reusing the M2 `promptForApiKey` UI pattern) shows a message with a
-     button that calls `open_accessibility_settings`, and falls back to
-     `showTranscript()` so the cleaned text isn't lost while the user grants
-     permission and retries the hotkey. On a `paste_text` failure after
-     permission is granted, fall back to `showTranscript()` + notifier error,
-     same pattern as M2's transcription error handling.
+     text field (terminals, some Electron apps), fall back to save-clipboard →
+     set-pasteboard → synthesize ⌘V via `CGEvent` → restore-clipboard.
+     **Risk:** the AX-insertion crate (`accessibility-sys` / `core-foundation`
+     / hand FFI to ApplicationServices) hasn't been verified to compile yet —
+     resolve this spike before committing to it as the primary path.
    - **No capability changes needed** — custom Rust commands don't require
-     ACL entries in `capabilities/default.json` (same as M2).
+     ACL entries in `capabilities/default.json` (confirmed for both M2's and
+     this slice's commands).
    - **Explicitly deferred to M4:** streaming cleanup feedback, template
      picker, glossary/expansions wiring.
-   - Verify with a real `cargo check`/`cargo clippy` pass and manual paste
-     testing (TextEdit, Terminal, VS Code) before merge — M2's Rust code was
-     authored without a compiler; this app is now routinely built on macOS.
 5. **M4 — Parity polish.** Template picker, glossary/expansions, cost/history,
    settings UI.
 6. **M5 — Signing + notarization + updater.** Shippable DMG.
@@ -198,7 +215,11 @@ Templates, glossary, and expansions are the same feature set — only the
   expose an accessible focused text field. See the M3 milestone entry above
   for the concrete fallback order and the AX-crate risk.
 - **Streaming/continuous mode:** ship single-shot first (M2–M4); continuous
-  (Deepgram WebSocket) is a later milestone.
+  (Deepgram WebSocket) is a later milestone. **Note:** M3 found that
+  `@deepgram/sdk`'s REST client refuses to run in a browser context at all
+  (see M3 entry) — WebSocket connections aren't subject to CORS the same way,
+  but verify the SDK's streaming client doesn't have an equivalent
+  browser-environment guard before assuming it'll just work in the WebView.
 - **Core packaging:** publish `@verba/core` to a registry, or keep it a private
   in-repo workspace package? Private workspace is enough until a third consumer
   (iOS) appears.

@@ -9,7 +9,9 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "pretest:unit": "tsc -p tsconfig.test.json && node -e \"require('fs').writeFileSync('dist-test/package.json', JSON.stringify({ type: 'commonjs' }))\"",
+    "test:unit": "mocha"
   },
   "dependencies": {
     "@verba/core": "*",

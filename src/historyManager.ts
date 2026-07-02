@@ -154,11 +154,7 @@ export class HistoryManager {
 				console.error('[Verba] Failed to persist history records:', err);
 				if (!this._persistFailureWarned) {
 					this._persistFailureWarned = true;
-					try {
-						this._notifier?.warn('Verba: Failed to save dictation history. History data for this session may be lost.');
-					} catch (vsErr: unknown) {
-						console.warn('[Verba] Failed to show persist-failure warning:', vsErr);
-					}
+					this._notifier?.warn('Verba: Failed to save dictation history. History data for this session may be lost.');
 				}
 			}
 		});

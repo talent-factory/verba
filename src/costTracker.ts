@@ -118,11 +118,7 @@ export class CostTracker {
 		Promise.resolve(this._globalState.update(STORAGE_KEY, []))
 			.catch((err: unknown) => {
 				console.error('[Verba] Failed to reset cost records:', err);
-				try {
-					this._notifier?.warn('Verba: Failed to reset cost records. Cost data may be stale.');
-				} catch (vsErr: unknown) {
-					console.warn('[Verba] Failed to show reset-failure warning:', vsErr);
-				}
+				this._notifier?.warn('Verba: Failed to reset cost records. Cost data may be stale.');
 			});
 	}
 
@@ -148,11 +144,7 @@ export class CostTracker {
 				console.error('[Verba] Failed to persist cost records:', err);
 				if (!this._persistFailureWarned) {
 					this._persistFailureWarned = true;
-					try {
-						this._notifier?.warn('Verba: Failed to save cost records. Usage data for this session may be lost.');
-					} catch (vsErr: unknown) {
-						console.warn('[Verba] Failed to show persist-failure warning:', vsErr);
-					}
+					this._notifier?.warn('Verba: Failed to save cost records. Usage data for this session may be lost.');
 				}
 			});
 	}

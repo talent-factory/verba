@@ -290,11 +290,7 @@ export class CleanupService implements ProcessingStage {
 				);
 			}
 			console.warn('[Verba] Claude returned empty response; skipping cleanup and using raw transcript.');
-			try {
-				this.notifier?.warn('Verba: Post-processing returned an empty response. Inserting raw transcript instead.');
-			} catch (err: unknown) {
-				console.warn('[Verba] Failed to show empty-response warning:', err);
-			}
+			this.notifier?.warn('Verba: Post-processing returned an empty response. Inserting raw transcript instead.');
 			return rawInput;
 		}
 		return text;

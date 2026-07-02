@@ -100,9 +100,9 @@ export function activate(context: vscode.ExtensionContext) {
 	const statusBar = new StatusBarManager();
 	const transcriptionService = new VerbaTranscriptionService(context.secrets);
 	const notifier: Notifier = {
-		warn: (message) => { void vscode.window.showWarningMessage(message); },
-		info: (message) => { void vscode.window.showInformationMessage(message); },
-		error: (message) => { void vscode.window.showErrorMessage(message); },
+		warn: (message) => { void vscode.window.showWarningMessage(message).then(undefined, () => {}); },
+		info: (message) => { void vscode.window.showInformationMessage(message).then(undefined, () => {}); },
+		error: (message) => { void vscode.window.showErrorMessage(message).then(undefined, () => {}); },
 	};
 	const cleanupService = new VerbaCleanupService(context.secrets, notifier);
 	cleanupService.onRetry = (attempt, maxAttempts) => {

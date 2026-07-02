@@ -38,6 +38,18 @@ export interface Notifier {
 }
 
 /**
+ * Persistent key/value store for cross-session state (cost records, history).
+ *
+ * Structurally compatible with `vscode.Memento`, so the VS Code host can pass
+ * `context.globalState` directly. Other hosts back this with their own store
+ * (a JSON file for Tauri, `UserDefaults` on iOS, etc.).
+ */
+export interface KeyValueStore {
+	get<T>(key: string, defaultValue: T): T;
+	update(key: string, value: unknown): Thenable<void>;
+}
+
+/**
  * Reads raw audio bytes for a recorded utterance.
  *
  * On Node-based hosts (VS Code, Tauri sidecar) the `source` is a file path and

@@ -108,9 +108,9 @@ export function activate(context: vscode.ExtensionContext) {
 	cleanupService.onRetry = (attempt, maxAttempts) => {
 		statusBar.setRetrying(attempt, maxAttempts);
 	};
-	const costTracker = new CostTracker(context.globalState);
+	const costTracker = new CostTracker(context.globalState, notifier);
 	const maxHistoryEntries = vscode.workspace.getConfiguration('verba').get<number>('history.maxEntries', 500);
-	const historyManager = new HistoryManager(context.globalState, maxHistoryEntries);
+	const historyManager = new HistoryManager(context.globalState, maxHistoryEntries, notifier);
 	let selectedTemplate: Template | undefined;
 	let preferTerminal = false;
 	let processingAbortController: AbortController | null = null;

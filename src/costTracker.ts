@@ -1,7 +1,9 @@
 /**
  * Tracks API usage costs for Deepgram, Claude, and embedding models.
- * Persists cost records via VS Code globalState for cross-session totals.
+ * Persists cost records via a KeyValueStore for cross-session totals.
  */
+
+import { KeyValueStore, Notifier } from './core/adapters';
 
 const STORAGE_KEY = 'verba.costRecords';
 
@@ -23,23 +25,19 @@ export interface UsageRecord {
 	costUsd: number;
 }
 
-export interface GlobalState {
-	get<T>(key: string, defaultValue: T): T;
-	update(key: string, value: unknown): Thenable<void>;
-}
-
-// Lazy-load vscode module so CostTracker remains testable outside the extension host.
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-function getVscode(): typeof import('vscode') { return require('vscode'); }
+/** @deprecated Use {@link KeyValueStore} from ./core/adapters. Retained as an alias for compatibility. */
+export type GlobalState = KeyValueStore;
 
 export class CostTracker {
-	private readonly _globalState: GlobalState;
+	private readonly _globalState: KeyValueStore;
+	private readonly _notifier?: Notifier;
 	private _previousRecords: UsageRecord[];
 	private _sessionRecords: UsageRecord[] = [];
 	private _persistFailureWarned = false;
 
-	constructor(globalState: GlobalState) {
+	constructor(globalState: KeyValueStore, notifier?: Notifier) {
 		this._globalState = globalState;
+		this._notifier = notifier;
 		const raw = globalState.get<unknown[]>(STORAGE_KEY, []);
 		this._previousRecords = (Array.isArray(raw) ? raw : []).filter(
 			(r): r is UsageRecord =>
@@ -121,11 +119,9 @@ export class CostTracker {
 			.catch((err: unknown) => {
 				console.error('[Verba] Failed to reset cost records:', err);
 				try {
-					getVscode().window.showWarningMessage('Verba: Failed to reset cost records. Cost data may be stale.');
+					this._notifier?.warn('Verba: Failed to reset cost records. Cost data may be stale.');
 				} catch (vsErr: unknown) {
-					if (!(vsErr instanceof Error && vsErr.message.includes('Cannot find module'))) {
-						console.warn('[Verba] Failed to show reset-failure warning:', vsErr);
-					}
+					console.warn('[Verba] Failed to show reset-failure warning:', vsErr);
 				}
 			});
 	}
@@ -153,11 +149,9 @@ export class CostTracker {
 				if (!this._persistFailureWarned) {
 					this._persistFailureWarned = true;
 					try {
-						getVscode().window.showWarningMessage('Verba: Failed to save cost records. Usage data for this session may be lost.');
+						this._notifier?.warn('Verba: Failed to save cost records. Usage data for this session may be lost.');
 					} catch (vsErr: unknown) {
-						if (!(vsErr instanceof Error && vsErr.message.includes('Cannot find module'))) {
-							console.warn('[Verba] Failed to show persist-failure warning:', vsErr);
-						}
+						console.warn('[Verba] Failed to show persist-failure warning:', vsErr);
 					}
 				}
 			});

@@ -3,7 +3,7 @@
  * Persists cost records via a KeyValueStore for cross-session totals.
  */
 
-import { KeyValueStore, Notifier } from './core/adapters';
+import { KeyValueStore, Notifier } from '@verba/core';
 
 const STORAGE_KEY = 'verba.costRecords';
 
@@ -25,7 +25,7 @@ export interface UsageRecord {
 	costUsd: number;
 }
 
-/** @deprecated Use {@link KeyValueStore} from ./core/adapters. Retained as an alias for compatibility. */
+/** @deprecated Use {@link KeyValueStore} from '@verba/core'. Retained as an alias for compatibility. */
 export type GlobalState = KeyValueStore;
 
 export class CostTracker {

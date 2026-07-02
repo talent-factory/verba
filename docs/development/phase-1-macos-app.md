@@ -14,9 +14,10 @@ before it lands.
 
 ## 1. Repository layout — promote `@verba/core` to a package
 
-Today the core lives in `src/core/` inside the extension. Before a second
-consumer exists, promote it to a real workspace package so the app depends on a
-published contract, not extension internals.
+`@verba/core` is now a real workspace package under `packages/core/` (see
+below), so the app can depend on a published contract rather than extension
+internals. The layout and migration steps below are kept as a record of how the
+promotion was done.
 
 Proposed npm-workspaces layout:
 
@@ -131,8 +132,10 @@ Templates, glossary, and expansions are the same feature set — only the
 
 ## 5. Milestones
 
-1. **M0 — Package promotion.** `@verba/core` workspace package; extension consumes
-   it; suite green. *(separate PR)*
+1. **M0 — Package promotion.** ✅ Done — `@verba/core` is an npm-workspaces package
+   under `packages/core/` that builds independently to `dist/`; the extension
+   consumes it via `@verba/core` (bundled by esbuild into `dist/extension.js`).
+   Suite green (extension + core).
 2. **M1 — Tauri skeleton.** Menu-bar app, global hotkey, "hello" toast. No audio.
 3. **M2 — Capture + transcription.** Mic → WAV → `DeepgramProvider` → show text
    in a window. Keychain-backed `SecretStore`.

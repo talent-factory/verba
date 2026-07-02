@@ -1,10 +1,10 @@
 import * as assert from 'assert';
 import * as sinon from 'sinon';
 
-import { CleanupService } from '../../core/cleanupService';
-import { PipelineContext } from '../../core/pipeline';
+import { CleanupService } from '../../cleanupService';
+import { PipelineContext } from '../../pipeline';
 
-// Fake SecretStore matching the SecretStore interface in core/adapters.ts
+// Fake SecretStore matching the SecretStore interface in adapters.ts
 function createFakeSecretStorage(): {
 	get: sinon.SinonStub;
 	store: sinon.SinonStub;

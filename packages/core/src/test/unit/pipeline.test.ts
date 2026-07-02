@@ -1,5 +1,5 @@
 import * as assert from 'assert';
-import { DictationPipeline, PipelineContext, ProcessingStage } from '../../core/pipeline';
+import { DictationPipeline, PipelineContext, ProcessingStage } from '../../pipeline';
 
 function createStage(name: string, transform: (input: string) => string): ProcessingStage {
 	return {

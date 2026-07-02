@@ -91,9 +91,7 @@ export class DictationController {
 
 			const hasAccessibility = await invoke<boolean>('has_accessibility_permission');
 			if (!hasAccessibility) {
-				await showAccessibilityOnboarding(() => {
-					void invoke('open_accessibility_settings');
-				});
+				await showAccessibilityOnboarding(() => invoke('open_accessibility_settings'));
 			}
 			await showTranscript(text);
 		} catch (err) {

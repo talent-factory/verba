@@ -11,14 +11,19 @@ import {
  * never throw — the core treats notifications as non-critical side effects.
  */
 export class TauriNotifier implements Notifier {
-	private granted = false;
-
-	/** Requests notification permission once; call during app startup. */
+	/**
+	 * Requests notification permission once; call during app startup. Callers
+	 * don't need to await this before calling `warn`/`info`/`error` — `send`
+	 * always attempts the native call regardless of whether this has resolved
+	 * yet, so an error occurring before permission is granted still reaches
+	 * the OS notification API (and is a no-op there) rather than being
+	 * silently downgraded to a console-only warning.
+	 */
 	async init(): Promise<void> {
 		try {
-			this.granted = await isPermissionGranted();
-			if (!this.granted) {
-				this.granted = (await requestPermission()) === 'granted';
+			const granted = await isPermissionGranted();
+			if (!granted) {
+				await requestPermission();
 			}
 		} catch (err) {
 			console.warn('[Verba] Notification permission request failed:', err);
@@ -39,11 +44,7 @@ export class TauriNotifier implements Notifier {
 
 	private send(title: string, body: string): void {
 		try {
-			if (this.granted) {
-				sendNotification({ title, body });
-			} else {
-				console.warn(`[Verba] (notification suppressed, no permission) ${body}`);
-			}
+			sendNotification({ title, body });
 		} catch (err) {
 			console.warn('[Verba] Failed to show notification:', err);
 		}

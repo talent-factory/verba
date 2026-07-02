@@ -9,6 +9,7 @@
 //! concrete `TranscriptionBackend` (from `@verba/core`) that calls it.
 
 use serde::Serialize;
+use std::time::Duration;
 
 /// Sentinel error string the frontend checks for to distinguish "bad API
 /// key, clear it and re-prompt" from any other transcription failure.
@@ -20,7 +21,18 @@ use serde::Serialize;
 /// user sees a raw `Transcription failed: deepgram_unauthorized` instead).
 const DEEPGRAM_UNAUTHORIZED: &str = "deepgram_unauthorized";
 
-#[derive(Serialize)]
+/// Requests hang instead of failing without this: `reqwest::Client::new()`
+/// has no default timeout, and a stalled connection would otherwise leave
+/// the frontend's "Transcribing…" phase stuck forever with no error.
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// Error bodies that aren't JSON (e.g. an HTML page from a proxy/WAF in
+/// front of Deepgram) are truncated to this many characters before being
+/// embedded in an error message, so a large error page doesn't end up
+/// verbatim in a user-facing notification.
+const MAX_RAW_BODY_IN_ERROR: usize = 300;
+
+#[derive(Serialize, Debug, PartialEq)]
 pub struct TranscriptionResult {
     text: String,
     #[serde(rename = "detectedLanguage", skip_serializing_if = "Option::is_none")]
@@ -50,7 +62,11 @@ pub async fn deepgram_transcribe(
         params.push(("keyterm", kt.clone()));
     }
 
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .timeout(REQUEST_TIMEOUT)
+        .build()
+        .expect("failed to build the Deepgram HTTP client");
+
     let response = client
         .post("https://api.deepgram.com/v1/listen")
         .query(&params)
@@ -59,31 +75,86 @@ pub async fn deepgram_transcribe(
         .body(audio)
         .send()
         .await
-        .map_err(|e| format!("Transcription failed: {e}"))?;
+        .map_err(|e| {
+            if e.is_timeout() {
+                "Transcription failed: request timed out — check your network connection"
+                    .to_string()
+            } else {
+                format!("Transcription failed: {e}")
+            }
+        })?;
 
     let status = response.status();
     if status.as_u16() == 401 || status.as_u16() == 403 {
         return Err(DEEPGRAM_UNAUTHORIZED.to_string());
     }
 
-    let body: serde_json::Value = response
-        .json()
-        .await
-        .map_err(|e| format!("Transcription failed: could not parse response: {e}"))?;
+    let raw_body = response.text().await.map_err(|e| {
+        format!(
+            "Transcription failed ({}): could not read response body: {e}",
+            status.as_u16()
+        )
+    })?;
 
     if !status.is_success() {
-        let detail = body
-            .get("err_msg")
-            .or_else(|| body.get("reason"))
-            .and_then(|v| v.as_str())
-            .unwrap_or("unknown error");
-        return Err(format!("Transcription failed: {detail}"));
+        return Err(build_error_message(status.as_u16(), &raw_body));
     }
 
+    let body: serde_json::Value = serde_json::from_str(&raw_body).map_err(|e| {
+        format!(
+            "Transcription failed ({}): could not parse response: {e}",
+            status.as_u16()
+        )
+    })?;
+
+    Ok(parse_transcription(&body))
+}
+
+/// Builds a status-coded error message from a non-2xx response body. JSON
+/// bodies contribute Deepgram's own `err_msg`/`reason` field; anything else
+/// (HTML error pages, plain text, empty bodies) falls back to a truncated
+/// raw snippet so the status code and *some* detail always reach the user,
+/// rather than a generic "could not parse response".
+fn build_error_message(status: u16, raw_body: &str) -> String {
+    let detail = serde_json::from_str::<serde_json::Value>(raw_body)
+        .ok()
+        .and_then(|v| {
+            v.get("err_msg")
+                .or_else(|| v.get("reason"))
+                .and_then(|d| d.as_str())
+                .map(|s| s.to_string())
+        })
+        .unwrap_or_else(|| truncate_for_display(raw_body));
+
+    format!("Transcription failed ({status}): {detail}")
+}
+
+fn truncate_for_display(text: &str) -> String {
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return "(empty response body)".to_string();
+    }
+    if trimmed.chars().count() <= MAX_RAW_BODY_IN_ERROR {
+        return trimmed.to_string();
+    }
+    let truncated: String = trimmed.chars().take(MAX_RAW_BODY_IN_ERROR).collect();
+    format!("{truncated}…")
+}
+
+/// Extracts the transcript and detected language from a successful Deepgram
+/// response body. Logs when the `channels` array is absent — that shape
+/// mismatch (schema drift, a truncated/unexpected 200 body) would otherwise
+/// be indistinguishable from a genuinely silent recording, since both
+/// collapse to an empty transcript here.
+fn parse_transcription(body: &serde_json::Value) -> TranscriptionResult {
     let channel = body
         .get("results")
         .and_then(|r| r.get("channels"))
         .and_then(|c| c.get(0));
+
+    if channel.is_none() {
+        eprintln!("[Verba] deepgram_transcribe: unexpected response shape (no channels): {body}");
+    }
 
     let text = channel
         .and_then(|c| c.get("alternatives"))
@@ -98,15 +169,16 @@ pub async fn deepgram_transcribe(
         .and_then(|l| l.as_str())
         .map(|s| s.to_string());
 
-    Ok(TranscriptionResult {
+    TranscriptionResult {
         text,
         detected_language,
-    })
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     #[test]
     fn unauthorized_sentinel_matches_the_frontend_constant() {
@@ -114,5 +186,103 @@ mod tests {
         // in deepgramTauriProvider.ts — this test only catches drift on the
         // Rust side, so keep both in sync by hand when changing either.
         assert_eq!(DEEPGRAM_UNAUTHORIZED, "deepgram_unauthorized");
+    }
+
+    #[test]
+    fn parse_transcription_extracts_text_and_language() {
+        let body = json!({
+            "results": {
+                "channels": [{
+                    "alternatives": [{ "transcript": "hello world" }],
+                    "detected_language": "en"
+                }]
+            }
+        });
+
+        let result = parse_transcription(&body);
+        assert_eq!(
+            result,
+            TranscriptionResult {
+                text: "hello world".to_string(),
+                detected_language: Some("en".to_string()),
+            }
+        );
+    }
+
+    #[test]
+    fn parse_transcription_defaults_language_to_none_when_absent() {
+        let body = json!({
+            "results": {
+                "channels": [{ "alternatives": [{ "transcript": "hi" }] }]
+            }
+        });
+
+        let result = parse_transcription(&body);
+        assert_eq!(result.detected_language, None);
+    }
+
+    #[test]
+    fn parse_transcription_returns_empty_text_when_channels_missing() {
+        // Schema drift and genuine silence both land here; the eprintln! in
+        // parse_transcription is what makes the two distinguishable in logs.
+        let body = json!({ "results": {} });
+
+        let result = parse_transcription(&body);
+        assert_eq!(result.text, "");
+        assert_eq!(result.detected_language, None);
+    }
+
+    #[test]
+    fn parse_transcription_returns_empty_text_when_alternatives_missing() {
+        let body = json!({
+            "results": { "channels": [{}] }
+        });
+
+        let result = parse_transcription(&body);
+        assert_eq!(result.text, "");
+    }
+
+    #[test]
+    fn build_error_message_prefers_err_msg() {
+        let body = json!({ "err_msg": "invalid audio format" }).to_string();
+        assert_eq!(
+            build_error_message(400, &body),
+            "Transcription failed (400): invalid audio format"
+        );
+    }
+
+    #[test]
+    fn build_error_message_falls_back_to_reason() {
+        let body = json!({ "reason": "quota exceeded" }).to_string();
+        assert_eq!(
+            build_error_message(429, &body),
+            "Transcription failed (429): quota exceeded"
+        );
+    }
+
+    #[test]
+    fn build_error_message_falls_back_to_raw_body_for_non_json() {
+        let body = "<html>Bad Gateway</html>";
+        assert_eq!(
+            build_error_message(502, body),
+            "Transcription failed (502): <html>Bad Gateway</html>"
+        );
+    }
+
+    #[test]
+    fn build_error_message_truncates_long_non_json_bodies() {
+        let body = "x".repeat(500);
+        let message = build_error_message(500, &body);
+        assert!(message.starts_with("Transcription failed (500): "));
+        assert!(message.ends_with('…'));
+        assert!(message.len() < body.len());
+    }
+
+    #[test]
+    fn build_error_message_handles_empty_body() {
+        assert_eq!(
+            build_error_message(503, ""),
+            "Transcription failed (503): (empty response body)"
+        );
     }
 }

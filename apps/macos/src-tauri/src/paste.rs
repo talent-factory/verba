@@ -24,11 +24,15 @@ pub fn has_accessibility_permission() -> bool {
 /// permission to Verba.
 #[tauri::command]
 pub fn open_accessibility_settings() -> Result<(), String> {
-    std::process::Command::new("open")
+    let status = std::process::Command::new("open")
         .arg(ACCESSIBILITY_SETTINGS_URL)
-        .spawn()
-        .map(|_| ())
-        .map_err(|e| e.to_string())
+        .status()
+        .map_err(|e| e.to_string())?;
+
+    if !status.success() {
+        return Err(format!("`open` exited with {status}"));
+    }
+    Ok(())
 }
 
 #[cfg(test)]

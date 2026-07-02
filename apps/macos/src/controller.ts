@@ -3,7 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { TauriSecretStore } from './adapters/secretStore';
 import { TauriKeyValueStore } from './adapters/keyValueStore';
 import { TauriNotifier } from './adapters/notifier';
-import { promptForApiKey, setPhase, showTranscript } from './ui';
+import { promptForApiKey, setPhase, showAccessibilityOnboarding, showTranscript } from './ui';
 
 /** CleanupService needs a host prompt for its API key; supply it via the window UI. */
 class TauriCleanupService extends CleanupService {
@@ -15,12 +15,15 @@ class TauriCleanupService extends CleanupService {
 /**
  * Wires `@verba/core` to the macOS host adapters and owns the dictation flow.
  *
- * **M2 (this milestone):** the hotkey toggles microphone capture; on stop, the
+ * **M2 (shipped):** the hotkey toggles microphone capture; on stop, the
  * recording is transcribed with {@link DeepgramProvider} and the transcript is
  * shown in the window. Keychain-backed secrets; a window prompt for API keys.
  *
- * **M3 (next):** run {@link CleanupService} on the transcript and paste the
- * result into the frontmost app instead of just displaying it.
+ * **M3, onboarding-UI slice (this milestone):** after each transcription, a
+ * passive Accessibility-permission check runs; when ungranted, an onboarding
+ * message with a System-Settings deep-link is shown before falling through to
+ * the existing transcript display. Real paste and {@link CleanupService} are a
+ * separate, higher-risk follow-up slice.
  */
 export class DictationController {
 	private readonly secrets = new TauriSecretStore();
@@ -82,6 +85,13 @@ export class DictationController {
 			const wavPath = await invoke<string>('stop_capture');
 			setPhase('Transcribing…');
 			const { text } = await this.deepgram.transcribe(wavPath);
+
+			const hasAccessibility = await invoke<boolean>('has_accessibility_permission');
+			if (!hasAccessibility) {
+				await showAccessibilityOnboarding(() => {
+					void invoke('open_accessibility_settings');
+				});
+			}
 			await showTranscript(text);
 		} catch (err) {
 			this.notifier.error(`Verba: ${errText(err)}`);

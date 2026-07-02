@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { ProcessingStage, PipelineContext } from './pipeline';
+import { SecretStore, Notifier } from './core/adapters';
 
 export interface Expansion {
 	abbreviation: string;
@@ -34,12 +35,6 @@ const CLEANUP_SYSTEM_PROMPT = `Du erhältst ein rohes Sprach-Transkript in <tran
 - Behalte den exakten Sinn und Stil bei
 - Gib NUR den bereinigten Text zurück, ohne Erklärungen`;
 
-interface SecretStorage {
-	get(key: string): Thenable<string | undefined>;
-	store(key: string, value: string): Thenable<void>;
-	delete(key: string): Thenable<void>;
-}
-
 /** Maximum number of attempts for overloaded (529) errors before giving up. */
 const MAX_ATTEMPTS = 3;
 /** Base delay in milliseconds for exponential backoff between retry attempts. */
@@ -60,7 +55,8 @@ function isOverloadedError(err: unknown): boolean {
 export class CleanupService implements ProcessingStage {
 	readonly name = 'Text Cleanup';
 	private _client: Anthropic | null = null;
-	private secretStorage: SecretStorage;
+	private secretStorage: SecretStore;
+	private notifier?: Notifier;
 	private glossary: string[] = [];
 	private expansions: Expansion[] = [];
 	/** Token usage from the most recent API call, or undefined if unavailable. */
@@ -76,8 +72,14 @@ export class CleanupService implements ProcessingStage {
 		this.expansions = [...expansions];
 	}
 
-	constructor(secretStorage: SecretStorage) {
+	/**
+	 * @param secretStorage Secure store for the Anthropic API key.
+	 * @param notifier Optional host UI for surfacing non-critical warnings
+	 *   (e.g. empty-response fallback). When omitted, warnings are only logged.
+	 */
+	constructor(secretStorage: SecretStore, notifier?: Notifier) {
 		this.secretStorage = secretStorage;
+		this.notifier = notifier;
 	}
 
 	/** Optional callback invoked before each retry attempt (e.g. to update the status bar). */
@@ -289,14 +291,9 @@ export class CleanupService implements ProcessingStage {
 			}
 			console.warn('[Verba] Claude returned empty response; skipping cleanup and using raw transcript.');
 			try {
-				// Lazy-load vscode module so pure functions remain testable outside the extension host.
-				// eslint-disable-next-line @typescript-eslint/no-require-imports
-				const vs: typeof import('vscode') = require('vscode');
-				vs.window.showWarningMessage('Verba: Post-processing returned an empty response. Inserting raw transcript instead.');
+				this.notifier?.warn('Verba: Post-processing returned an empty response. Inserting raw transcript instead.');
 			} catch (err: unknown) {
-				if (!(err instanceof Error && err.message.includes('Cannot find module'))) {
-					console.warn('[Verba] Failed to show empty-response warning:', err);
-				}
+				console.warn('[Verba] Failed to show empty-response warning:', err);
 			}
 			return rawInput;
 		}

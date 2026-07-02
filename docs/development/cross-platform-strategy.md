@@ -123,8 +123,12 @@ platform that follows. No user-visible change.
 A **menu-bar app with a global hotkey** that dictates into *any* app — not just
 VS Code.
 
-- **Framework:** Tauri (preferred) or Electron, so `@verba/core` runs 1:1 in
-  TypeScript.
+- **Framework:** **Tauri** (decided). A TypeScript/web frontend consumes
+  `@verba/core` 1:1, while a Rust backend handles the native concerns (global
+  hotkey, microphone capture, Accessibility paste). Chosen over Electron for its
+  much smaller bundle, lower memory footprint, and native Rust access to system
+  APIs — and because we already have good experience with Tauri from the **HP41C
+  project**.
 - **Flow:** global hotkey → native mic capture → pipeline → insert text into the
   frontmost app via the Accessibility API / `CGEvent` (paste), with clipboard
   fallback.
@@ -172,8 +176,6 @@ macOS app.
 
 ## 6. Open questions / risks
 
-- **Tauri vs. Electron** for the macOS app (bundle size & security vs. ecosystem
-  maturity).
 - **macOS distribution:** direct + notarization vs. Mac App Store (sandbox
   restricts global input injection).
 - **iOS transcription:** cloud Deepgram vs. on-device Speech framework/whisper —

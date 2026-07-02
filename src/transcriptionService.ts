@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import { spawn, spawnSync } from 'child_process';
+import { SecretStore, AudioBytesReader } from './core/adapters';
 
 const API_KEY_STORAGE_KEY = 'verba.deepgramApiKey';
 
@@ -11,12 +12,6 @@ export interface TranscriptionResult {
 	text: string;
 	/** ISO 639-1 language code detected by Deepgram (e.g. "de", "en", "fr"). Undefined for local whisper.cpp. */
 	detectedLanguage?: string;
-}
-
-interface SecretStorage {
-	get(key: string): Thenable<string | undefined>;
-	store(key: string, value: string): Thenable<void>;
-	delete(key: string): Thenable<void>;
 }
 
 // Lazy-load @deepgram/sdk (same pattern as continuousRecorder.ts)
@@ -32,13 +27,21 @@ function getDeepgramSdk(): typeof import('@deepgram/sdk') {
 export class TranscriptionService {
 	readonly name = 'Deepgram Transcription';
 	private _client: any = null;
-	private secretStorage: SecretStorage;
+	private secretStorage: SecretStore;
+	private readAudioFile: AudioBytesReader;
 	private _provider: TranscriptionProvider = 'deepgram';
 	private _modelPath: string = '';
 	private _language: string = 'auto';
 
-	constructor(secretStorage: SecretStorage) {
+	/**
+	 * @param secretStorage Secure store for the Deepgram API key.
+	 * @param audioReader Reads raw audio bytes for the cloud (Deepgram) path.
+	 *   Defaults to `fs.readFileSync`; injectable so non-Node hosts (mobile,
+	 *   browser) can supply bytes without a filesystem.
+	 */
+	constructor(secretStorage: SecretStore, audioReader?: AudioBytesReader) {
 		this.secretStorage = secretStorage;
+		this.readAudioFile = audioReader ?? ((source: string) => fs.readFileSync(source));
 	}
 
 	/** Switches the transcription backend. Throws on invalid provider values. */
@@ -75,7 +78,7 @@ export class TranscriptionService {
 		const apiKey = await this.getApiKey();
 		const client = this.getClient(apiKey);
 
-		const audioBuffer = fs.readFileSync(input);
+		const audioBuffer = await this.readAudioFile(input);
 		const isAutoLanguage = this._language === 'auto';
 		const options: Record<string, unknown> = {
 			model: 'nova-3',

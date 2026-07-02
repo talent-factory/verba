@@ -1,5 +1,5 @@
 import * as fs from 'fs';
-import { Expansion } from './core/cleanupService';
+import { Expansion } from '@verba/core';
 
 /** Trusted hosts for model download redirects (Hugging Face CDN). */
 export const TRUSTED_DOWNLOAD_HOSTS = [

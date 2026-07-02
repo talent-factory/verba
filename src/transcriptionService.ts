@@ -1,13 +1,11 @@
 import * as fs from 'fs';
-import { SecretStore } from './core/adapters';
-import { TranscriptionResult } from './core/transcription';
-import { DeepgramProvider } from './core/deepgramProvider';
+import { SecretStore, TranscriptionResult, DeepgramProvider } from '@verba/core';
 import { LocalWhisperProvider } from './localWhisperProvider';
 
 /** Transcription backend selection: `'deepgram'` for cloud API, `'local'` for whisper.cpp CLI. */
 export type TranscriptionProvider = 'deepgram' | 'local';
 
-// Re-exported for backward compatibility; the canonical definition lives in ./core/transcription.
+// Re-exported for backward compatibility; the canonical definition lives in '@verba/core'.
 export type { TranscriptionResult };
 
 /**

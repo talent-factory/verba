@@ -331,15 +331,20 @@
       }
     }
   },
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
     "vscode:prepublish": "npm run bundle",
-    "compile": "tsc -p ./",
-    "bundle": "esbuild src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node --minify",
-    "watch": "tsc -watch -p ./",
+    "compile:core": "tsc -p packages/core",
+    "compile": "npm run compile:core && tsc -p ./",
+    "bundle": "npm run compile:core && esbuild src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node --minify",
+    "watch": "npm run compile:core && tsc -watch -p ./",
     "dev": "npm run compile && code --extensionDevelopmentPath=.",
     "package:vsix": "npx @vscode/vsce package --allow-missing-repository",
     "install:local": "npm run package:vsix && node -e \"var p=require('./package.json');require('child_process').execSync('code --install-extension '+p.name+'-'+p.version+'.vsix',{stdio:'inherit'})\"",
-    "test:unit": "npm run compile && mocha",
+    "test:core": "npm --workspace @verba/core run test:unit",
+    "test:unit": "npm run compile && mocha && npm run test:core",
     "test:integration": "npm run compile && node out/test/runIntegrationTests.js",
     "test": "npm run compile && npm run test:unit && npm run test:integration"
   },
@@ -348,6 +353,7 @@
     "@types/node": "^20.11.0",
     "@types/sinon": "^21.0.0",
     "@types/vscode": "^1.85.0",
+    "@verba/core": "*",
     "@vscode/test-electron": "^2.5.2",
     "esbuild": "^0.27.3",
     "mocha": "^11.7.5",

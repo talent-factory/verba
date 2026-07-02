@@ -1,0 +1,21 @@
+{
+  "name": "@verba/core",
+  "version": "0.0.0",
+  "description": "Platform-agnostic dictation core for Verba (pipeline, cleanup, transcription, adapter contracts)",
+  "private": true,
+  "license": "MIT",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "!dist/test"
+  ],
+  "scripts": {
+    "compile": "tsc -p ./",
+    "test:unit": "npm run compile && mocha"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.78.0",
+    "@deepgram/sdk": "^4.11.3"
+  }
+}

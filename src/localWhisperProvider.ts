@@ -8,7 +8,7 @@
 
 import * as fs from 'fs';
 import { spawn, spawnSync } from 'child_process';
-import { TranscriptionBackend, TranscriptionResult, validateTranscript } from './core/transcription';
+import { TranscriptionBackend, TranscriptionResult, validateTranscript } from '@verba/core';
 
 export class LocalWhisperProvider implements TranscriptionBackend {
 	readonly name = 'Local Whisper Transcription';

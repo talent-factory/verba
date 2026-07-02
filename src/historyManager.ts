@@ -3,7 +3,7 @@
  * Persists records via a KeyValueStore for cross-session access.
  */
 
-import { KeyValueStore, Notifier } from './core/adapters';
+import { KeyValueStore, Notifier } from '@verba/core';
 
 const STORAGE_KEY = 'verba.history';
 const DEFAULT_MAX_ENTRIES = 500;
@@ -73,7 +73,7 @@ export interface HistoryRecord {
 	workspaceFolder?: string;
 }
 
-/** @deprecated Use {@link KeyValueStore} from ./core/adapters. Retained as an alias for compatibility. */
+/** @deprecated Use {@link KeyValueStore} from '@verba/core'. Retained as an alias for compatibility. */
 export type GlobalState = KeyValueStore;
 
 let _globalIdCounter = 0;

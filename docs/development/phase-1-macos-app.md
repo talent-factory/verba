@@ -142,8 +142,12 @@ Templates, glossary, and expansions are the same feature set — only the
    `DictationController` that constructs `@verba/core` services (frontend
    type-checks against the package). No audio yet. The Rust/Tauri build targets
    macOS and is not exercised in CI — see `apps/macos/README.md`.
-3. **M2 — Capture + transcription.** Mic → WAV → `DeepgramProvider` → show text
-   in a window. Keychain-backed `SecretStore`.
+3. **M2 — Capture + transcription.** ✅ Implemented — hotkey toggles mic capture
+   (Rust `start_capture`/`stop_capture`, cpal → WAV); on stop the recording is
+   transcribed via `DeepgramProvider` and shown in the window. Keychain-backed
+   secrets (`keyring`), JSON key-value store, and a window API-key prompt. The
+   frontend type-checks; the Rust commands (esp. cpal capture) are authored but
+   **not yet compiled** — build on a Mac (`apps/macos/README.md`).
 4. **M3 — Cleanup + paste.** `CleanupService` + `TextSink` paste into the
    frontmost app. Accessibility permission onboarding.
 5. **M4 — Parity polish.** Template picker, glossary/expansions, cost/history,

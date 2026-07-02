@@ -1,20 +1,36 @@
+mod audio;
+mod secret;
+mod store;
+
 use tauri::{
     menu::{Menu, MenuItem},
     tray::TrayIconBuilder,
     Manager,
 };
 
+use audio::CaptureState;
+
 /// Builds and runs the Verba menu-bar app.
 ///
-/// M1 scope: a tray (menu-bar) app with a Quit item and the global-shortcut +
-/// notification plugins registered. The hotkey handler is registered from the
-/// frontend (`src/main.ts`) via the global-shortcut plugin. Audio capture,
-/// keychain, and paste commands arrive in M2/M3.
+/// Tray (menu-bar) app with the global-shortcut + notification plugins. The
+/// hotkey handler is registered from the frontend (`src/main.ts`). M2 adds the
+/// capture/secret/store commands; paste (M3) follows.
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_notification::init())
+        .manage(CaptureState::default())
+        .invoke_handler(tauri::generate_handler![
+            audio::start_capture,
+            audio::stop_capture,
+            secret::secret_get,
+            secret::secret_set,
+            secret::secret_delete,
+            store::kv_load,
+            store::kv_set,
+            store::read_audio_file,
+        ])
         .setup(|app| {
             // Menu-bar-only app: no Dock icon (macOS "accessory" activation).
             #[cfg(target_os = "macos")]

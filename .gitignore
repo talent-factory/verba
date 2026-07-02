@@ -16,3 +16,4 @@ site/
 .claude/handoffs/**
 .claude/worktrees/
 .headroom/
+.superpowers/

@@ -103,20 +103,30 @@ to formalize the other three and remove the single lazy `require('vscode')` in
 
 ## 4. Roadmap (sorted by ROI)
 
-### Phase 0 — Extract the core (small, low-risk, immediately useful)
+### Phase 0 — Extract the core (small, low-risk, immediately useful) ✅ largely done
 
-Create `@verba/core` as a standalone package. Because the services already use
-interfaces rather than `vscode`, this is mostly:
+Carve `@verba/core` out of the extension. Because the services already used
+interfaces rather than `vscode`, this was mostly decoupling + relocating:
 
-- Replace the one lazy `require('vscode')` in `cleanupService.ts` with an
-  injected `notify(message)` callback.
-- Put `fs.readFileSync` in the transcription behind an `AudioSource` adapter so
-  audio can arrive as a buffer/stream, not only a file path.
-- Formalize the four adapter interfaces (`AudioCapture`, `SecretStore`,
-  `TextSink`, `Config`).
+- ✅ Formalized the adapter interfaces in `src/core/adapters.ts` (`SecretStore`,
+  `Notifier`, `KeyValueStore`, `AudioBytesReader`, plus forward-looking
+  `AudioCapture`, `TextSink`, `ConfigProvider`).
+- ✅ Removed the lazy `require('vscode')` from `cleanupService`, `costTracker`,
+  and `historyManager` in favor of an injected `Notifier`.
+- ✅ Put audio reads behind an injected `AudioBytesReader` (defaults to `fs` in
+  the host) so core never imports `fs`.
+- ✅ Relocated the portable modules into `src/core/` (`pipeline`,
+  `cleanupService`, `transcription` contracts, `deepgramProvider`) — a
+  self-contained boundary: no `vscode`, no Node built-ins, no `../` imports.
+- ✅ Split transcription into a portable Deepgram provider (core) and a
+  desktop-only whisper.cpp backend (host) behind a shared `TranscriptionBackend`.
 
 **Outcome:** cleaner extension, better testability, and the foundation for every
 platform that follows. No user-visible change.
+
+**Remaining (optional):** promote `src/core/` to a real workspace package with
+its own `package.json` and an enforced lint/build boundary — best done together
+with the first consumer (the Phase 1 Tauri app).
 
 ### Phase 1 — macOS system-wide (biggest ROI) ⭐ chosen starting point
 

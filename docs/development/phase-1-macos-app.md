@@ -72,16 +72,22 @@ full test suite green, separate from app code.
 └───────────────────────────────────────────────────────────────────────────┘
 ```
 
-The **orchestration and all API calls run in the TS frontend** via `@verba/core`
-(the Deepgram + Anthropic SDKs work in the WebView). The **Rust backend owns
-only what the web layer cannot do**: global input, native capture, and system
-paste. They talk over Tauri's `invoke`/event IPC.
+The **orchestration mostly runs in the TS frontend** via `@verba/core`, but not
+every SDK call can: `@deepgram/sdk`'s REST client throws unconditionally inside
+Tauri's WebView (see the M3 milestone below), so Deepgram transcription
+happens as a native Rust HTTP call (`transcribe.rs`) instead, behind a thin
+`DeepgramTauriProvider` that satisfies `@verba/core`'s `TranscriptionBackend`
+contract. Whether the Anthropic SDK (used by `CleanupService`) has the same
+restriction is unverified — that lands with M3's `CleanupService` wiring. The
+**Rust backend owns everything the web layer categorically cannot do**: global
+input, native capture, and system paste. They talk over Tauri's `invoke`/event
+IPC.
 
 ### Adapter implementations (the Phase 0 seams, realized for macOS)
 
 | Core adapter | macOS implementation |
 |--------------|----------------------|
-| `AudioBytesReader` / `AudioCapture` | Rust command records the mic (cpal, or an ffmpeg sidecar to reuse existing device logic) → returns WAV bytes / temp path |
+| `AudioCapture` | Rust command records the mic (cpal, or an ffmpeg sidecar to reuse existing device logic) → returns a WAV temp-file path. (`AudioBytesReader` is no longer used by this app — `DeepgramTauriProvider` reads the WAV file directly in Rust rather than shipping bytes to the TS frontend; see the M3 milestone.) |
 | `SecretStore` | Rust keychain access (`security-framework`), exposed via `invoke` |
 | `KeyValueStore` | JSON file in the app's config dir (`tauri::api::path`) |
 | `Notifier` | `tauri-plugin-notification` (native toasts) |
@@ -92,7 +98,9 @@ paste. They talk over Tauri's `invoke`/event IPC.
 1. User presses the global hotkey (e.g. `⌥Space`) → Rust emits `hotkey` event.
 2. Frontend starts capture (`invoke('start_capture')`); tray icon shows recording.
 3. Second press stops → Rust returns WAV bytes.
-4. Frontend runs `@verba/core`: `DeepgramProvider` → `CleanupService` (template).
+4. Frontend calls `DeepgramTauriProvider.transcribe()`, which invokes the
+   native Rust `deepgram_transcribe` command (not `@verba/core`'s
+   `DeepgramProvider` — see M3) → (once wired) `CleanupService` (template).
 5. Frontend calls `invoke('paste_text', { text })` → Rust pastes into the
    frontmost app.
 
@@ -123,7 +131,7 @@ paste. They talk over Tauri's `invoke`/event IPC.
 | Reused from `@verba/core` (unchanged) | New in `apps/macos` |
 |---------------------------------------|---------------------|
 | Pipeline, cleanup, prompt engineering | Rust backend (hotkey, capture, paste, keychain) |
-| Deepgram provider, transcription contracts | macOS adapter implementations |
+| Transcription contracts (`TranscriptionBackend`), keyterm truncation, API-key resolution | macOS adapter implementations, native Deepgram transcription (`transcribe.rs`, replacing the `DeepgramProvider` SDK call — see M3) |
 | Glossary, expansions, cost tracking, history logic | Menu-bar UI + settings |
 | Course correction, voice commands | Permission onboarding flow |
 

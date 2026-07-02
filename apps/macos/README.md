@@ -1,9 +1,12 @@
 # Verba for macOS (Tauri)
 
 System-wide dictation menu-bar app — Phase 1 of the [cross-platform
-strategy](../../docs/development/cross-platform-strategy.md). It reuses
-[`@verba/core`](../../packages/core) unchanged; a Rust backend adds the native
-concerns (global hotkey, mic capture, Accessibility paste, keychain).
+strategy](../../docs/development/cross-platform-strategy.md). It builds on
+[`@verba/core`](../../packages/core) for shared dictation logic (pipeline,
+cleanup, adapter contracts); a Rust backend adds the native concerns (global
+hotkey, mic capture, Accessibility paste, keychain) plus a native Deepgram
+transcription call that replaces `@verba/core`'s SDK-based `DeepgramProvider`,
+which cannot run inside Tauri's WebView — see the Status section below.
 
 ## Status: M3 in progress — onboarding UI done, paste still open
 
@@ -73,9 +76,11 @@ npm run tauri dev
 
 ## Next milestones
 
-- **M2** — mic capture (Rust) → `DeepgramProvider.transcribe`; Keychain-backed
+- **M2** — ✅ shipped: mic capture (Rust) → transcription; Keychain-backed
   `TauriSecretStore`; a key-entry window.
-- **M3** — `CleanupService` + paste into the frontmost app (`TextSink` via
-  Accessibility / `CGEvent`); Accessibility permission onboarding.
+- **M3** — ✅ shipped: native Deepgram transcription (replacing the SDK-based
+  provider from M2, which can't run in the WebView) and Accessibility
+  permission onboarding (see Status above). ⏳ still open: `CleanupService` +
+  paste into the frontmost app (`TextSink` via Accessibility / `CGEvent`).
 - **M4/M5** — template picker, settings, glossary/expansions, cost/history;
   signing, notarization, updater.

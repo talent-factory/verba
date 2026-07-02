@@ -12,7 +12,13 @@ use serde::Serialize;
 
 /// Sentinel error string the frontend checks for to distinguish "bad API
 /// key, clear it and re-prompt" from any other transcription failure.
-pub const DEEPGRAM_UNAUTHORIZED: &str = "deepgram_unauthorized";
+///
+/// Keep in sync with `UNAUTHORIZED_SENTINEL` in
+/// `../../src/deepgramTauriProvider.ts` — there is no shared type across the
+/// Rust/TypeScript IPC boundary to enforce this, so a drift here silently
+/// breaks the invalid-key recovery path (the key is never cleared, and the
+/// user sees a raw `Transcription failed: deepgram_unauthorized` instead).
+const DEEPGRAM_UNAUTHORIZED: &str = "deepgram_unauthorized";
 
 #[derive(Serialize)]
 pub struct TranscriptionResult {
@@ -31,7 +37,8 @@ pub async fn deepgram_transcribe(
     audio_path: String,
     keyterms: Vec<String>,
 ) -> Result<TranscriptionResult, String> {
-    let audio = std::fs::read(&audio_path).map_err(|e| format!("failed to read recording: {e}"))?;
+    let audio = std::fs::read(&audio_path)
+        .map_err(|e| format!("Transcription failed: could not read recording: {e}"))?;
 
     let mut params: Vec<(&str, String)> = vec![
         ("model", "nova-3".to_string()),
@@ -95,4 +102,17 @@ pub async fn deepgram_transcribe(
         text,
         detected_language,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unauthorized_sentinel_matches_the_frontend_constant() {
+        // Guards the cross-language IPC contract with UNAUTHORIZED_SENTINEL
+        // in deepgramTauriProvider.ts — this test only catches drift on the
+        // Rust side, so keep both in sync by hand when changing either.
+        assert_eq!(DEEPGRAM_UNAUTHORIZED, "deepgram_unauthorized");
+    }
 }

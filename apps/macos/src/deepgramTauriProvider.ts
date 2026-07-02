@@ -3,6 +3,10 @@ import type { SecretStore, TranscriptionBackend, TranscriptionResult, ApiKeyProm
 import { validateTranscript } from '@verba/core';
 
 const API_KEY_STORAGE_KEY = 'verba.deepgramApiKey';
+// Keep in sync with `DEEPGRAM_UNAUTHORIZED` in
+// `../src-tauri/src/transcribe.rs` — there is no shared type across the
+// Rust/TypeScript IPC boundary to enforce this, so a drift here silently
+// breaks the invalid-key recovery path below (the key is never cleared).
 const UNAUTHORIZED_SENTINEL = 'deepgram_unauthorized';
 
 /**

@@ -26,9 +26,13 @@ build/lint boundary comes when `core/` is promoted to a real workspace package.
 | `adapters.ts` | Host adapter interfaces (the seams) |
 | `pipeline.ts` | Processing-stage orchestration (pure) |
 | `cleanupService.ts` | Claude post-processing (streaming, course correction, voice commands, glossary, expansions) |
+| `transcription.ts` | Transcription contracts (`TranscriptionBackend`, `TranscriptionResult`) + shared `validateTranscript` |
+| `deepgramProvider.ts` | Portable Deepgram Nova-3 cloud transcription (audio bytes and API-key prompt injected) |
 
-## Not yet here
+## Host-side counterparts (intentionally outside core)
 
-- `transcriptionService.ts` still imports `fs`/`child_process` for the local
-  whisper.cpp provider. It moves in once the cloud (REST) and local providers
-  are split, so the local provider can stay a desktop-only plugin.
+- `localWhisperProvider.ts` — offline whisper.cpp transcription. Depends on
+  `fs`/`child_process`, so it stays in the extension and plugs into core via the
+  `TranscriptionBackend` contract.
+- `transcriptionService.ts` — the orchestrator that picks the active backend and
+  injects the host's filesystem reader + API-key prompt into `DeepgramProvider`.

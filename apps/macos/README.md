@@ -15,7 +15,8 @@ concerns (global hotkey, mic capture, Accessibility paste, keychain).
   (notification plugin), `TauriSecretStore` (Keychain via `keyring`),
   `TauriKeyValueStore` (JSON file) — plus a window prompt for API keys.
 - ✅ Rust commands: `start_capture`/`stop_capture` (cpal → WAV),
-  `read_audio_file`, `secret_*`, `kv_*`.
+  `deepgram_transcribe` (native REST call — `@deepgram/sdk` refuses to run in
+  a browser/WebView context), `secret_*`, `kv_*`.
 - ✅ `NSMicrophoneUsageDescription` in `src-tauri/Info.plist` — without it,
   macOS silently kills the process on first mic access (TCC), regardless of
   the audio API used.

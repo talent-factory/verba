@@ -2,6 +2,7 @@ mod audio;
 mod paste;
 mod secret;
 mod store;
+mod transcribe;
 
 use tauri::{
     menu::{Menu, MenuItem},
@@ -15,7 +16,9 @@ use audio::CaptureState;
 ///
 /// Tray (menu-bar) app with the global-shortcut + notification plugins. The
 /// hotkey handler is registered from the frontend (`src/main.ts`). M2 adds the
-/// capture/secret/store commands; paste (M3) follows.
+/// capture/secret/store commands; M3 adds Accessibility onboarding and native
+/// Deepgram transcription (`@deepgram/sdk` refuses to run in a browser
+/// context; see `transcribe.rs`). Paste itself is a separate follow-up.
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -32,7 +35,7 @@ pub fn run() {
             secret::secret_delete,
             store::kv_load,
             store::kv_set,
-            store::read_audio_file,
+            transcribe::deepgram_transcribe,
         ])
         .setup(|app| {
             // Menu-bar-only app: no Dock icon (macOS "accessory" activation).

@@ -24,3 +24,7 @@ cpal = "0.15"
 hound = "3.5"
 # System Keychain for API keys (M2).
 keyring = "3"
+# Deepgram REST calls (M3): @deepgram/sdk refuses to run in a browser context
+# (Tauri's WebView) without a proxy, so the request happens natively here
+# instead. See transcribe.rs.
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }

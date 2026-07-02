@@ -1,8 +1,9 @@
-import { CleanupService, DeepgramProvider, type AudioBytesReader, type ApiKeyPrompt } from '@verba/core';
+import { CleanupService, type ApiKeyPrompt } from '@verba/core';
 import { invoke } from '@tauri-apps/api/core';
 import { TauriSecretStore } from './adapters/secretStore';
 import { TauriKeyValueStore } from './adapters/keyValueStore';
 import { TauriNotifier } from './adapters/notifier';
+import { DeepgramTauriProvider } from './deepgramTauriProvider';
 import { promptForApiKey, setPhase, showAccessibilityOnboarding, showTranscript } from './ui';
 
 /** CleanupService needs a host prompt for its API key; supply it via the window UI. */
@@ -16,34 +17,31 @@ class TauriCleanupService extends CleanupService {
  * Wires `@verba/core` to the macOS host adapters and owns the dictation flow.
  *
  * **M2 (shipped):** the hotkey toggles microphone capture; on stop, the
- * recording is transcribed with {@link DeepgramProvider} and the transcript is
- * shown in the window. Keychain-backed secrets; a window prompt for API keys.
+ * recording is transcribed and the transcript is shown in the window.
+ * Keychain-backed secrets; a window prompt for API keys.
  *
  * **M3, onboarding-UI slice (this milestone):** after each transcription, a
  * passive Accessibility-permission check runs; when ungranted, an onboarding
  * message with a System-Settings deep-link is shown before falling through to
  * the existing transcript display. Real paste and {@link CleanupService} are a
- * separate, higher-risk follow-up slice.
+ * separate, higher-risk follow-up slice. Transcription uses
+ * {@link DeepgramTauriProvider} (a native Rust HTTP call) rather than
+ * `@verba/core`'s SDK-based `DeepgramProvider`, which cannot run inside a
+ * WebView — see that class's doc comment for why.
  */
 export class DictationController {
 	private readonly secrets = new TauriSecretStore();
 	private readonly store = new TauriKeyValueStore();
 	private readonly notifier = new TauriNotifier();
-	private readonly deepgram: DeepgramProvider;
+	private readonly deepgram: DeepgramTauriProvider;
 	private readonly cleanup: CleanupService;
 	private recording = false;
 	private working = false;
 
 	constructor() {
-		// Audio bytes are read by Rust (`read_audio_file`); injecting the reader
-		// keeps the core free of any filesystem dependency.
-		const readAudio: AudioBytesReader = async (source) => {
-			const bytes = await invoke<number[]>('read_audio_file', { path: source });
-			return new Uint8Array(bytes);
-		};
 		const deepgramPrompt: ApiKeyPrompt = () => promptForApiKey('Deepgram API key (dg-…)');
 
-		this.deepgram = new DeepgramProvider(this.secrets, readAudio, deepgramPrompt);
+		this.deepgram = new DeepgramTauriProvider(this.secrets, deepgramPrompt);
 		this.cleanup = new TauriCleanupService(this.secrets, this.notifier);
 	}
 

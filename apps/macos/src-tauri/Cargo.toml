@@ -18,3 +18,9 @@ tauri-plugin-global-shortcut = "2"
 tauri-plugin-notification = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# Microphone capture → WAV (M2). cpal streams are !Send, so capture runs on a
+# dedicated thread (see audio.rs).
+cpal = "0.15"
+hound = "3.5"
+# System Keychain for API keys (M2).
+keyring = "3"

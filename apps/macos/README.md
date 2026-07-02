@@ -5,22 +5,27 @@ strategy](../../docs/development/cross-platform-strategy.md). It reuses
 [`@verba/core`](../../packages/core) unchanged; a Rust backend adds the native
 concerns (global hotkey, mic capture, Accessibility paste, keychain).
 
-## Status: M1 skeleton
-
-This milestone is a **skeleton**, not a working dictation app yet:
+## Status: M2 — capture + transcription
 
 - ✅ Menu-bar (tray) app with a Quit item; no Dock icon (macOS *accessory*
   activation).
-- ✅ Global hotkey (`Alt+Space`) registered from the frontend; on press it shows
-  a native notification (the "hello" toast).
+- ✅ Global hotkey (`Alt+Space`) **toggles microphone capture**; on stop the
+  recording is transcribed with `DeepgramProvider` and shown in the window.
 - ✅ macOS host adapters implementing the core seams — `TauriNotifier`
-  (notification plugin), `TauriSecretStore` (Keychain via Rust commands),
-  `TauriKeyValueStore` (JSON file via Rust) — and a `DictationController` that
-  constructs `DeepgramProvider` + `CleanupService` from those adapters. This is
-  compile-time proof that `@verba/core` is consumable outside VS Code.
-- ⏳ **Not yet:** audio capture, transcription, cleanup, and paste are stubbed
-  as `invoke()` calls whose Rust commands (`start_capture`, `read_audio_file`,
-  `secret_*`, `kv_*`, `paste_text`) land in **M2/M3**.
+  (notification plugin), `TauriSecretStore` (Keychain via `keyring`),
+  `TauriKeyValueStore` (JSON file) — plus a window prompt for API keys.
+- ✅ Rust commands: `start_capture`/`stop_capture` (cpal → WAV),
+  `read_audio_file`, `secret_*`, `kv_*`.
+- ✅ `NSMicrophoneUsageDescription` in `src-tauri/Info.plist` — without it,
+  macOS silently kills the process on first mic access (TCC), regardless of
+  the audio API used.
+- ⏳ **Next (M3):** run `CleanupService` on the transcript and paste into the
+  frontmost app (`TextSink`) instead of just displaying it.
+
+> The **TypeScript frontend type-checks** against `@verba/core`. The **Rust
+> commands are authored but not yet compiled here** (Tauri targets macOS; the
+> cpal capture in `src-tauri/src/audio.rs` is the piece most likely to need
+> iteration on a Mac). Build with `npm run tauri dev` on macOS.
 
 ## Layout
 

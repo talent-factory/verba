@@ -331,6 +331,41 @@ suite('HistoryManager', () => {
 		});
 	});
 
+	suite('Notifier warnings', () => {
+		function flushPersistQueue(): Promise<void> {
+			return new Promise(resolve => setImmediate(resolve));
+		}
+
+		test('addRecord calls notifier.warn when persistence fails', async () => {
+			const notifier = { warn: sinon.stub() };
+			globalState.update.rejects(new Error('disk full'));
+			manager = new HistoryManager(globalState, undefined, notifier);
+
+			const { id: _id, ...recordInput } = createRecord();
+			manager.addRecord(recordInput);
+			await flushPersistQueue();
+
+			assert.ok(notifier.warn.calledOnce);
+			assert.ok(notifier.warn.firstCall.args[0].includes('Failed to save dictation history'));
+		});
+
+		test('addRecord calls notifier.warn once when persistence repeatedly fails', async () => {
+			const notifier = { warn: sinon.stub() };
+			globalState.update.rejects(new Error('disk full'));
+			manager = new HistoryManager(globalState, undefined, notifier);
+
+			const { id: _id1, ...recordInput1 } = createRecord();
+			manager.addRecord(recordInput1);
+			await flushPersistQueue();
+
+			const { id: _id2, ...recordInput2 } = createRecord();
+			manager.addRecord(recordInput2);
+			await flushPersistQueue();
+
+			assert.ok(notifier.warn.calledOnce);
+		});
+	});
+
 	suite('getRecords', () => {
 		test('returns a copy, not the internal array', () => {
 			manager.addRecord({

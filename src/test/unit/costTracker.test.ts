@@ -430,4 +430,36 @@ suite('CostTracker', () => {
 			assert.strictEqual(thirdCallRecords.length, 3);
 		});
 	});
+
+	suite('Notifier warnings', () => {
+		test('resetTotalCosts calls notifier.warn when persistence fails', async () => {
+			const notifier = { warn: sinon.stub() };
+			globalState.update.rejects(new Error('disk full'));
+			tracker = new CostTracker(globalState, notifier);
+
+			tracker.resetTotalCosts();
+			await Promise.resolve();
+			await Promise.resolve();
+
+			assert.ok(notifier.warn.calledOnce);
+			assert.ok(notifier.warn.firstCall.args[0].includes('Failed to reset cost records'));
+		});
+
+		test('track calls notifier.warn once when persistence repeatedly fails', async () => {
+			const notifier = { warn: sinon.stub() };
+			globalState.update.rejects(new Error('disk full'));
+			tracker = new CostTracker(globalState, notifier);
+
+			tracker.trackDeepgramUsage(60);
+			await Promise.resolve();
+			await Promise.resolve();
+
+			tracker.trackDeepgramUsage(60);
+			await Promise.resolve();
+			await Promise.resolve();
+
+			assert.ok(notifier.warn.calledOnce);
+			assert.ok(notifier.warn.firstCall.args[0].includes('Failed to save cost records'));
+		});
+	});
 });

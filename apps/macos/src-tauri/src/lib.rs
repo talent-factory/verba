@@ -7,7 +7,6 @@ mod transcribe;
 use tauri::{
     menu::{Menu, MenuItem},
     tray::TrayIconBuilder,
-    Manager,
 };
 
 use audio::CaptureState;

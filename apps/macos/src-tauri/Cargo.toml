@@ -28,3 +28,8 @@ keyring = "3"
 # (Tauri's WebView) without a proxy, so the request happens natively here
 # instead. See transcribe.rs.
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+# Paste mechanism (M3): clipboard save/set/restore + synthetic ⌘V keystroke.
+# AX value insertion was considered and dropped — see
+# docs/superpowers/specs/2026-07-03-macos-paste-cleanup-design.md.
+arboard = "3"
+core-graphics = "0.25"

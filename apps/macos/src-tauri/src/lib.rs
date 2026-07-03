@@ -30,6 +30,7 @@ pub fn run() {
             audio::stop_capture,
             paste::has_accessibility_permission,
             paste::open_accessibility_settings,
+            paste::paste_text,
             secret::secret_get,
             secret::secret_set,
             secret::secret_delete,

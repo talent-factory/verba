@@ -12,7 +12,7 @@ which cannot run inside Tauri's WebView — see the Status section below.
 
 - ✅ Menu-bar (tray) app with a Quit item; no Dock icon (macOS *accessory*
   activation).
-- ✅ Global hotkey (`Alt+Space`) **toggles microphone capture**; on stop the
+- ✅ Global hotkey (`Ctrl+Alt+D`) **toggles microphone capture**; on stop the
   recording is transcribed natively and shown in the window.
 - ✅ macOS host adapters implementing the core seams — `TauriNotifier`
   (notification plugin), `TauriSecretStore` (Keychain via `keyring`),

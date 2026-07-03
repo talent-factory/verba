@@ -1,11 +1,11 @@
 import { register } from '@tauri-apps/plugin-global-shortcut';
-import { DictationController } from './controller';
+import { createDictationController } from './wiring';
 
 /** Default global hotkey. User-configurable later (M4); avoids common clashes. */
 const HOTKEY = 'Alt+Space';
 
 async function main(): Promise<void> {
-	const controller = new DictationController();
+	const controller = createDictationController();
 	await controller.init();
 
 	try {

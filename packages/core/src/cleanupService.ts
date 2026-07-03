@@ -77,6 +77,9 @@ export class CleanupService implements ProcessingStage {
 	 * @param secretStorage Secure store for the Anthropic API key.
 	 * @param notifier Optional host UI for surfacing non-critical warnings
 	 *   (e.g. empty-response fallback). When omitted, warnings are only logged.
+	 * @param clientOptions Optional Anthropic SDK client options, spread into
+	 *   the client constructor. Lets browser-like hosts (Tauri WebView) pass
+	 *   `dangerouslyAllowBrowser: true`; the resolved API key always wins.
 	 */
 	constructor(secretStorage: SecretStore, notifier?: Notifier, clientOptions?: ClientOptions) {
 		this.secretStorage = secretStorage;

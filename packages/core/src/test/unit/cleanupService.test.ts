@@ -65,6 +65,16 @@ suite('CleanupService', () => {
 
 			assert.strictEqual(client.apiKey, 'test-key');
 		});
+
+		test('resolved apiKey wins over an apiKey inside clientOptions', () => {
+			const withOptions = new CleanupService(secretStorage as any, undefined, {
+				apiKey: 'options-key',
+			});
+
+			const client = (withOptions as any).getClient('resolved-key');
+
+			assert.strictEqual(client.apiKey, 'resolved-key');
+		});
 	});
 
 	test('has name "Text Cleanup"', () => {

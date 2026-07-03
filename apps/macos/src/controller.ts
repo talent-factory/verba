@@ -83,13 +83,34 @@ export class DictationController {
 		try {
 			const wavPath = await this.deps.invoke<string>('stop_capture');
 			this.deps.ui.setPhase('Transcribing…');
-			const { text } = await this.deps.deepgram.transcribe(wavPath);
+			const { text: transcript, detectedLanguage } = await this.deps.deepgram.transcribe(wavPath);
+
+			this.deps.ui.setPhase('Processing…');
+			let text = transcript;
+			try {
+				text = await this.deps.cleanup.process(transcript, { detectedLanguage });
+			} catch (err) {
+				// Cleanup is refinement, not a gate: a cancelled key prompt or an
+				// API failure must never cost the user their dictation.
+				this.deps.notifier.warn(`Verba: cleanup skipped — using raw transcript (${errText(err)})`);
+			}
 
 			const hasAccessibility = await this.deps.invoke<boolean>('has_accessibility_permission');
 			if (!hasAccessibility) {
 				await this.deps.ui.showAccessibilityOnboarding(() => this.deps.invoke('open_accessibility_settings'));
+				await this.deps.ui.showTranscript(text);
+				return;
 			}
-			await this.deps.ui.showTranscript(text);
+
+			try {
+				await this.deps.invoke('paste_text', { text });
+				this.deps.notifier.info('Verba: pasted.');
+				this.deps.ui.setPhase('Idle.');
+			} catch (err) {
+				// The window is the fallback surface: the user must never lose text.
+				this.deps.notifier.error(`Verba: paste failed — ${errText(err)}`);
+				await this.deps.ui.showTranscript(text);
+			}
 		} catch (err) {
 			this.deps.notifier.error(`Verba: ${errText(err)}`);
 			this.deps.ui.setPhase('Idle.');

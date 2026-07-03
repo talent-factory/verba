@@ -26,7 +26,10 @@ export function createDictationController(): DictationController {
 
 	return new DictationController({
 		deepgram: new DeepgramTauriProvider(secrets, deepgramPrompt),
-		cleanup: new TauriCleanupService(secrets, notifier),
+		// dangerouslyAllowBrowser: the Anthropic SDK refuses browser-like
+		// environments (Tauri's WebView) by default; Anthropic officially
+		// supports direct browser access via CORS when this flag is set.
+		cleanup: new TauriCleanupService(secrets, notifier, { dangerouslyAllowBrowser: true }),
 		notifier,
 		store: new TauriKeyValueStore(),
 		invoke,

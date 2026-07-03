@@ -74,4 +74,55 @@ suite('DictationController', () => {
 
 		assert.strictEqual(deps.store.init.calledOnce, true);
 	});
+
+	test('happy path: cleans the transcript, pastes it, and keeps the window hidden', async () => {
+		await dictate(controller);
+
+		assert.strictEqual(deps.cleanup.process.calledOnce, true);
+		assert.strictEqual(deps.cleanup.process.firstCall.args[0], 'raw transcript');
+		assert.deepStrictEqual(deps.cleanup.process.firstCall.args[1], { detectedLanguage: 'en' });
+		assert.strictEqual(
+			(deps.invoke as unknown as sinon.SinonStub).calledWith('paste_text', { text: 'cleaned text' }),
+			true
+		);
+		assert.strictEqual(deps.notifier.info.calledWithMatch(/pasted/i), true);
+		assert.strictEqual(deps.ui.showTranscript.called, false);
+		assert.strictEqual(deps.ui.setPhase.calledWith('Idle.'), true);
+	});
+
+	test('cleanup failure falls back to pasting the raw transcript with a warning', async () => {
+		deps.cleanup.process.rejects(new Error('Anthropic API key required for post-processing.'));
+
+		await dictate(controller);
+
+		assert.strictEqual(deps.notifier.warn.calledWithMatch(/raw transcript/), true);
+		assert.strictEqual(
+			(deps.invoke as unknown as sinon.SinonStub).calledWith('paste_text', { text: 'raw transcript' }),
+			true
+		);
+		assert.strictEqual(deps.notifier.error.called, false);
+	});
+
+	test('missing Accessibility permission shows onboarding + transcript window, never pastes', async () => {
+		(deps.invoke as unknown as sinon.SinonStub).withArgs('has_accessibility_permission').resolves(false);
+
+		await dictate(controller);
+
+		assert.strictEqual(deps.ui.showAccessibilityOnboarding.calledOnce, true);
+		assert.strictEqual(deps.ui.showTranscript.calledWith('cleaned text'), true);
+		assert.strictEqual(
+			(deps.invoke as unknown as sinon.SinonStub).calledWith('paste_text', sinon.match.any),
+			false
+		);
+	});
+
+	test('paste failure falls back to showing the transcript in the window', async () => {
+		(deps.invoke as unknown as sinon.SinonStub).withArgs('paste_text', sinon.match.any)
+			.rejects(new Error('Paste failed: could not create event source'));
+
+		await dictate(controller);
+
+		assert.strictEqual(deps.notifier.error.calledWithMatch(/paste failed/i), true);
+		assert.strictEqual(deps.ui.showTranscript.calledWith('cleaned text'), true);
+	});
 });

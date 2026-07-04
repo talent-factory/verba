@@ -11,3 +11,4 @@ export * from './pipeline';
 export * from './cleanupService';
 export * from './transcription';
 export * from './deepgramProvider';
+export * from './config';

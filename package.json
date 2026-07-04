@@ -337,7 +337,7 @@
   ],
   "scripts": {
     "vscode:prepublish": "npm run bundle",
-    "compile:core": "tsc -p packages/core",
+    "compile:core": "npm --workspace @verba/core run compile",
     "compile": "npm run compile:core && tsc -p ./",
     "bundle": "npm run compile:core && esbuild src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node --minify",
     "watch": "npm run compile:core && tsc -watch -p ./",

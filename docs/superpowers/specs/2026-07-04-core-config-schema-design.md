@@ -66,8 +66,13 @@ Host raw source ──► ConfigProvider (adapter) ──► resolveConfig() ─
 
 ## Core Contract — `packages/core/src/config.ts` (new module)
 
+**Note — `Template` is the union of both hosts' fields.** macOS uses `icon` (tray prefix); VS Code
+uses `fileTypes` (file-type auto-select via `findTemplateForLanguage`). Core's `Template` is the
+superset so neither regresses; each host ignores the field it doesn't use. VS Code's local
+`Template` in `src/templatePicker.ts` (which lacks `icon`) is replaced by the core type.
+
 ```ts
-export interface Template { name: string; prompt: string; icon?: string; contextAware?: boolean; }
+export interface Template { name: string; prompt: string; icon?: string; contextAware?: boolean; fileTypes?: string[]; }
 
 /** Raw — exactly the fields a host can supply; all optional/untrusted. */
 export interface VerbaConfig {
@@ -145,14 +150,25 @@ that mapping is a separate follow-up (YAGNI here).
 - New host helper **`resolvedVerbaConfig(): ResolvedConfig`** = `resolveConfig(new VsCodeConfigProvider())`,
   called **on demand** (getConfiguration is cheap and always fresh → no cache /
   `onDidChangeConfiguration` reactivity needed).
-- Redirect the ~7 shared-field reads — `language` (extension.ts:85, 163), `audioDevice`
-  (598, 644, 1565), `templates` via `loadTemplates()` (289; used 539/803/1379), `glossary` (303),
-  `expansions` (195) — to `resolvedVerbaConfig()`. `loadTemplates()` and the local `Template`
-  interface are removed in favor of core types + core validation (VS Code thereby gains the
-  all-or-nothing behavior it lacks today).
+- Redirect the cleanly-mappable shared-field reads to `resolvedVerbaConfig()`: `language`
+  (extension.ts:85, 163 — the setting value), `audioDevice` (598, 644, 1565), and `templates` via
+  `loadTemplates()` (289; used 539/803/1379). `loadTemplates()` and the local `Template` interface
+  are removed in favor of core types + core validation (VS Code thereby gains the all-or-nothing
+  behavior it lacks today).
+- **`glossary`/`expansions` — setting-level only.** VS Code's `loadGlossary`/`loadExpansions`
+  (extension.ts:192–260, 300+) merge the `verba.*` setting **with workspace files**
+  (`.verba-glossary.json`, `.verba-expansions.json`), including validation warnings and case-folding.
+  Core cannot own that (no `fs`; macOS has no such merge). So core validates only the **setting-level**
+  array (`resolvedVerbaConfig().glossary` / `.expansions`); the host keeps its workspace-file merge on
+  top. This bounds core to the schema authority without swallowing VS-Code-specific behavior.
 - Add **`verba.transcription.language`** to `package.json` `contributes.configuration` (default
-  `"multi"`, enum as macOS) and wire it to the transcription provider's `setLanguage` — closing the
-  one real semantic gap ("level up", not down).
+  `"multi"`, enum as macOS) as a **backward-compatible optional override** for the transcription
+  language. `verba.language` currently drives **both** transcription (`applyLanguageSetting` →
+  `setLanguage`) and cleanup (`resolveLanguage`). New behavior: transcription uses
+  `verba.transcription.language` when the user has set it (non-default/present); otherwise it falls
+  back to today's `verba.language`-derived behavior. Cleanup language stays sourced from
+  `verba.language`. No regression for existing configs; new setting gives explicit control and macOS
+  parity ("level up", not down).
 - Host-only settings (`history.*`, `terminal.*`, `contextSearch.*`, `autoSelectTemplate`) are untouched.
 - VS Code `settings.json` keys are unchanged for users.
 
@@ -163,10 +179,15 @@ the whole array (consistent with macOS), rather than loading partially.
 
 - No breaking changes: macOS file and VS Code `settings.json` keys unchanged; `verba.transcription.language`
   is additive (absent = prior behavior).
+- **Canonical templates are the union.** The core `defaultTemplates.json` merges macOS's `icon`
+  fields with VS Code's `fileTypes` (JavaDoc → java/kotlin, Markdown → markdown). macOS gains
+  nothing visible (already had icons); VS Code keeps its auto-select (fileTypes preserved) and
+  additionally carries icons it simply ignores.
 - **Default-templates duplication:** core is the logical single source, but VS Code's `package.json`
   `verba.templates` default is a static manifest that cannot import core, so it remains a second
-  physical copy of the 9 templates. Guard: a **parity test** asserting `package.json`'s
-  `verba.templates` default deep-equals core `DEFAULT_TEMPLATES` (fails CI on drift).
+  physical copy. It is **updated to match** the unioned core set exactly (adds `icon` fields, keeps
+  `fileTypes`). Guard: a **parity test** asserting `package.json`'s `verba.templates` default
+  deep-equals core `DEFAULT_TEMPLATES` (fails CI on drift).
 
 ## Testing
 

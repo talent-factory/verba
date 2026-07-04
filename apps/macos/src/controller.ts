@@ -1,10 +1,12 @@
 import type { CleanupService } from '@verba/core';
+import type { DictationState } from './visualization/statePresentation';
 
 export type InvokeFn = <T>(cmd: string, args?: Record<string, unknown>) => Promise<T>;
 
 /** Window-UI surface the controller drives (implemented by `ui.ts`). */
 export interface ControllerUi {
 	setPhase(text: string): void;
+	setState(state: DictationState): void;
 	showTranscript(text: string): Promise<void>;
 	showAccessibilityOnboarding(onOpenSettings: () => Promise<void>): Promise<void>;
 }
@@ -71,6 +73,7 @@ export class DictationController {
 			await this.deps.invoke('start_capture');
 			this.recording = true;
 			this.deps.ui.setPhase('Recording… press the hotkey again to stop.');
+			this.deps.ui.setState('recording');
 			this.deps.notifier.info('Verba: recording…');
 		} catch (err) {
 			this.deps.notifier.error(`Verba: could not start recording — ${errText(err)}`);
@@ -83,9 +86,11 @@ export class DictationController {
 		try {
 			const wavPath = await this.deps.invoke<string>('stop_capture');
 			this.deps.ui.setPhase('Transcribing…');
+			this.deps.ui.setState('transcribing');
 			const { text: transcript, detectedLanguage } = await this.deps.deepgram.transcribe(wavPath);
 
 			this.deps.ui.setPhase('Processing…');
+			this.deps.ui.setState('processing');
 			let text = transcript;
 			try {
 				text = await this.deps.cleanup.process(transcript, { detectedLanguage });
@@ -116,6 +121,7 @@ export class DictationController {
 			this.deps.ui.setPhase('Idle.');
 		} finally {
 			this.working = false;
+			this.deps.ui.setState('idle');
 		}
 	}
 }

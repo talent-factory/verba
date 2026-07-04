@@ -8,6 +8,7 @@ import { DeepgramTauriProvider } from './deepgramTauriProvider';
 import { promptForApiKey, setPhase, showAccessibilityOnboarding, showTranscript } from './ui';
 import { DictationController } from './controller';
 import { loadConfig } from './config/verbaConfig';
+import { createVisualization } from './visualization/visualization';
 
 /** CleanupService needs a host prompt for its API key; supply it via the window UI. */
 class TauriCleanupService extends CleanupService {
@@ -34,6 +35,8 @@ export async function createDictationController(): Promise<DictationController> 
 	cleanup.setGlossary(config.glossary);
 	cleanup.setExpansions(config.expansions);
 
+	const visualization = createVisualization(invoke);
+
 	return new DictationController({
 		// Inject the configured glossary as Deepgram keyterms on every transcription.
 		deepgram: { transcribe: (audioPath) => provider.transcribe(audioPath, config.glossary) },
@@ -48,6 +51,6 @@ export async function createDictationController(): Promise<DictationController> 
 		notifier,
 		store: new TauriKeyValueStore(),
 		invoke,
-		ui: { setPhase, showTranscript, showAccessibilityOnboarding },
+		ui: { setPhase, showTranscript, showAccessibilityOnboarding, setState: visualization.setState },
 	});
 }

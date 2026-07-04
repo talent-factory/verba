@@ -26,6 +26,7 @@ export function createDeps() {
 			setPhase: sinon.stub(),
 			showTranscript: sinon.stub().resolves(),
 			showAccessibilityOnboarding: sinon.stub().resolves(),
+			setState: sinon.stub(),
 		},
 	};
 }
@@ -124,5 +125,12 @@ suite('DictationController', () => {
 
 		assert.strictEqual(deps.notifier.error.calledWithMatch(/paste failed/i), true);
 		assert.strictEqual(deps.ui.showTranscript.calledWith('cleaned text'), true);
+	});
+
+	test('emits setState across the dictation lifecycle', async () => {
+		await dictate(controller);
+
+		const states = (deps.ui.setState as sinon.SinonStub).getCalls().map((c) => c.args[0]);
+		assert.deepStrictEqual(states, ['recording', 'transcribing', 'processing', 'idle']);
 	});
 });

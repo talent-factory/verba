@@ -5,7 +5,8 @@
 use std::path::PathBuf;
 
 /// The bundled default templates — the same file the frontend imports.
-pub const DEFAULT_TEMPLATES_JSON: &str = include_str!("../../src/config/defaultTemplates.json");
+pub const DEFAULT_TEMPLATES_JSON: &str =
+    include_str!("../../../../packages/core/src/config/defaultTemplates.json");
 
 /// `$XDG_CONFIG_HOME/verba/config.json` if that var is set and non-empty, else
 /// `$HOME/.config/verba/config.json`. `None` if `HOME` is also unavailable.

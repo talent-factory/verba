@@ -83,16 +83,28 @@ pub fn read_config_value(dotted: &str, default: &str) -> String {
     cur.as_str().unwrap_or(default).to_string()
 }
 
-/// Returns `(label, name)` pairs for the tray "Vorlage" submenu. Prefers the
-/// config's `templates` array; when that is absent, empty, or not an array,
-/// falls back to parsing `default_json`. Entries without a string `name` are
-/// skipped; `label` prefixes the emoji `icon` when present.
+/// A JSON value counts as a valid template entry only if it is an object with
+/// a non-empty string `name` and a string `prompt` — mirrors the TS
+/// `isTemplateArray` predicate in `apps/macos/src/config/verbaConfig.ts`.
+fn is_valid_template_entry(t: &serde_json::Value) -> bool {
+    t.is_object()
+        && t.get("name")
+            .and_then(|n| n.as_str())
+            .is_some_and(|s| !s.is_empty())
+        && t.get("prompt").is_some_and(|p| p.is_string())
+}
+
+/// Returns `(label, name)` pairs for the tray "Vorlage" submenu. Uses the
+/// config's `templates` array only if it is a non-empty array and *every*
+/// entry is valid (see [`is_valid_template_entry`]) — all-or-nothing, to stay
+/// in lockstep with the TS `isTemplateArray` reader. Otherwise falls back to
+/// parsing `default_json`. `label` prefixes the emoji `icon` when present.
 pub fn template_choices_from_value(
     cfg: &serde_json::Value,
     default_json: &str,
 ) -> Vec<(String, String)> {
     let arr: Vec<serde_json::Value> = match cfg.get("templates").and_then(|v| v.as_array()) {
-        Some(a) if !a.is_empty() => a.clone(),
+        Some(a) if !a.is_empty() && a.iter().all(is_valid_template_entry) => a.clone(),
         _ => serde_json::from_str(default_json).unwrap_or_default(),
     };
     arr.iter()
@@ -174,15 +186,36 @@ mod tests {
     }
 
     #[test]
-    fn template_choices_ignores_non_array_and_skips_nameless_entries() {
+    fn template_choices_falls_back_when_any_entry_is_invalid() {
         // non-array templates → defaults
         let bad = serde_json::json!({ "templates": "nope" });
         assert_eq!(template_choices_from_value(&bad, DEFAULT_TEMPLATES_JSON).len(), 9);
-        // entries without a string name are skipped
+        // a mixed array where one entry lacks a valid name/prompt is entirely
+        // invalid (all-or-nothing) → falls back to the 9 bundled defaults,
+        // matching the TS `isTemplateArray` semantics.
         let mixed = serde_json::json!({
             "templates": [ { "prompt": "no name" }, { "name": "Ok", "prompt": "y" } ]
         });
         let choices = template_choices_from_value(&mixed, DEFAULT_TEMPLATES_JSON);
-        assert_eq!(choices, vec![("Ok".to_string(), "Ok".to_string())]);
+        assert_eq!(choices.len(), 9);
+        assert_eq!(choices[0].1, "Freitext");
+    }
+
+    #[test]
+    fn template_choices_uses_multi_entry_config_templates_verbatim() {
+        let cfg = serde_json::json!({
+            "templates": [
+                { "name": "Custom", "prompt": "x", "icon": "🎯" },
+                { "name": "Other", "prompt": "y" },
+            ]
+        });
+        let choices = template_choices_from_value(&cfg, DEFAULT_TEMPLATES_JSON);
+        assert_eq!(
+            choices,
+            vec![
+                ("🎯 Custom".to_string(), "Custom".to_string()),
+                ("Other".to_string(), "Other".to_string()),
+            ]
+        );
     }
 }

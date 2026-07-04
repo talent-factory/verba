@@ -38,10 +38,19 @@ export interface ControllerDeps {
  * only appears for the Accessibility onboarding or when pasting fails.
  */
 export class DictationController {
-	private recording = false;
-	private working = false;
+	// Single source of truth for the flow. The visualization state and the
+	// hotkey guards read the SAME field, so they can never drift and the
+	// impossible "recording while also processing" combination (which a pair of
+	// booleans would admit) is unrepresentable. Mutate only via `setState`.
+	private state: DictationState = 'idle';
 
 	constructor(private readonly deps: ControllerDeps) {}
+
+	/** Updates the flow state and mirrors it to the visualization surfaces. */
+	private setState(state: DictationState): void {
+		this.state = state;
+		this.deps.ui.setState(state);
+	}
 
 	/** Requests permissions and loads persisted state. Call once at startup. */
 	async init(): Promise<void> {
@@ -59,9 +68,9 @@ export class DictationController {
 	 * stops it, transcribes, cleans up, and pastes.
 	 */
 	async handleHotkey(): Promise<void> {
-		if (this.working) { return; }
-
-		if (!this.recording) {
+		// Busy (transcribing/processing) → ignore. Idle → start. Recording → stop.
+		if (this.state === 'transcribing' || this.state === 'processing') { return; }
+		if (this.state === 'idle') {
 			await this.startRecording();
 			return;
 		}
@@ -71,26 +80,26 @@ export class DictationController {
 	private async startRecording(): Promise<void> {
 		try {
 			await this.deps.invoke('start_capture');
-			this.recording = true;
 			this.deps.ui.setPhase('Recording… press the hotkey again to stop.');
-			this.deps.ui.setState('recording');
+			this.setState('recording');
 			this.deps.notifier.info('Verba: recording…');
 		} catch (err) {
+			// Stay idle: never entered the recording state, so the hotkey can retry.
 			this.deps.notifier.error(`Verba: could not start recording — ${errText(err)}`);
 		}
 	}
 
 	private async stopAndTranscribe(): Promise<void> {
-		this.working = true;
-		this.recording = false;
+		// Leave 'recording' synchronously (before the first await) so a re-entrant
+		// hotkey press during transcription is ignored by `handleHotkey`.
+		this.deps.ui.setPhase('Transcribing…');
+		this.setState('transcribing');
 		try {
 			const wavPath = await this.deps.invoke<string>('stop_capture');
-			this.deps.ui.setPhase('Transcribing…');
-			this.deps.ui.setState('transcribing');
 			const { text: transcript, detectedLanguage } = await this.deps.deepgram.transcribe(wavPath);
 
 			this.deps.ui.setPhase('Processing…');
-			this.deps.ui.setState('processing');
+			this.setState('processing');
 			let text = transcript;
 			try {
 				text = await this.deps.cleanup.process(transcript, { detectedLanguage });
@@ -120,8 +129,7 @@ export class DictationController {
 			this.deps.notifier.error(`Verba: ${errText(err)}`);
 			this.deps.ui.setPhase('Idle.');
 		} finally {
-			this.working = false;
-			this.deps.ui.setState('idle');
+			this.setState('idle');
 		}
 	}
 }

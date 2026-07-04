@@ -72,26 +72,61 @@ pub async fn paste_text(text: String) -> Result<(), String> {
         .map_err(|e| format!("Paste failed: {e}"))?
 }
 
+/// The slice of clipboard behavior the paste flow needs. Abstracted over
+/// `arboard::Clipboard` so the save/restore sequencing can be tested against an
+/// in-memory fake — the real system pasteboard is a single global resource and
+/// concurrent test access to it races.
+trait TextClipboard {
+    fn get_text(&mut self) -> Option<String>;
+    fn set_text(&mut self, text: &str) -> Result<(), String>;
+}
+
+impl TextClipboard for Clipboard {
+    fn get_text(&mut self) -> Option<String> {
+        Clipboard::get_text(self).ok()
+    }
+    fn set_text(&mut self, text: &str) -> Result<(), String> {
+        Clipboard::set_text(self, text).map_err(|e| e.to_string())
+    }
+}
+
 fn paste_text_blocking(text: &str) -> Result<(), String> {
     let mut clipboard =
         Clipboard::new().map_err(|e| format!("Paste failed: clipboard unavailable: {e}"))?;
-    let previous = clipboard.get_text().ok();
+    paste_via_clipboard(&mut clipboard, text, synthesize_cmd_v)
+}
+
+/// Clipboard save → write `text` → run `keystroke` (the synthetic ⌘V) → restore
+/// the previous clipboard. The restore runs on **every** path, so a failed
+/// keystroke never leaves the transcript stranded on the clipboard with the
+/// user's previous content lost. `clipboard` and `keystroke` are injected so
+/// this sequencing is unit-testable without a real pasteboard or HID event.
+fn paste_via_clipboard(
+    clipboard: &mut impl TextClipboard,
+    text: &str,
+    keystroke: impl FnOnce() -> Result<(), String>,
+) -> Result<(), String> {
+    let previous = clipboard.get_text();
 
     clipboard
         .set_text(text)
         .map_err(|e| format!("Paste failed: could not write clipboard: {e}"))?;
     thread::sleep(PASTEBOARD_PROPAGATION_DELAY);
 
-    synthesize_cmd_v()?;
+    let pasted = keystroke();
+    // Only wait for the target app to consume the pasteboard if the keystroke
+    // actually fired; on failure restore immediately.
+    if pasted.is_ok() {
+        thread::sleep(CLIPBOARD_RESTORE_DELAY);
+    }
 
-    thread::sleep(CLIPBOARD_RESTORE_DELAY);
     if let Some(prev) = previous {
-        if let Err(e) = clipboard.set_text(prev) {
-            // The paste itself succeeded; a failed restore is log-only.
+        if let Err(e) = clipboard.set_text(&prev) {
+            // A failed restore is log-only — the paste (if any) already happened.
             eprintln!("[Verba] Could not restore previous clipboard content: {e}");
         }
     }
-    Ok(())
+    pasted
 }
 
 /// Posts a synthetic ⌘V key-down/key-up pair to the HID event tap.
@@ -139,6 +174,55 @@ mod tests {
         // Restoring before the target app has read the pasteboard would paste
         // the OLD clipboard content; the restore delay must dominate.
         assert!(CLIPBOARD_RESTORE_DELAY > PASTEBOARD_PROPAGATION_DELAY);
+    }
+
+    /// In-memory `TextClipboard` so the save/restore logic is tested without the
+    /// real system pasteboard (a global resource that races across test threads).
+    struct FakeClipboard {
+        text: Option<String>,
+    }
+
+    impl TextClipboard for FakeClipboard {
+        fn get_text(&mut self) -> Option<String> {
+            self.text.clone()
+        }
+        fn set_text(&mut self, text: &str) -> Result<(), String> {
+            self.text = Some(text.to_string());
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn restores_previous_clipboard_after_a_successful_keystroke() {
+        let mut clipboard = FakeClipboard { text: Some("previous-value".to_string()) };
+
+        // A no-op stands in for the synthetic ⌘V.
+        paste_via_clipboard(&mut clipboard, "dictated-text", || Ok(())).unwrap();
+
+        assert_eq!(clipboard.text.as_deref(), Some("previous-value"));
+    }
+
+    #[test]
+    fn restores_previous_clipboard_even_when_the_keystroke_fails() {
+        let mut clipboard = FakeClipboard { text: Some("previous-value".to_string()) };
+
+        // The bug this guards: an early `?` return skipping the restore, leaving
+        // "dictated-text" on the clipboard and the user's "previous-value" lost.
+        let result = paste_via_clipboard(&mut clipboard, "dictated-text", || Err("keystroke boom".to_string()));
+
+        assert!(result.is_err());
+        assert_eq!(clipboard.text.as_deref(), Some("previous-value"));
+    }
+
+    #[test]
+    fn leaves_the_transcript_when_there_was_no_previous_text() {
+        // Documents the v1 limitation: a non-text/empty clipboard has nothing to
+        // restore, so the transcript stays on the pasteboard.
+        let mut clipboard = FakeClipboard { text: None };
+
+        paste_via_clipboard(&mut clipboard, "dictated-text", || Ok(())).unwrap();
+
+        assert_eq!(clipboard.text.as_deref(), Some("dictated-text"));
     }
 
     #[test]

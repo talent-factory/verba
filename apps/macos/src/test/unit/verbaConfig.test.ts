@@ -86,9 +86,49 @@ suite('templates', () => {
 		assert.strictEqual(cfg.templates.length, 9);
 	});
 
+	// Parity with the Rust `template_choices_from_value` tests in config.rs: the
+	// all-or-nothing validity must behave identically on both sides.
+
+	test('a whitespace-only template name falls back to the defaults', async () => {
+		const raw = JSON.stringify({ templates: [{ name: '   ', prompt: 'x' }] });
+		const cfg = await loadConfig(sinon.stub().resolves(raw));
+		assert.strictEqual(cfg.templates.length, 9);
+		assert.strictEqual(cfg.templates[0].name, 'Freitext');
+	});
+
+	test('a single invalid entry invalidates the whole array (all-or-nothing)', async () => {
+		const raw = JSON.stringify({
+			templates: [{ prompt: 'no name' }, { name: 'Ok', prompt: 'y' }],
+		});
+		const cfg = await loadConfig(sinon.stub().resolves(raw));
+		assert.strictEqual(cfg.templates.length, 9);
+		assert.strictEqual(cfg.templates[0].name, 'Freitext');
+	});
+
+	test('an empty templates array falls back to the defaults', async () => {
+		const raw = JSON.stringify({ templates: [] });
+		const cfg = await loadConfig(sinon.stub().resolves(raw));
+		assert.strictEqual(cfg.templates.length, 9);
+	});
+
 	test('resolveActiveTemplate returns the first template when name is undefined', () => {
 		const t = resolveActiveTemplate(DEFAULT_TEMPLATES, undefined);
 		assert.strictEqual(t.name, 'Freitext');
+	});
+});
+
+suite('loadConfig onMalformed', () => {
+	test('fires the callback when the file content is not valid JSON', async () => {
+		const onMalformed = sinon.stub();
+		await loadConfig(sinon.stub().resolves('{ not valid json'), onMalformed);
+		assert.strictEqual(onMalformed.calledOnce, true);
+	});
+
+	test('does not fire for an absent (empty-object) or valid config', async () => {
+		const onMalformed = sinon.stub();
+		await loadConfig(sinon.stub().resolves('{}'), onMalformed);
+		await loadConfig(sinon.stub().resolves(JSON.stringify({ language: 'de' })), onMalformed);
+		assert.strictEqual(onMalformed.called, false);
 	});
 });
 

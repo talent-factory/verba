@@ -22,8 +22,19 @@ suite('createVisualization', () => {
 		assert.ok(invoke.getCalls().some((c) => c.args[0] === 'set_hud_state' && c.args[1].state === 'idle'));
 	});
 
-	test('is best-effort: a rejecting invoke does not throw', () => {
+	test('is best-effort: a rejecting invoke is caught and logged, not left unhandled', async () => {
+		// `setState` is synchronous and fires `void invoke(...).catch(...)`, so it
+		// never throws even without the `.catch`. The real guarantee is that the
+		// rejection is HANDLED — assert the catch ran (logged) after the microtask
+		// queue drains, which also means no unhandled rejection escaped.
 		const invoke = sinon.stub().rejects(new Error('ipc down'));
-		assert.doesNotThrow(() => createVisualization(invoke).setState('processing'));
+		const warn = sinon.stub(console, 'warn');
+		try {
+			assert.doesNotThrow(() => createVisualization(invoke).setState('processing'));
+			await new Promise((resolve) => setTimeout(resolve, 0));
+			assert.ok(warn.called, 'the rejected invoke was caught and logged');
+		} finally {
+			warn.restore();
+		}
 	});
 });

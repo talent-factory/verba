@@ -28,11 +28,18 @@ const ALLOWED: [&str; 4] = [
 /// (whitespace-only). The returned value is trimmed.
 #[tauri::command]
 pub fn env_var(name: String) -> Option<String> {
-    if !ALLOWED.contains(&name.as_str()) {
+    env_var_with(&name, |n| std::env::var(n).ok())
+}
+
+/// The allowlist + trim/blank logic, with the environment read injected. Split
+/// out so tests can exercise the positive path (allowlisted name → trimmed
+/// value) and the blank filter without mutating the process environment — a
+/// concurrent `setenv`/`getenv` across test threads aborts on macOS.
+fn env_var_with(name: &str, read: impl Fn(&str) -> Option<String>) -> Option<String> {
+    if !ALLOWED.contains(&name) {
         return None;
     }
-    std::env::var(&name)
-        .ok()
+    read(name)
         .filter(|v| !v.trim().is_empty())
         .map(|v| v.trim().to_string())
 }
@@ -52,5 +59,33 @@ mod tests {
         // not on the allowlist. This proves the allowlist check gates
         // access before `std::env::var` is ever called.
         assert_eq!(env_var("PATH".to_string()), None);
+    }
+
+    #[test]
+    fn non_allowlisted_name_is_rejected_before_the_reader_runs() {
+        // The reader panics if called — proving the allowlist gates access first.
+        let result = env_var_with("SOME_SECRET", |_| panic!("reader must not run"));
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn returns_the_trimmed_value_for_an_allowlisted_set_variable() {
+        // The positive path: an allowlisted name resolves and is trimmed. Without
+        // this, an `env_var` that always returned `None` would pass every other
+        // test in this module.
+        let result = env_var_with("VERBA_ANTHROPIC_API_KEY", |_| Some("  sk-ant-test  ".to_string()));
+        assert_eq!(result, Some("sk-ant-test".to_string()));
+    }
+
+    #[test]
+    fn returns_none_for_an_allowlisted_but_whitespace_only_value() {
+        let result = env_var_with("VERBA_DEEPGRAM_API_KEY", |_| Some("   ".to_string()));
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn returns_none_for_an_allowlisted_but_unset_variable() {
+        let result = env_var_with("DEEPGRAM_API_KEY", |_| None);
+        assert_eq!(result, None);
     }
 }

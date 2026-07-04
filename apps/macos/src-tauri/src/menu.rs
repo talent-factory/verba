@@ -29,6 +29,10 @@ const CLEANUP_LANGS: &[(&str, &str, bool)] = &[
     ("Nederlands", "nl", true),
     ("Português", "pt", true),
 ];
+// The `local` entry is intentionally disabled (`false`): local whisper.cpp
+// transcription is not yet wired on macOS, so the option is shown for
+// discoverability but cannot be selected. `wiring.ts` always builds the
+// Deepgram provider regardless of this setting.
 const PROVIDERS: &[(&str, &str, bool)] = &[
     ("Deepgram", "deepgram", true),
     ("Lokal – whisper.cpp", "local", false),
@@ -102,34 +106,73 @@ pub fn build_settings_menu(app: &AppHandle) -> Result<Menu<Wry>, tauri::Error> {
     )
 }
 
-/// Handles a tray menu click.
-pub fn handle_menu_event(app: &AppHandle, id: &str) {
+/// A parsed tray-menu action. Menu IDs are app-generated (see
+/// [`build_settings_menu`]), never user/WebView input.
+#[derive(Debug, PartialEq, Eq)]
+enum MenuAction {
+    Quit,
+    OpenConfig,
+    ReloadConfig,
+    SetActiveTemplate(String),
+    SetConfigKey { key: String, value: String },
+}
+
+/// Parses a tray menu item id into a [`MenuAction`].
+///
+/// `set:<dotted.key>:<value>` is split with `rsplit_once(':')` so dotted keys
+/// survive (`set:transcription.language:de` → key `transcription.language`,
+/// value `de`). `settmpl:<name>` takes the whole remainder as the template name,
+/// so a template name containing `:` is preserved. Returns `None` for unknown
+/// ids or a malformed `set:` id with no value separator.
+fn parse_menu_id(id: &str) -> Option<MenuAction> {
     match id {
-        "quit" => {
-            app.exit(0);
-        }
-        "open-config" => open_config(),
-        "reload-config" => rebuild_and_reload(app),
-        other => {
-            if let Some(name) = other.strip_prefix("settmpl:") {
-                if let Err(e) = write_config_key(
-                    "activeTemplate",
-                    serde_json::Value::String(name.to_string()),
-                ) {
-                    eprintln!("[Verba] write_config_key failed: {e}");
-                }
-                rebuild_and_reload(app);
-            } else if let Some(rest) = other.strip_prefix("set:") {
-                // rsplit at the LAST ':' so dotted keys survive (e.g. transcription.language:de)
-                if let Some((key, value)) = rest.rsplit_once(':') {
-                    if let Err(e) = write_config_key(key, serde_json::Value::String(value.to_string())) {
-                        eprintln!("[Verba] write_config_key failed: {e}");
-                    }
-                    rebuild_and_reload(app);
-                }
+        "quit" => Some(MenuAction::Quit),
+        "open-config" => Some(MenuAction::OpenConfig),
+        "reload-config" => Some(MenuAction::ReloadConfig),
+        _ => {
+            if let Some(name) = id.strip_prefix("settmpl:") {
+                Some(MenuAction::SetActiveTemplate(name.to_string()))
+            } else if let Some(rest) = id.strip_prefix("set:") {
+                let (key, value) = rest.rsplit_once(':')?;
+                Some(MenuAction::SetConfigKey {
+                    key: key.to_string(),
+                    value: value.to_string(),
+                })
+            } else {
+                None
             }
         }
     }
+}
+
+/// Handles a tray menu click.
+pub fn handle_menu_event(app: &AppHandle, id: &str) {
+    match parse_menu_id(id) {
+        Some(MenuAction::Quit) => app.exit(0),
+        Some(MenuAction::OpenConfig) => open_config(),
+        Some(MenuAction::ReloadConfig) => rebuild_and_reload(app),
+        Some(MenuAction::SetActiveTemplate(name)) => {
+            write_or_notify(app, "activeTemplate", serde_json::Value::String(name));
+        }
+        Some(MenuAction::SetConfigKey { key, value }) => {
+            write_or_notify(app, &key, serde_json::Value::String(value));
+        }
+        None => {}
+    }
+}
+
+/// Persists a config key, then rebuilds the menu and reloads the frontend. On a
+/// write failure the value is NOT persisted, so the rebuilt menu correctly keeps
+/// the old checkmark; the failure is additionally surfaced to the user. A bare
+/// `eprintln!` is invisible in a bundled `.app`, so we emit `config:error` for
+/// `main.ts` to turn into a notification — otherwise a failed save looks like the
+/// setting silently snapping back for no reason.
+fn write_or_notify(app: &AppHandle, key: &str, value: serde_json::Value) {
+    if let Err(e) = write_config_key(key, value) {
+        eprintln!("[Verba] write_config_key failed for {key}: {e}");
+        let _ = app.emit("config:error", format!("Could not save setting “{key}”: {e}"));
+    }
+    rebuild_and_reload(app);
 }
 
 /// Rebuilds the tray menu (updated checkmarks) and tells the frontend to reload.
@@ -152,4 +195,57 @@ fn open_config() {
         let _ = std::fs::write(&path, "{}\n");
     }
     let _ = std::process::Command::new("open").arg(&path).status();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_dotted_set_keys_by_splitting_on_the_last_colon() {
+        assert_eq!(
+            parse_menu_id("set:transcription.language:de"),
+            Some(MenuAction::SetConfigKey {
+                key: "transcription.language".to_string(),
+                value: "de".to_string(),
+            })
+        );
+    }
+
+    #[test]
+    fn parses_flat_set_keys() {
+        assert_eq!(
+            parse_menu_id("set:language:de"),
+            Some(MenuAction::SetConfigKey {
+                key: "language".to_string(),
+                value: "de".to_string(),
+            })
+        );
+    }
+
+    #[test]
+    fn parses_template_ids_and_preserves_colons_in_the_name() {
+        assert_eq!(
+            parse_menu_id("settmpl:E-Mail"),
+            Some(MenuAction::SetActiveTemplate("E-Mail".to_string()))
+        );
+        assert_eq!(
+            parse_menu_id("settmpl:Weird:Name"),
+            Some(MenuAction::SetActiveTemplate("Weird:Name".to_string()))
+        );
+    }
+
+    #[test]
+    fn parses_the_fixed_command_ids() {
+        assert_eq!(parse_menu_id("quit"), Some(MenuAction::Quit));
+        assert_eq!(parse_menu_id("open-config"), Some(MenuAction::OpenConfig));
+        assert_eq!(parse_menu_id("reload-config"), Some(MenuAction::ReloadConfig));
+    }
+
+    #[test]
+    fn returns_none_for_unknown_or_malformed_ids() {
+        assert_eq!(parse_menu_id("bogus"), None);
+        // `set:` with no value separator is malformed and ignored.
+        assert_eq!(parse_menu_id("set:novalue"), None);
+    }
 }

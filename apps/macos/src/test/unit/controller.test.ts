@@ -127,6 +127,47 @@ suite('DictationController', () => {
 		assert.strictEqual(deps.ui.showTranscript.calledWith('cleaned text'), true);
 	});
 
+	test('cleanup failure + missing Accessibility still surfaces the RAW transcript in the window', async () => {
+		deps.cleanup.process.rejects(new Error('Anthropic API key required for post-processing.'));
+		(deps.invoke as unknown as sinon.SinonStub).withArgs('has_accessibility_permission').resolves(false);
+
+		await dictate(controller);
+
+		assert.strictEqual(deps.notifier.warn.calledWithMatch(/raw transcript/), true);
+		assert.strictEqual(deps.ui.showTranscript.calledWith('raw transcript'), true);
+	});
+
+	test('cleanup failure + paste failure still surfaces the RAW transcript in the window', async () => {
+		deps.cleanup.process.rejects(new Error('overloaded'));
+		(deps.invoke as unknown as sinon.SinonStub).withArgs('paste_text', sinon.match.any)
+			.rejects(new Error('Paste failed'));
+
+		await dictate(controller);
+
+		assert.strictEqual(deps.ui.showTranscript.calledWith('raw transcript'), true);
+		assert.strictEqual(deps.notifier.error.calledWithMatch(/paste failed/i), true);
+	});
+
+	test('ignores a hotkey press while transcription is already in flight', async () => {
+		// stop_capture never resolves → the controller stays in the transcribing
+		// state; a third press must not start a new recording or re-enter the flow.
+		let releaseStop: () => void = () => {};
+		(deps.invoke as unknown as sinon.SinonStub).withArgs('stop_capture')
+			.returns(new Promise<string>((resolve) => { releaseStop = () => resolve('/tmp/rec.wav'); }));
+
+		await controller.handleHotkey(); // start recording
+		const stop = controller.handleHotkey(); // stop → enters transcribing, awaits stop_capture
+		await controller.handleHotkey(); // should be ignored (busy)
+
+		assert.strictEqual(
+			(deps.invoke as unknown as sinon.SinonStub).withArgs('start_capture').callCount,
+			1,
+			'start_capture must only have been called once',
+		);
+		releaseStop();
+		await stop;
+	});
+
 	test('emits setState across the dictation lifecycle', async () => {
 		await dictate(controller);
 

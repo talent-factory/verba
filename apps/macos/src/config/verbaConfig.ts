@@ -82,8 +82,17 @@ export function resolveActiveTemplate(templates: Template[], name?: string): Tem
 /**
  * Reads and resolves the user config. Never throws: a missing, unreadable, or
  * malformed file — or any wrong-typed field — falls back to {@link DEFAULTS}.
+ *
+ * `onMalformed` fires only when the file content is present but not valid JSON
+ * (an absent/unreadable file resolves to `"{}"` and parses cleanly). Callers use
+ * it to tell the user their hand-edited config was ignored — otherwise the reset
+ * to defaults is a silent surprise. The tray menu invites editing, so a syntax
+ * error is a real, recoverable user mistake worth surfacing.
  */
-export async function loadConfig(readConfig: ReadConfig = invokeReadConfig): Promise<ResolvedConfig> {
+export async function loadConfig(
+	readConfig: ReadConfig = invokeReadConfig,
+	onMalformed?: (err: unknown) => void,
+): Promise<ResolvedConfig> {
 	let raw: VerbaConfig = {};
 	try {
 		const parsed: unknown = JSON.parse(await readConfig());
@@ -92,6 +101,7 @@ export async function loadConfig(readConfig: ReadConfig = invokeReadConfig): Pro
 		}
 	} catch (err) {
 		console.warn('[Verba] Could not read/parse config; using defaults:', err);
+		onMalformed?.(err);
 	}
 
 	return {

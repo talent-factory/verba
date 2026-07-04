@@ -66,14 +66,10 @@ pub fn write_config_key(dotted: &str, value: serde_json::Value) -> Result<(), St
     std::fs::write(&path, pretty).map_err(|e| e.to_string())
 }
 
-/// Returns the string at `dotted` in the config file, or `default` if the file
-/// is absent/malformed or the key is missing/not-a-string.
-pub fn read_config_value(dotted: &str, default: &str) -> String {
-    let root: serde_json::Value = config_path()
-        .and_then(|p| std::fs::read_to_string(p).ok())
-        .and_then(|s| serde_json::from_str(&s).ok())
-        .unwrap_or_else(|| serde_json::json!({}));
-    let mut cur = &root;
+/// Returns the string at `dotted` in `root`, or `default` if the key is missing
+/// or its value is not a string. Pure (no I/O) so the traversal is unit-testable.
+fn value_at(root: &serde_json::Value, dotted: &str, default: &str) -> String {
+    let mut cur = root;
     for part in dotted.split('.') {
         match cur.get(part) {
             Some(v) => cur = v,
@@ -83,9 +79,21 @@ pub fn read_config_value(dotted: &str, default: &str) -> String {
     cur.as_str().unwrap_or(default).to_string()
 }
 
+/// Returns the string at `dotted` in the config file, or `default` if the file
+/// is absent/malformed or the key is missing/not-a-string.
+pub fn read_config_value(dotted: &str, default: &str) -> String {
+    let root: serde_json::Value = config_path()
+        .and_then(|p| std::fs::read_to_string(p).ok())
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_else(|| serde_json::json!({}));
+    value_at(&root, dotted, default)
+}
+
 /// A JSON value counts as a valid template entry only if it is an object with
-/// a non-empty string `name` and a string `prompt` — mirrors the TS
-/// `isTemplateArray` predicate in `apps/macos/src/config/verbaConfig.ts`.
+/// a non-empty string `name` and a string `prompt` — mirrors the per-entry
+/// check inside the TS `isTemplateArray` predicate in
+/// `apps/macos/src/config/verbaConfig.ts` (the non-empty-array rule lives on
+/// [`template_choices_from_value`], matching `isTemplateArray`'s `length > 0`).
 fn is_valid_template_entry(t: &serde_json::Value) -> bool {
     t.is_object()
         && t.get("name")
@@ -159,6 +167,23 @@ mod tests {
         let mut v = serde_json::json!({ "language": "auto", "glossary": ["x"] });
         set_json_key(&mut v, "language", serde_json::json!("de"));
         assert_eq!(v, serde_json::json!({ "language": "de", "glossary": ["x"] }));
+    }
+
+    #[test]
+    fn value_at_reads_nested_keys_and_falls_back_to_default() {
+        let cfg = serde_json::json!({
+            "transcription": { "language": "de" },
+            "language": "auto",
+            "glossary": ["x"],
+        });
+        // present nested string
+        assert_eq!(value_at(&cfg, "transcription.language", "multi"), "de");
+        // present flat string
+        assert_eq!(value_at(&cfg, "language", "auto"), "auto");
+        // missing key → default
+        assert_eq!(value_at(&cfg, "transcription.provider", "deepgram"), "deepgram");
+        // present but not a string (array) → default
+        assert_eq!(value_at(&cfg, "glossary", "fallback"), "fallback");
     }
 
     #[test]

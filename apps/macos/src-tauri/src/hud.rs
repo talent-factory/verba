@@ -1,9 +1,16 @@
 //! The floating HUD window. Rust owns show/hide/position so the window is
 //! never focused — critical: a focused HUD would steal focus and the paste's
 //! synthetic ⌘V would land in Verba instead of the user's frontmost app.
+//!
+//! The non-activating guarantee is enforced by `"focus": false` on the `hud`
+//! window in `tauri.conf.json` (plus `macOSPrivateApi`); `show()` below merely
+//! avoids *re-focusing* it. Don't remove that config flag on the assumption
+//! that omitting `set_focus` here is sufficient — it isn't.
 
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, WebviewWindow};
+
+use crate::tray::DictationState;
 
 #[derive(Clone, Serialize)]
 struct HudPayload {
@@ -17,7 +24,7 @@ struct HudPayload {
 #[tauri::command]
 pub fn set_hud_state(
     app: AppHandle,
-    state: String,
+    state: DictationState,
     label: String,
     icon: String,
     accent: String,
@@ -25,12 +32,18 @@ pub fn set_hud_state(
     let Some(win) = app.get_webview_window("hud") else {
         return Ok(());
     };
-    if state == "idle" {
+    if state == DictationState::Idle {
         let _ = win.hide();
         return Ok(());
     }
-    let _ = app.emit_to("hud", "hud:state", HudPayload { label, icon, accent });
+    if let Err(e) = app.emit_to("hud", "hud:state", HudPayload { label, icon, accent }) {
+        // Swallowed (best-effort) but logged: without the payload the pill would
+        // show the PREVIOUS state's content until the next transition.
+        eprintln!("[Verba] hud:state emit failed: {e}");
+    }
     position_bottom_center(&win);
+    // Click-through: the pill must never intercept clicks meant for the app
+    // underneath it.
     let _ = win.set_ignore_cursor_events(true);
     let _ = win.set_always_on_top(true);
     let _ = win.show(); // deliberately NOT set_focus — must not steal focus

@@ -3,6 +3,7 @@
 //! the frontend (single source: `statePresentation.ts`); the icon asset is
 //! selected here by state key.
 
+use serde::Deserialize;
 use tauri::image::Image;
 use tauri::AppHandle;
 
@@ -11,12 +12,27 @@ const RECORDING_ICON: &[u8] = include_bytes!("../icons/state/recording.png");
 const TRANSCRIBING_ICON: &[u8] = include_bytes!("../icons/state/transcribing.png");
 const PROCESSING_ICON: &[u8] = include_bytes!("../icons/state/processing.png");
 
-fn icon_bytes(state: &str) -> &'static [u8] {
+/// The discrete dictation state, deserialized from the frontend's
+/// `DictationState` string union (see
+/// `apps/macos/src/visualization/statePresentation.ts`). Deserialization
+/// rejects any value outside these four, so a typo surfaces as an IPC error
+/// (swallowed best-effort in `visualization.ts`) instead of silently rendering
+/// as idle — the whole point of a closed enum over a bare `String`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DictationState {
+    Idle,
+    Recording,
+    Transcribing,
+    Processing,
+}
+
+fn icon_bytes(state: DictationState) -> &'static [u8] {
     match state {
-        "recording" => RECORDING_ICON,
-        "transcribing" => TRANSCRIBING_ICON,
-        "processing" => PROCESSING_ICON,
-        _ => IDLE_ICON,
+        DictationState::Recording => RECORDING_ICON,
+        DictationState::Transcribing => TRANSCRIBING_ICON,
+        DictationState::Processing => PROCESSING_ICON,
+        DictationState::Idle => IDLE_ICON,
     }
 }
 
@@ -25,14 +41,14 @@ fn icon_bytes(state: &str) -> &'static [u8] {
 #[tauri::command]
 pub fn set_tray_state(
     app: AppHandle,
-    state: String,
+    state: DictationState,
     tooltip: String,
     title: String,
 ) -> Result<(), String> {
     let Some(tray) = app.tray_by_id("verba-tray") else {
         return Ok(());
     };
-    let image = Image::from_bytes(icon_bytes(&state)).map_err(|e| e.to_string())?;
+    let image = Image::from_bytes(icon_bytes(state)).map_err(|e| e.to_string())?;
     tray.set_icon(Some(image)).map_err(|e| e.to_string())?;
     tray.set_icon_as_template(true).map_err(|e| e.to_string())?;
     tray.set_tooltip(Some(&tooltip)).map_err(|e| e.to_string())?;
@@ -41,4 +57,31 @@ pub fn set_tray_state(
     #[cfg(not(target_os = "macos"))]
     let _ = &title;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn icon_bytes_maps_each_state_to_its_asset() {
+        assert_eq!(icon_bytes(DictationState::Idle), IDLE_ICON);
+        assert_eq!(icon_bytes(DictationState::Recording), RECORDING_ICON);
+        assert_eq!(icon_bytes(DictationState::Transcribing), TRANSCRIBING_ICON);
+        assert_eq!(icon_bytes(DictationState::Processing), PROCESSING_ICON);
+    }
+
+    #[test]
+    fn dictation_state_deserializes_the_frontend_lowercase_union() {
+        assert_eq!(
+            serde_json::from_str::<DictationState>("\"idle\"").unwrap(),
+            DictationState::Idle
+        );
+        assert_eq!(
+            serde_json::from_str::<DictationState>("\"processing\"").unwrap(),
+            DictationState::Processing
+        );
+        // An unknown state is rejected rather than silently coerced to idle.
+        assert!(serde_json::from_str::<DictationState>("\"bogus\"").is_err());
+    }
 }

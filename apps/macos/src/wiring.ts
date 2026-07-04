@@ -25,13 +25,23 @@ class TauriCleanupService extends CleanupService {
 export async function createDictationController(): Promise<{
 	controller: DictationController;
 	reloadConfig: () => Promise<void>;
+	notifier: TauriNotifier;
 }> {
-	const configState = { current: await loadConfig() };
+	const notifier = new TauriNotifier();
+	// A hand-edited config with a JSON syntax error silently resets every setting
+	// to defaults; on a menu-bar (Accessory) app console warnings are invisible,
+	// so surface it as a notification the user can actually see and act on.
+	const notifyMalformedConfig = (): void =>
+		notifier.warn('Verba: config.json has a syntax error and was ignored — using defaults. Fix it via the tray menu.');
+
+	const configState = { current: await loadConfig(undefined, notifyMalformedConfig) };
 
 	const secrets = new EnvAwareSecretStore(new TauriSecretStore());
-	const notifier = new TauriNotifier();
 	const deepgramPrompt: ApiKeyPrompt = () => promptForApiKey('Deepgram API key (dg-…)');
 
+	// NOTE: `transcription.provider` from the config only drives the tray
+	// checkmark today — the provider is always Deepgram until local transcription
+	// is wired (the "Lokal" tray entry is disabled). See menu.rs PROVIDERS.
 	const provider = new DeepgramTauriProvider(secrets, deepgramPrompt, invoke, configState.current.transcriptionLanguage);
 
 	const cleanup = new TauriCleanupService(secrets, notifier, { dangerouslyAllowBrowser: true });
@@ -43,7 +53,9 @@ export async function createDictationController(): Promise<{
 
 	async function reloadConfig(): Promise<void> {
 		try {
-			configState.current = await loadConfig();
+			// Reload is the most likely place to hit a malformed hand-edit, so
+			// notify here too (not just at the initial load).
+			configState.current = await loadConfig(undefined, notifyMalformedConfig);
 			applyConfig(configState.current, {
 				setLanguage: (l) => provider.setLanguage(l),
 				setGlossary: (g) => cleanup.setGlossary(g),
@@ -66,5 +78,5 @@ export async function createDictationController(): Promise<{
 		ui: { setPhase, showTranscript, showAccessibilityOnboarding, setState: visualization.setState },
 	});
 
-	return { controller, reloadConfig };
+	return { controller, reloadConfig, notifier };
 }

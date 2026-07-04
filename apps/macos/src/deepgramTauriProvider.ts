@@ -32,16 +32,25 @@ export class DeepgramTauriProvider implements TranscriptionBackend {
 	private readonly secretStorage: SecretStore;
 	private readonly promptForApiKey: ApiKeyPrompt;
 	private readonly invoke: Invoke;
+	private readonly language: string;
 
 	/**
 	 * @param invoke Defaults to the real Tauri `invoke`. Injectable so tests
 	 *   can exercise this class's logic (unauthorized-key recovery, error
 	 *   formatting) without a Tauri runtime.
+	 * @param language Deepgram `language` value ("multi" or a specific code like
+	 *   "de"). Defaults to "multi".
 	 */
-	constructor(secretStorage: SecretStore, promptForApiKey: ApiKeyPrompt, invoke: Invoke = tauriInvoke) {
+	constructor(
+		secretStorage: SecretStore,
+		promptForApiKey: ApiKeyPrompt,
+		invoke: Invoke = tauriInvoke,
+		language: string = 'multi',
+	) {
 		this.secretStorage = secretStorage;
 		this.promptForApiKey = promptForApiKey;
 		this.invoke = invoke;
+		this.language = language;
 	}
 
 	async transcribe(source: string, glossary?: string[]): Promise<TranscriptionResult> {
@@ -54,6 +63,7 @@ export class DeepgramTauriProvider implements TranscriptionBackend {
 				apiKey,
 				audioPath: source,
 				keyterms,
+				language: this.language,
 			});
 		} catch (err: unknown) {
 			if (err === UNAUTHORIZED_SENTINEL || (err instanceof Error && err.message === UNAUTHORIZED_SENTINEL)) {

@@ -48,19 +48,12 @@ pub async fn deepgram_transcribe(
     api_key: String,
     audio_path: String,
     keyterms: Vec<String>,
+    language: String,
 ) -> Result<TranscriptionResult, String> {
     let audio = std::fs::read(&audio_path)
         .map_err(|e| format!("Transcription failed: could not read recording: {e}"))?;
 
-    let mut params: Vec<(&str, String)> = vec![
-        ("model", "nova-3".to_string()),
-        ("language", "multi".to_string()),
-        ("smart_format", "true".to_string()),
-        ("detect_language", "true".to_string()),
-    ];
-    for kt in &keyterms {
-        params.push(("keyterm", kt.clone()));
-    }
+    let params = build_query_params(language, &keyterms);
 
     let client = reqwest::Client::builder()
         .timeout(REQUEST_TIMEOUT)
@@ -108,6 +101,22 @@ pub async fn deepgram_transcribe(
     })?;
 
     Ok(parse_transcription(&body))
+}
+
+/// Builds the Deepgram `/listen` query params. `language` is passed through
+/// verbatim ("multi" for multilingual code-switching, or a specific code like
+/// "de"). `detect_language` is intentionally NOT set — combining it with an
+/// explicit `language` produced wrong-language transcripts.
+fn build_query_params(language: String, keyterms: &[String]) -> Vec<(&'static str, String)> {
+    let mut params: Vec<(&'static str, String)> = vec![
+        ("model", "nova-3".to_string()),
+        ("language", language),
+        ("smart_format", "true".to_string()),
+    ];
+    for kt in keyterms {
+        params.push(("keyterm", kt.clone()));
+    }
+    params
 }
 
 /// Builds a status-coded error message from a non-2xx response body. JSON
@@ -179,6 +188,20 @@ fn parse_transcription(body: &serde_json::Value) -> TranscriptionResult {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn build_query_params_sets_language_and_omits_detect_language() {
+        let p = build_query_params("de".to_string(), &[]);
+        assert!(p.contains(&("language", "de".to_string())));
+        assert!(p.contains(&("model", "nova-3".to_string())));
+        assert!(p.iter().all(|(k, _)| *k != "detect_language"));
+    }
+
+    #[test]
+    fn build_query_params_appends_keyterms() {
+        let p = build_query_params("multi".to_string(), &["Verba:2".to_string()]);
+        assert!(p.contains(&("keyterm", "Verba:2".to_string())));
+    }
 
     #[test]
     fn unauthorized_sentinel_matches_the_frontend_constant() {

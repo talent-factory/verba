@@ -117,4 +117,17 @@ suite('DeepgramTauriProvider', () => {
 
 		await assert.rejects(() => provider.transcribe('/tmp/rec.wav'), /No speech detected in recording\./);
 	});
+
+	test('passes the default language "multi" in the transcribe request', async () => {
+		invoke.resolves({ text: 'hi' });
+		await provider.transcribe('/tmp/rec.wav');
+		assert.strictEqual(invoke.firstCall.args[1].language, 'multi');
+	});
+
+	test('passes a configured language in the transcribe request', async () => {
+		invoke.resolves({ text: 'hi' });
+		const deProvider = new DeepgramTauriProvider(secretStorage, promptForApiKey, invoke, 'de');
+		await deProvider.transcribe('/tmp/rec.wav');
+		assert.strictEqual(invoke.firstCall.args[1].language, 'de');
+	});
 });

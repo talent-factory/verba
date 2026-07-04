@@ -104,4 +104,25 @@ suite('resolveConfig', () => {
 	test('resolveActiveTemplate returns the first template when name is undefined', () => {
 		assert.strictEqual(resolveActiveTemplate(DEFAULT_TEMPLATES, undefined).name, 'Freitext');
 	});
+
+	test('glossary: keeps valid strings, drops non-strings and whitespace-only (per-element)', () => {
+		assert.deepStrictEqual(
+			resolve({ glossary: ['Verba', 123, '  ', 'Deepgram', ''] }).glossary,
+			['Verba', 'Deepgram'],
+		);
+	});
+
+	test('glossary: a non-array falls back to []', () => {
+		assert.deepStrictEqual(resolve({ glossary: 'nope' }).glossary, []);
+	});
+
+	test('expansions: keeps valid entries, drops malformed ones (per-element)', () => {
+		const c = resolve({ expansions: [
+			{ abbreviation: 'mfg', expansion: 'mit freundlichen Grüßen' },
+			{ abbreviation: 'x' },   // missing expansion
+			{ expansion: 'y' },      // missing abbreviation
+			'nope',
+		] });
+		assert.deepStrictEqual(c.expansions, [{ abbreviation: 'mfg', expansion: 'mit freundlichen Grüßen' }]);
+	});
 });

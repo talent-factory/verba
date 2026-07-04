@@ -42,15 +42,22 @@ export interface ResolvedConfig {
 function nonEmptyString(v: unknown): v is string {
 	return typeof v === 'string' && v.trim().length > 0;
 }
-function isStringArray(v: unknown): v is string[] {
-	return Array.isArray(v) && v.every((x) => typeof x === 'string');
+/** Keeps only non-empty (trimmed) string entries; drops invalid entries per-element. */
+function resolveStringArray(v: unknown): string[] {
+	return Array.isArray(v)
+		? v.filter((x): x is string => typeof x === 'string' && x.trim().length > 0)
+		: [];
 }
-function isExpansionArray(v: unknown): v is Expansion[] {
-	return Array.isArray(v) && v.every(
-		(x) => !!x && typeof x === 'object'
-			&& typeof (x as Expansion).abbreviation === 'string'
-			&& typeof (x as Expansion).expansion === 'string',
-	);
+
+function isValidExpansion(x: unknown): x is Expansion {
+	return !!x && typeof x === 'object'
+		&& typeof (x as Expansion).abbreviation === 'string'
+		&& typeof (x as Expansion).expansion === 'string';
+}
+
+/** Keeps only valid expansion entries; drops invalid entries per-element. */
+function resolveExpansionArray(v: unknown): Expansion[] {
+	return Array.isArray(v) ? v.filter(isValidExpansion) : [];
 }
 function isTemplateArray(v: unknown): v is Template[] {
 	return Array.isArray(v) && v.length > 0 && v.every(
@@ -89,8 +96,8 @@ export function resolveConfig(provider: ConfigProvider): ResolvedConfig {
 		transcriptionLanguage: nonEmptyString(rawTranscriptionLanguage) ? rawTranscriptionLanguage : 'multi',
 		provider: nonEmptyString(rawProvider) ? rawProvider : 'deepgram',
 		localModel: nonEmptyString(rawLocalModel) ? rawLocalModel : 'base',
-		glossary: isStringArray(rawGlossary) ? rawGlossary : [],
-		expansions: isExpansionArray(rawExpansions) ? rawExpansions : [],
+		glossary: resolveStringArray(rawGlossary),
+		expansions: resolveExpansionArray(rawExpansions),
 		templates,
 		activeTemplate: resolveActiveTemplate(templates, nonEmptyString(rawActiveTemplate) ? rawActiveTemplate : undefined),
 		audioDevice: nonEmptyString(rawAudioDevice) ? rawAudioDevice.trim() : undefined,

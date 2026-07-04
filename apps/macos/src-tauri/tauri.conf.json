@@ -10,6 +10,7 @@
     "beforeBuildCommand": "npm run build"
   },
   "app": {
+    "macOSPrivateApi": true,
     "withGlobalTauri": false,
     "windows": [
       {
@@ -19,6 +20,20 @@
         "height": 320,
         "visible": false,
         "resizable": true
+      },
+      {
+        "label": "hud",
+        "url": "hud.html",
+        "width": 300,
+        "height": 56,
+        "transparent": true,
+        "decorations": false,
+        "alwaysOnTop": true,
+        "focus": false,
+        "skipTaskbar": true,
+        "shadow": false,
+        "resizable": false,
+        "visible": false
       }
     ],
     "security": {

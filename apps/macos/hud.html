@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="de">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>Verba HUD</title>
+		<style>
+			html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; }
+			#pill {
+				--accent: #888;
+				display: flex; align-items: center; gap: 10px;
+				height: 40px; margin: 8px; padding: 0 16px;
+				border-radius: 20px;
+				background: rgba(28, 28, 30, 0.92);
+				border: 1px solid var(--accent);
+				box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+				color: #f2f2f7; font: 500 13px -apple-system, system-ui, sans-serif;
+				white-space: nowrap;
+			}
+			#icon { font-size: 15px; }
+			#dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); animation: pulse 1.2s ease-in-out infinite; }
+			@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+		</style>
+	</head>
+	<body>
+		<div id="pill">
+			<span id="dot"></span>
+			<span id="icon"></span>
+			<span id="label"></span>
+		</div>
+		<script type="module" src="/src/hud/hud.ts"></script>
+	</body>
+</html>

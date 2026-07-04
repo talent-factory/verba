@@ -11,6 +11,12 @@ export default defineConfig({
 	build: {
 		outDir: 'dist',
 		target: 'es2022',
+		rollupOptions: {
+			input: {
+				main: 'index.html',
+				hud: 'hud.html',
+			},
+		},
 	},
 	// `@verba/core` is a linked npm-workspace package (symlinked outside this
 	// project root), so Vite serves it via `/@fs/...` as a raw file instead of

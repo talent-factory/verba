@@ -1,6 +1,19 @@
 import { invoke } from '@tauri-apps/api/core';
 import type { Expansion } from '@verba/core';
 
+import defaultTemplatesData from './defaultTemplates.json';
+
+/** A post-processing template: the Claude system prompt plus tray display metadata. */
+export interface Template {
+	name: string;
+	prompt: string;
+	icon?: string;
+	contextAware?: boolean;
+}
+
+/** The bundled default templates (single source, shared with the Rust tray). */
+export const DEFAULT_TEMPLATES: Template[] = defaultTemplatesData as Template[];
+
 /** Raw parsed shape of `~/.config/verba/config.json` — every field optional. */
 export interface VerbaConfig {
 	transcription?: { language?: string; provider?: string; localModel?: string };
@@ -8,7 +21,7 @@ export interface VerbaConfig {
 	glossary?: string[];
 	expansions?: Expansion[];
 	templates?: unknown[];
-	autoSelectTemplate?: boolean;
+	activeTemplate?: string;
 	audioDevice?: string;
 }
 
@@ -18,6 +31,8 @@ export interface ResolvedConfig {
 	language: string;
 	glossary: string[];
 	expansions: Expansion[];
+	templates: Template[];
+	activeTemplate: Template;
 }
 
 /** Reads the raw config file contents; defaults to the Tauri `read_config` command. */
@@ -28,6 +43,8 @@ const DEFAULTS: ResolvedConfig = {
 	language: 'auto',
 	glossary: [],
 	expansions: [],
+	templates: DEFAULT_TEMPLATES,
+	activeTemplate: DEFAULT_TEMPLATES[0],
 };
 
 const invokeReadConfig: ReadConfig = () => invoke<string>('read_config');
@@ -46,6 +63,20 @@ function isExpansionArray(v: unknown): v is Expansion[] {
 			&& typeof (x as Expansion).abbreviation === 'string'
 			&& typeof (x as Expansion).expansion === 'string',
 	);
+}
+
+function isTemplateArray(v: unknown): v is Template[] {
+	return Array.isArray(v) && v.length > 0 && v.every(
+		(x) => !!x && typeof x === 'object'
+			&& nonEmptyString((x as Template).name)
+			&& typeof (x as Template).prompt === 'string',
+	);
+}
+
+/** Returns the template named `name`, or the first template when unnamed/unknown. */
+export function resolveActiveTemplate(templates: Template[], name?: string): Template {
+	const found = name ? templates.find((t) => t.name === name) : undefined;
+	return found ?? templates[0];
 }
 
 /**
@@ -70,6 +101,11 @@ export async function loadConfig(readConfig: ReadConfig = invokeReadConfig): Pro
 		language: nonEmptyString(raw.language) ? raw.language : DEFAULTS.language,
 		glossary: isStringArray(raw.glossary) ? raw.glossary : DEFAULTS.glossary,
 		expansions: isExpansionArray(raw.expansions) ? raw.expansions : DEFAULTS.expansions,
+		templates: isTemplateArray(raw.templates) ? raw.templates : DEFAULT_TEMPLATES,
+		activeTemplate: resolveActiveTemplate(
+			isTemplateArray(raw.templates) ? raw.templates : DEFAULT_TEMPLATES,
+			raw.activeTemplate,
+		),
 	};
 }
 

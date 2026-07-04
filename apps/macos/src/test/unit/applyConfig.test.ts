@@ -10,7 +10,14 @@ suite('applyConfig', () => {
 			setExpansions: sinon.stub(),
 		};
 		applyConfig(
-			{ transcriptionLanguage: 'de', language: 'auto', glossary: ['Verba'], expansions: [{ abbreviation: 'z', expansion: 'zum Beispiel' }] },
+			{
+				transcriptionLanguage: 'de',
+				language: 'auto',
+				glossary: ['Verba'],
+				expansions: [{ abbreviation: 'z', expansion: 'zum Beispiel' }],
+				templates: [{ name: 'Freitext', prompt: 'noop' }],
+				activeTemplate: { name: 'Freitext', prompt: 'noop' },
+			},
 			targets,
 		);
 		assert.ok(targets.setLanguage.calledOnceWith('de'));

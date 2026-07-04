@@ -177,6 +177,10 @@
                   "type": "string"
                 },
                 "description": "VS Code language IDs that trigger automatic selection of this template (e.g. [\"java\", \"kotlin\"]). When verba.autoSelectTemplate is enabled and the active file matches, this template is used automatically."
+              },
+              "icon": {
+                "type": "string",
+                "description": "Optional emoji/icon shown in the macOS tray template menu."
               }
             }
           },

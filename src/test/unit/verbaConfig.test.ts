@@ -18,7 +18,7 @@ const originalLoad = (Module as any)._load;
 };
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const { resolvedVerbaConfig, transcriptionLanguageOverride } = require('../../verbaConfig');
+const { resolvedVerbaConfig, transcriptionLanguageOverride, overrideTranscriptionLanguage } = require('../../verbaConfig');
 
 suite('resolvedVerbaConfig', () => {
 	teardown(() => { fakeConfig = {}; });
@@ -44,5 +44,12 @@ suite('transcription language override semantics', () => {
 		assert.strictEqual(transcriptionLanguageOverride(), 'multi');
 		fakeConfig = { 'transcription.language': 'de' };
 		assert.strictEqual(transcriptionLanguageOverride(), 'de');
+	});
+});
+
+suite('overrideTranscriptionLanguage', () => {
+	test("maps 'multi' to 'auto' and passes fixed codes through", () => {
+		assert.strictEqual(overrideTranscriptionLanguage('multi'), 'auto');
+		assert.strictEqual(overrideTranscriptionLanguage('de'), 'de');
 	});
 });

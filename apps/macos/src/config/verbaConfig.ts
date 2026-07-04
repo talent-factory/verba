@@ -19,7 +19,7 @@ export class ObjectConfigProvider implements ConfigProvider {
 	get<T>(key: string, def: T): T {
 		let cur: unknown = this.obj;
 		for (const part of key.split('.')) {
-			if (cur && typeof cur === 'object' && part in (cur as object)) {
+			if (cur && typeof cur === 'object' && Object.prototype.hasOwnProperty.call(cur, part)) {
 				cur = (cur as Record<string, unknown>)[part];
 			} else {
 				return def;

@@ -24,7 +24,7 @@ import {
 	WHISPER_MODELS, WHISPER_MODEL_BASE_URL,
 	isTrustedDownloadHost, cleanupFile, isValidExpansion,
 } from './extensionHelpers';
-import { resolvedVerbaConfig, transcriptionLanguageOverride } from './verbaConfig';
+import { resolvedVerbaConfig, transcriptionLanguageOverride, overrideTranscriptionLanguage } from './verbaConfig';
 
 const DEEPGRAM_API_KEY_STORAGE_KEY = 'verba.deepgramApiKey';
 
@@ -165,7 +165,7 @@ export function activate(context: vscode.ExtensionContext) {
 		if (override !== undefined) {
 			// New explicit setting: 'multi' is Deepgram's multilingual mode, which
 			// this host expresses as 'auto'.
-			const language = override === 'multi' ? 'auto' : override;
+			const language = overrideTranscriptionLanguage(override);
 			transcriptionService.setLanguage(language);
 			console.log(`[Verba] Transcription language (transcription.language): ${language}`);
 			return language;
@@ -774,6 +774,10 @@ export function activate(context: vscode.ExtensionContext) {
 			try { applyTranscriptionProvider(); } catch (err) {
 				console.error('[Verba] Failed to reload transcription provider from settings:', err);
 				vscode.window.showWarningMessage('Verba: Failed to reload transcription settings. Changes may not take effect until VS Code is restarted.');
+			}
+			try { applyLanguageSetting(); } catch (err) {
+				console.error('[Verba] Failed to reload language setting:', err);
+				vscode.window.showWarningMessage('Verba: Failed to reload language setting. Changes may not take effect until VS Code is restarted.');
 			}
 			statusBar.setIdle(selectedTemplate?.name);
 		}

@@ -24,6 +24,7 @@ import {
 	WHISPER_MODELS, WHISPER_MODEL_BASE_URL,
 	isTrustedDownloadHost, cleanupFile, isValidExpansion,
 } from './extensionHelpers';
+import { resolvedVerbaConfig } from './verbaConfig';
 
 const DEEPGRAM_API_KEY_STORAGE_KEY = 'verba.deepgramApiKey';
 
@@ -82,7 +83,7 @@ function wrapVscodeEditor(editor: vscode.TextEditor): UndoEditor {
 
 /** Resolves the effective language: manual setting overrides auto-detection. Returns undefined if no valid language. */
 function resolveLanguage(autoDetected: string | undefined): string | undefined {
-	const setting = vscode.workspace.getConfiguration('verba').get<string>('language', 'auto');
+	const setting = resolvedVerbaConfig().language;
 	const lang = setting !== 'auto' ? setting : autoDetected;
 	if (!lang) { return undefined; }
 	if (!/^[a-z]{2,3}(-[A-Za-z]{2,4})?$/.test(lang)) {
@@ -287,14 +288,7 @@ export function activate(context: vscode.ExtensionContext) {
 	let contextProvider = setupContextProvider();
 
 	function loadTemplates(): Template[] {
-		const rawTemplates = vscode.workspace
-			.getConfiguration('verba')
-			.get<Template[]>('templates', []);
-		return rawTemplates.filter(
-			(t): t is Template =>
-				typeof t?.name === 'string' && t.name.trim() !== ''
-				&& typeof t?.prompt === 'string' && t.prompt.trim() !== '',
-		);
+		return resolvedVerbaConfig().templates;
 	}
 
 	function loadGlossary(): string[] {
@@ -595,7 +589,7 @@ export function activate(context: vscode.ExtensionContext) {
 					return;
 				}
 
-				let audioDevice = vscode.workspace.getConfiguration('verba').get<string>('audioDevice', '').trim() || undefined;
+				let audioDevice = resolvedVerbaConfig().audioDevice;
 				if (!audioDevice && process.platform === 'win32') {
 					audioDevice = await pickAudioDevice(true);
 					if (!audioDevice) {
@@ -641,7 +635,7 @@ export function activate(context: vscode.ExtensionContext) {
 			return undefined;
 		}
 
-		const currentDevice = vscode.workspace.getConfiguration('verba').get<string>('audioDevice', '');
+		const currentDevice = resolvedVerbaConfig().audioDevice ?? '';
 		const items = devices.map(name => ({
 			label: name,
 			description: name === currentDevice ? '(current)' : undefined,
@@ -1562,7 +1556,7 @@ export function activate(context: vscode.ExtensionContext) {
 			});
 
 			// Start recording
-			const preferredDevice = vscode.workspace.getConfiguration('verba').get<string>('audioDevice', '').trim() || undefined;
+			const preferredDevice = resolvedVerbaConfig().audioDevice;
 			await continuousRecorder.start(preferredDevice);
 			statusBar.setRecordingContinuous();
 			selectedTemplate = continuousTemplate;

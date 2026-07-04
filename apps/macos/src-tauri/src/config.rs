@@ -4,6 +4,9 @@
 
 use std::path::PathBuf;
 
+/// The bundled default templates — the same file the frontend imports.
+pub const DEFAULT_TEMPLATES_JSON: &str = include_str!("../../src/config/defaultTemplates.json");
+
 /// `$XDG_CONFIG_HOME/verba/config.json` if that var is set and non-empty, else
 /// `$HOME/.config/verba/config.json`. `None` if `HOME` is also unavailable.
 pub(crate) fn config_path() -> Option<PathBuf> {
@@ -80,6 +83,39 @@ pub fn read_config_value(dotted: &str, default: &str) -> String {
     cur.as_str().unwrap_or(default).to_string()
 }
 
+/// Returns `(label, name)` pairs for the tray "Vorlage" submenu. Prefers the
+/// config's `templates` array; when that is absent, empty, or not an array,
+/// falls back to parsing `default_json`. Entries without a string `name` are
+/// skipped; `label` prefixes the emoji `icon` when present.
+pub fn template_choices_from_value(
+    cfg: &serde_json::Value,
+    default_json: &str,
+) -> Vec<(String, String)> {
+    let arr: Vec<serde_json::Value> = match cfg.get("templates").and_then(|v| v.as_array()) {
+        Some(a) if !a.is_empty() => a.clone(),
+        _ => serde_json::from_str(default_json).unwrap_or_default(),
+    };
+    arr.iter()
+        .filter_map(|t| {
+            let name = t.get("name").and_then(|n| n.as_str())?;
+            let label = match t.get("icon").and_then(|i| i.as_str()) {
+                Some(icon) if !icon.is_empty() => format!("{icon} {name}"),
+                _ => name.to_string(),
+            };
+            Some((label, name.to_string()))
+        })
+        .collect()
+}
+
+/// Reads the config file (or `{}`) and returns the tray template choices.
+pub fn read_template_choices() -> Vec<(String, String)> {
+    let cfg: serde_json::Value = config_path()
+        .and_then(|p| std::fs::read_to_string(p).ok())
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_else(|| serde_json::json!({}));
+    template_choices_from_value(&cfg, DEFAULT_TEMPLATES_JSON)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -118,5 +154,35 @@ mod tests {
         let mut v = serde_json::json!(5);
         set_json_key(&mut v, "a.b", serde_json::json!("x"));
         assert_eq!(v, serde_json::json!({ "a": { "b": "x" } }));
+    }
+
+    #[test]
+    fn template_choices_uses_config_templates_when_present() {
+        let cfg = serde_json::json!({
+            "templates": [ { "name": "Custom", "prompt": "x", "icon": "🎯" } ]
+        });
+        let choices = template_choices_from_value(&cfg, DEFAULT_TEMPLATES_JSON);
+        assert_eq!(choices, vec![("🎯 Custom".to_string(), "Custom".to_string())]);
+    }
+
+    #[test]
+    fn template_choices_falls_back_to_bundled_defaults() {
+        let choices = template_choices_from_value(&serde_json::json!({}), DEFAULT_TEMPLATES_JSON);
+        assert_eq!(choices.len(), 9);
+        assert_eq!(choices[0].1, "Freitext");
+        assert_eq!(choices[0].0, "✏️ Freitext");
+    }
+
+    #[test]
+    fn template_choices_ignores_non_array_and_skips_nameless_entries() {
+        // non-array templates → defaults
+        let bad = serde_json::json!({ "templates": "nope" });
+        assert_eq!(template_choices_from_value(&bad, DEFAULT_TEMPLATES_JSON).len(), 9);
+        // entries without a string name are skipped
+        let mixed = serde_json::json!({
+            "templates": [ { "prompt": "no name" }, { "name": "Ok", "prompt": "y" } ]
+        });
+        let choices = template_choices_from_value(&mixed, DEFAULT_TEMPLATES_JSON);
+        assert_eq!(choices, vec![("Ok".to_string(), "Ok".to_string())]);
     }
 }

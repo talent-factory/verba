@@ -90,7 +90,7 @@ fn is_valid_template_entry(t: &serde_json::Value) -> bool {
     t.is_object()
         && t.get("name")
             .and_then(|n| n.as_str())
-            .is_some_and(|s| !s.is_empty())
+            .is_some_and(|s| !s.trim().is_empty())
         && t.get("prompt").is_some_and(|p| p.is_string())
 }
 
@@ -197,6 +197,19 @@ mod tests {
             "templates": [ { "prompt": "no name" }, { "name": "Ok", "prompt": "y" } ]
         });
         let choices = template_choices_from_value(&mixed, DEFAULT_TEMPLATES_JSON);
+        assert_eq!(choices.len(), 9);
+        assert_eq!(choices[0].1, "Freitext");
+    }
+
+    #[test]
+    fn template_choices_falls_back_when_name_is_whitespace_only() {
+        // A whitespace-only `name` must be treated as invalid, mirroring the
+        // TS `nonEmptyString` helper (`s.trim().length > 0`) in
+        // apps/macos/src/config/verbaConfig.ts.
+        let cfg = serde_json::json!({
+            "templates": [ { "name": "   ", "prompt": "x" } ]
+        });
+        let choices = template_choices_from_value(&cfg, DEFAULT_TEMPLATES_JSON);
         assert_eq!(choices.len(), 9);
         assert_eq!(choices[0].1, "Freitext");
     }

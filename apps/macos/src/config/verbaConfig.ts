@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
-import type { Expansion } from '@verba/core';
+import type { Expansion, PipelineContext } from '@verba/core';
 
 import defaultTemplatesData from './defaultTemplates.json';
 
@@ -121,4 +121,17 @@ export function applyConfig(config: ResolvedConfig, targets: ApplyTargets): void
 	targets.setLanguage(config.transcriptionLanguage);
 	targets.setGlossary(config.glossary);
 	targets.setExpansions(config.expansions);
+}
+
+/**
+ * Builds the pipeline context for a dictation: injects the active template's
+ * prompt, and pins the cleanup language when the user chose a fixed one
+ * (otherwise the transcription-detected language on `context` is kept).
+ */
+export function cleanupContextFor(config: ResolvedConfig, context?: PipelineContext): PipelineContext {
+	const merged: PipelineContext = { ...context, templatePrompt: config.activeTemplate.prompt };
+	if (config.language !== 'auto') {
+		merged.detectedLanguage = config.language;
+	}
+	return merged;
 }

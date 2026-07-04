@@ -7,7 +7,7 @@ import { TauriNotifier } from './adapters/notifier';
 import { DeepgramTauriProvider } from './deepgramTauriProvider';
 import { promptForApiKey, setPhase, showAccessibilityOnboarding, showTranscript } from './ui';
 import { DictationController } from './controller';
-import { loadConfig, applyConfig } from './config/verbaConfig';
+import { loadConfig, applyConfig, cleanupContextFor } from './config/verbaConfig';
 import { createVisualization } from './visualization/visualization';
 
 /** CleanupService needs a host prompt for its API key; supply it via the window UI. */
@@ -58,12 +58,7 @@ export async function createDictationController(): Promise<{
 		deepgram: { transcribe: (audioPath) => provider.transcribe(audioPath, configState.current.glossary) },
 		cleanup: {
 			process: (transcript, context) =>
-				cleanup.process(
-					transcript,
-					configState.current.language !== 'auto'
-						? { ...context, detectedLanguage: configState.current.language }
-						: context,
-				),
+				cleanup.process(transcript, cleanupContextFor(configState.current, context)),
 		},
 		notifier,
 		store: new TauriKeyValueStore(),

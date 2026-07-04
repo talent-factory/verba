@@ -1,7 +1,7 @@
 import * as assert from 'assert';
 import * as sinon from 'sinon';
 
-import { loadConfig, resolveActiveTemplate, DEFAULT_TEMPLATES } from '../../config/verbaConfig';
+import { loadConfig, resolveActiveTemplate, DEFAULT_TEMPLATES, cleanupContextFor } from '../../config/verbaConfig';
 
 suite('loadConfig', () => {
 	test('returns all defaults when the file is missing (empty object)', async () => {
@@ -89,5 +89,27 @@ suite('templates', () => {
 	test('resolveActiveTemplate returns the first template when name is undefined', () => {
 		const t = resolveActiveTemplate(DEFAULT_TEMPLATES, undefined);
 		assert.strictEqual(t.name, 'Freitext');
+	});
+});
+
+suite('cleanupContextFor', () => {
+	test('sets templatePrompt from the active template', async () => {
+		const cfg = await loadConfig(sinon.stub().resolves('{}'));
+		const ctx = cleanupContextFor(cfg, { detectedLanguage: 'de' });
+		assert.strictEqual(ctx.templatePrompt, DEFAULT_TEMPLATES[0].prompt);
+		// language 'auto' → keep the transcription-detected language
+		assert.strictEqual(ctx.detectedLanguage, 'de');
+	});
+
+	test('overrides detectedLanguage when config language is not auto', async () => {
+		const cfg = await loadConfig(sinon.stub().resolves(JSON.stringify({ language: 'en' })));
+		const ctx = cleanupContextFor(cfg, { detectedLanguage: 'de' });
+		assert.strictEqual(ctx.detectedLanguage, 'en');
+	});
+
+	test('works with no incoming context', async () => {
+		const cfg = await loadConfig(sinon.stub().resolves('{}'));
+		const ctx = cleanupContextFor(cfg, undefined);
+		assert.strictEqual(ctx.templatePrompt, DEFAULT_TEMPLATES[0].prompt);
 	});
 });

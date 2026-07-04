@@ -5,6 +5,7 @@ mod paste;
 mod secret;
 mod store;
 mod transcribe;
+mod tray;
 
 use tauri::{
     menu::{Menu, MenuItem},
@@ -40,6 +41,7 @@ pub fn run() {
             store::kv_load,
             store::kv_set,
             transcribe::deepgram_transcribe,
+            tray::set_tray_state,
         ])
         .setup(|app| {
             // Menu-bar-only app: no Dock icon (macOS "accessory" activation).

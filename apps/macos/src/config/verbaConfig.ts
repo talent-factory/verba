@@ -1,122 +1,58 @@
 import { invoke } from '@tauri-apps/api/core';
-import type { Expansion, PipelineContext } from '@verba/core';
+import {
+	resolveConfig,
+	resolveActiveTemplate,
+	DEFAULT_TEMPLATES,
+	type ConfigProvider,
+	type Expansion,
+	type PipelineContext,
+	type ResolvedConfig,
+	type Template,
+} from '@verba/core';
 
-import defaultTemplatesData from './defaultTemplates.json';
+export { resolveActiveTemplate, DEFAULT_TEMPLATES };
+export type { ResolvedConfig, Template };
 
-/** A post-processing template: the Claude system prompt plus tray display metadata. */
-export interface Template {
-	name: string;
-	prompt: string;
-	icon?: string;
-	contextAware?: boolean;
-}
-
-/** The bundled default templates (single source, shared with the Rust tray). */
-export const DEFAULT_TEMPLATES: Template[] = defaultTemplatesData as Template[];
-
-/** Raw parsed shape of `~/.config/verba/config.json` — every field optional. */
-export interface VerbaConfig {
-	transcription?: { language?: string; provider?: string; localModel?: string };
-	language?: string;
-	glossary?: string[];
-	expansions?: Expansion[];
-	templates?: unknown[];
-	activeTemplate?: string;
-	audioDevice?: string;
-}
-
-/** Config with every wired field resolved to a concrete, typed value. */
-export interface ResolvedConfig {
-	transcriptionLanguage: string;
-	language: string;
-	glossary: string[];
-	expansions: Expansion[];
-	templates: Template[];
-	activeTemplate: Template;
+/** A `ConfigProvider` over a parsed JSON object; resolves dotted keys by walking it. */
+export class ObjectConfigProvider implements ConfigProvider {
+	constructor(private readonly obj: Record<string, unknown>) {}
+	get<T>(key: string, def: T): T {
+		let cur: unknown = this.obj;
+		for (const part of key.split('.')) {
+			if (cur && typeof cur === 'object' && part in (cur as object)) {
+				cur = (cur as Record<string, unknown>)[part];
+			} else {
+				return def;
+			}
+		}
+		return (cur === undefined ? def : (cur as T));
+	}
 }
 
 /** Reads the raw config file contents; defaults to the Tauri `read_config` command. */
 export type ReadConfig = () => Promise<string>;
-
-const DEFAULTS: ResolvedConfig = {
-	transcriptionLanguage: 'multi',
-	language: 'auto',
-	glossary: [],
-	expansions: [],
-	templates: DEFAULT_TEMPLATES,
-	activeTemplate: DEFAULT_TEMPLATES[0],
-};
-
 const invokeReadConfig: ReadConfig = () => invoke<string>('read_config');
 
-function nonEmptyString(v: unknown): v is string {
-	return typeof v === 'string' && v.trim().length > 0;
-}
-
-function isStringArray(v: unknown): v is string[] {
-	return Array.isArray(v) && v.every((x) => typeof x === 'string');
-}
-
-function isExpansionArray(v: unknown): v is Expansion[] {
-	return Array.isArray(v) && v.every(
-		(x) => !!x && typeof x === 'object'
-			&& typeof (x as Expansion).abbreviation === 'string'
-			&& typeof (x as Expansion).expansion === 'string',
-	);
-}
-
-function isTemplateArray(v: unknown): v is Template[] {
-	return Array.isArray(v) && v.length > 0 && v.every(
-		(x) => !!x && typeof x === 'object'
-			&& nonEmptyString((x as Template).name)
-			&& typeof (x as Template).prompt === 'string',
-	);
-}
-
-/** Returns the template named `name`, or the first template when unnamed/unknown. */
-export function resolveActiveTemplate(templates: Template[], name?: string): Template {
-	const found = name ? templates.find((t) => t.name === name) : undefined;
-	return found ?? templates[0];
-}
-
 /**
- * Reads and resolves the user config. Never throws: a missing, unreadable, or
- * malformed file — or any wrong-typed field — falls back to {@link DEFAULTS}.
- *
- * `onMalformed` fires only when the file content is present but not valid JSON
- * (an absent/unreadable file resolves to `"{}"` and parses cleanly). Callers use
- * it to tell the user their hand-edited config was ignored — otherwise the reset
- * to defaults is a silent surprise. The tray menu invites editing, so a syntax
- * error is a real, recoverable user mistake worth surfacing.
+ * Reads and resolves the user config via `@verba/core`. Never throws. `onMalformed`
+ * fires only when the file content is present but not valid JSON (absent/unreadable
+ * → `"{}"`), so callers can surface a syntax error the user can fix.
  */
 export async function loadConfig(
 	readConfig: ReadConfig = invokeReadConfig,
 	onMalformed?: (err: unknown) => void,
 ): Promise<ResolvedConfig> {
-	let raw: VerbaConfig = {};
+	let obj: Record<string, unknown> = {};
 	try {
 		const parsed: unknown = JSON.parse(await readConfig());
 		if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-			raw = parsed as VerbaConfig;
+			obj = parsed as Record<string, unknown>;
 		}
 	} catch (err) {
 		console.warn('[Verba] Could not read/parse config; using defaults:', err);
 		onMalformed?.(err);
 	}
-
-	return {
-		transcriptionLanguage: nonEmptyString(raw.transcription?.language)
-			? raw.transcription!.language!
-			: DEFAULTS.transcriptionLanguage,
-		language: nonEmptyString(raw.language) ? raw.language : DEFAULTS.language,
-		glossary: isStringArray(raw.glossary) ? raw.glossary : DEFAULTS.glossary,
-		expansions: isExpansionArray(raw.expansions) ? raw.expansions : DEFAULTS.expansions,
-		templates: isTemplateArray(raw.templates) ? raw.templates : DEFAULT_TEMPLATES,
-		activeTemplate: resolveActiveTemplate(
-			isTemplateArray(raw.templates) ? raw.templates : DEFAULT_TEMPLATES,
-			raw.activeTemplate,
-		),
-	};
+	return resolveConfig(new ObjectConfigProvider(obj));
 }
 
 /** The mutable sinks a resolved config is applied to at runtime. */
@@ -135,8 +71,7 @@ export function applyConfig(config: ResolvedConfig, targets: ApplyTargets): void
 
 /**
  * Builds the pipeline context for a dictation: injects the active template's
- * prompt, and pins the cleanup language when the user chose a fixed one
- * (otherwise the transcription-detected language on `context` is kept).
+ * prompt, and pins the cleanup language when the user chose a fixed one.
  */
 export function cleanupContextFor(config: ResolvedConfig, context?: PipelineContext): PipelineContext {
 	const merged: PipelineContext = { ...context, templatePrompt: config.activeTemplate.prompt };

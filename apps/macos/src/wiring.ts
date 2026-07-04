@@ -7,6 +7,7 @@ import { TauriNotifier } from './adapters/notifier';
 import { DeepgramTauriProvider } from './deepgramTauriProvider';
 import { promptForApiKey, setPhase, showAccessibilityOnboarding, showTranscript } from './ui';
 import { DictationController } from './controller';
+import { loadConfig } from './config/verbaConfig';
 
 /** CleanupService needs a host prompt for its API key; supply it via the window UI. */
 class TauriCleanupService extends CleanupService {
@@ -20,17 +21,30 @@ class TauriCleanupService extends CleanupService {
  * adapters) and hands it to the controller. Kept out of `controller.ts` so the
  * controller never imports the ESM-only `@tauri-apps/api` and stays testable.
  */
-export function createDictationController(): DictationController {
+export async function createDictationController(): Promise<DictationController> {
+	const config = await loadConfig();
+
 	const secrets = new EnvAwareSecretStore(new TauriSecretStore());
 	const notifier = new TauriNotifier();
 	const deepgramPrompt: ApiKeyPrompt = () => promptForApiKey('Deepgram API key (dg-…)');
 
+	const provider = new DeepgramTauriProvider(secrets, deepgramPrompt, invoke, config.transcriptionLanguage);
+
+	const cleanup = new TauriCleanupService(secrets, notifier, { dangerouslyAllowBrowser: true });
+	cleanup.setGlossary(config.glossary);
+	cleanup.setExpansions(config.expansions);
+
 	return new DictationController({
-		deepgram: new DeepgramTauriProvider(secrets, deepgramPrompt),
-		// dangerouslyAllowBrowser: the Anthropic SDK refuses browser-like
-		// environments (Tauri's WebView) by default; Anthropic officially
-		// supports direct browser access via CORS when this flag is set.
-		cleanup: new TauriCleanupService(secrets, notifier, { dangerouslyAllowBrowser: true }),
+		// Inject the configured glossary as Deepgram keyterms on every transcription.
+		deepgram: { transcribe: (audioPath) => provider.transcribe(audioPath, config.glossary) },
+		// Override the cleanup language hint when the user pinned a language (≠ "auto").
+		cleanup: {
+			process: (transcript, context) =>
+				cleanup.process(
+					transcript,
+					config.language !== 'auto' ? { ...context, detectedLanguage: config.language } : context,
+				),
+		},
 		notifier,
 		store: new TauriKeyValueStore(),
 		invoke,

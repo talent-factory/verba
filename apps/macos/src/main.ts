@@ -5,7 +5,7 @@ import { createDictationController } from './wiring';
 const HOTKEY = 'Control+Alt+D';
 
 async function main(): Promise<void> {
-	const controller = createDictationController();
+	const controller = await createDictationController();
 	await controller.init();
 
 	try {

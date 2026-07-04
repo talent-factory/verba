@@ -48,10 +48,11 @@ fn position_bottom_center(win: &WebviewWindow) {
     let Ok(size) = win.outer_size() else {
         return;
     };
-    let m_pos = monitor.position();
-    let m_size = monitor.size();
-    let margin: i32 = 80;
-    let x = m_pos.x + (m_size.width as i32 - size.width as i32) / 2;
-    let y = m_pos.y + m_size.height as i32 - size.height as i32 - margin;
+    // Use the work area (excludes the Dock and menu bar) so the pill is never
+    // hidden behind the Dock. A small margin lifts it just above the Dock.
+    let work = monitor.work_area();
+    let margin: i32 = 12;
+    let x = work.position.x + (work.size.width as i32 - size.width as i32) / 2;
+    let y = work.position.y + work.size.height as i32 - size.height as i32 - margin;
     let _ = win.set_position(PhysicalPosition::new(x, y));
 }

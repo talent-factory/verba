@@ -72,3 +72,17 @@ export async function loadConfig(readConfig: ReadConfig = invokeReadConfig): Pro
 		expansions: isExpansionArray(raw.expansions) ? raw.expansions : DEFAULTS.expansions,
 	};
 }
+
+/** The mutable sinks a resolved config is applied to at runtime. */
+export interface ApplyTargets {
+	setLanguage(language: string): void;
+	setGlossary(terms: string[]): void;
+	setExpansions(expansions: Expansion[]): void;
+}
+
+/** Applies the wired config values to the running provider/cleanup. */
+export function applyConfig(config: ResolvedConfig, targets: ApplyTargets): void {
+	targets.setLanguage(config.transcriptionLanguage);
+	targets.setGlossary(config.glossary);
+	targets.setExpansions(config.expansions);
+}

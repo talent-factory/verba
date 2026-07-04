@@ -2,16 +2,14 @@ mod audio;
 mod config;
 mod env;
 mod hud;
+mod menu;
 mod paste;
 mod secret;
 mod store;
 mod transcribe;
 mod tray;
 
-use tauri::{
-    menu::{Menu, MenuItem},
-    tray::TrayIconBuilder,
-};
+use tauri::tray::TrayIconBuilder;
 
 use audio::CaptureState;
 
@@ -50,8 +48,7 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
 
-            let quit = MenuItem::with_id(app, "quit", "Quit Verba", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&quit])?;
+            let menu = menu::build_settings_menu(app.handle())?;
 
             let icon = app
                 .default_window_icon()
@@ -62,11 +59,7 @@ pub fn run() {
                 .icon(icon)
                 .menu(&menu)
                 .tooltip("Verba")
-                .on_menu_event(|app, event| {
-                    if event.id.as_ref() == "quit" {
-                        app.exit(0);
-                    }
-                })
+                .on_menu_event(|app, event| menu::handle_menu_event(app, event.id.as_ref()))
                 .build(app)?;
 
             Ok(())

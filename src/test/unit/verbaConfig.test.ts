@@ -35,3 +35,14 @@ suite('resolvedVerbaConfig', () => {
 		assert.strictEqual(transcriptionLanguageOverride(), 'de');
 	});
 });
+
+suite('transcription language override semantics', () => {
+	teardown(() => { fakeConfig = {}; });
+
+	test('override maps "multi" to "auto" and passes a fixed code through', () => {
+		fakeConfig = { 'transcription.language': 'multi' };
+		assert.strictEqual(transcriptionLanguageOverride(), 'multi');
+		fakeConfig = { 'transcription.language': 'de' };
+		assert.strictEqual(transcriptionLanguageOverride(), 'de');
+	});
+});

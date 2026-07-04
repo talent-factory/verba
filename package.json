@@ -304,6 +304,12 @@
           ],
           "description": "Whisper model to use for local transcription. Larger models are more accurate but slower. Run 'Verba: Download Whisper Model' to download a model."
         },
+        "verba.transcription.language": {
+          "type": "string",
+          "default": "multi",
+          "enum": ["multi", "de", "en", "fr", "es", "it", "nl", "pt"],
+          "description": "Transcription language. 'multi' uses Deepgram's multilingual model; a fixed code (e.g. 'de') forces that language. Optional override — when unset, 'verba.language' drives transcription (legacy behavior)."
+        },
         "verba.contextSearch.maxResults": {
           "type": "number",
           "default": 5,

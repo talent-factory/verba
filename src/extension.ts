@@ -24,7 +24,7 @@ import {
 	WHISPER_MODELS, WHISPER_MODEL_BASE_URL,
 	isTrustedDownloadHost, cleanupFile, isValidExpansion,
 } from './extensionHelpers';
-import { resolvedVerbaConfig } from './verbaConfig';
+import { resolvedVerbaConfig, transcriptionLanguageOverride } from './verbaConfig';
 
 const DEEPGRAM_API_KEY_STORAGE_KEY = 'verba.deepgramApiKey';
 
@@ -161,7 +161,17 @@ export function activate(context: vscode.ExtensionContext) {
 	applyTranscriptionProvider();
 
 	function applyLanguageSetting(): string {
-		const raw = vscode.workspace.getConfiguration('verba').get<string>('language', 'auto');
+		const override = transcriptionLanguageOverride();
+		if (override !== undefined) {
+			// New explicit setting: 'multi' is Deepgram's multilingual mode, which
+			// this host expresses as 'auto'.
+			const language = override === 'multi' ? 'auto' : override;
+			transcriptionService.setLanguage(language);
+			console.log(`[Verba] Transcription language (transcription.language): ${language}`);
+			return language;
+		}
+		// Legacy: derive transcription language from verba.language (back-compat).
+		const raw = resolvedVerbaConfig().language;
 		let language = raw;
 		if (raw !== 'auto' && !/^[a-z]{2,3}(-[A-Za-z]{2,4})?$/.test(raw)) {
 			console.warn(`[Verba] Invalid language setting "${raw}", falling back to auto`);

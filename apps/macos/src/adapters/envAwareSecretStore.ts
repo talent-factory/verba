@@ -40,7 +40,7 @@ export class EnvAwareSecretStore implements SecretStore {
 			try {
 				const value = await this.readEnv(name);
 				if (value && value.trim().length > 0) {
-					return value;
+					return value.trim();
 				}
 			} catch (err) {
 				// Env lookup must never break key resolution; fall through to Keychain.

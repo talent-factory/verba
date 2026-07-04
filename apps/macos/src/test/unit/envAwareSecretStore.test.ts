@@ -89,6 +89,17 @@ suite('EnvAwareSecretStore', () => {
 		assert.strictEqual(result, 'keychain-key');
 	});
 
+	test('trims a padded env value before returning it', async () => {
+		const readEnv = sinon.stub();
+		readEnv.withArgs('VERBA_ANTHROPIC_API_KEY').resolves(undefined);
+		readEnv.withArgs('ANTHROPIC_API_KEY').resolves('  env-key  ');
+		const store = new EnvAwareSecretStore(inner, readEnv);
+
+		const result = await store.get('anthropic-api-key');
+
+		assert.strictEqual(result, 'env-key');
+	});
+
 	test('store and delete delegate verbatim to the wrapped store', async () => {
 		const store = new EnvAwareSecretStore(inner, sinon.stub().resolves(undefined));
 

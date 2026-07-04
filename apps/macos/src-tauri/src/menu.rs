@@ -6,7 +6,7 @@
 use tauri::menu::{CheckMenuItem, IsMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::{AppHandle, Emitter, Wry};
 
-use crate::config::{config_path, read_config_value, write_config_key};
+use crate::config::{config_path, read_config_value, read_template_choices, write_config_key};
 
 // (label, value, enabled)
 const TRANSCRIPTION_LANGS: &[(&str, &str, bool)] = &[
@@ -70,6 +70,27 @@ pub fn build_settings_menu(app: &AppHandle) -> Result<Menu<Wry>, tauri::Error> {
     let cleanup = submenu(app, "Cleanup-Sprache (Claude)", &c)?;
     let provider = submenu(app, "Provider", &p)?;
 
+    let template_choices = read_template_choices();
+    let default_active = template_choices
+        .first()
+        .map(|(_, name)| name.clone())
+        .unwrap_or_default();
+    let active = read_config_value("activeTemplate", &default_active);
+    let template_items: Vec<CheckMenuItem<Wry>> = template_choices
+        .iter()
+        .map(|(label, name)| {
+            CheckMenuItem::with_id(
+                app,
+                format!("settmpl:{name}"),
+                label.as_str(),
+                true,
+                *name == active,
+                None::<&str>,
+            )
+        })
+        .collect::<Result<_, _>>()?;
+    let template = submenu(app, "Vorlage", &template_items)?;
+
     let sep = PredefinedMenuItem::separator(app)?;
     let open = MenuItem::with_id(app, "open-config", "Konfiguration öffnen…", true, None::<&str>)?;
     let reload = MenuItem::with_id(app, "reload-config", "Konfiguration neu laden", true, None::<&str>)?;
@@ -77,7 +98,7 @@ pub fn build_settings_menu(app: &AppHandle) -> Result<Menu<Wry>, tauri::Error> {
 
     Menu::with_items(
         app,
-        &[&transcription, &cleanup, &provider, &sep, &open, &reload, &quit],
+        &[&transcription, &cleanup, &provider, &template, &sep, &open, &reload, &quit],
     )
 }
 
@@ -90,7 +111,15 @@ pub fn handle_menu_event(app: &AppHandle, id: &str) {
         "open-config" => open_config(),
         "reload-config" => rebuild_and_reload(app),
         other => {
-            if let Some(rest) = other.strip_prefix("set:") {
+            if let Some(name) = other.strip_prefix("settmpl:") {
+                if let Err(e) = write_config_key(
+                    "activeTemplate",
+                    serde_json::Value::String(name.to_string()),
+                ) {
+                    eprintln!("[Verba] write_config_key failed: {e}");
+                }
+                rebuild_and_reload(app);
+            } else if let Some(rest) = other.strip_prefix("set:") {
                 // rsplit at the LAST ':' so dotted keys survive (e.g. transcription.language:de)
                 if let Some((key, value)) = rest.rsplit_once(':') {
                     if let Err(e) = write_config_key(key, serde_json::Value::String(value.to_string())) {

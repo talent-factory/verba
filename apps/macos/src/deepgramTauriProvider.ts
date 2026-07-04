@@ -32,7 +32,7 @@ export class DeepgramTauriProvider implements TranscriptionBackend {
 	private readonly secretStorage: SecretStore;
 	private readonly promptForApiKey: ApiKeyPrompt;
 	private readonly invoke: Invoke;
-	private readonly language: string;
+	private language: string;
 
 	/**
 	 * @param invoke Defaults to the real Tauri `invoke`. Injectable so tests
@@ -50,6 +50,11 @@ export class DeepgramTauriProvider implements TranscriptionBackend {
 		this.secretStorage = secretStorage;
 		this.promptForApiKey = promptForApiKey;
 		this.invoke = invoke;
+		this.language = language;
+	}
+
+	/** Updates the Deepgram language used by subsequent transcriptions. */
+	setLanguage(language: string): void {
 		this.language = language;
 	}
 

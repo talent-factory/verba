@@ -130,4 +130,11 @@ suite('DeepgramTauriProvider', () => {
 		await deProvider.transcribe('/tmp/rec.wav');
 		assert.strictEqual(invoke.firstCall.args[1].language, 'de');
 	});
+
+	test('setLanguage changes the language used by the next transcribe', async () => {
+		invoke.resolves({ text: 'hi' });
+		provider.setLanguage('de');
+		await provider.transcribe('/tmp/rec.wav');
+		assert.strictEqual(invoke.firstCall.args[1].language, 'de');
+	});
 });

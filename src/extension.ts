@@ -191,18 +191,7 @@ export function activate(context: vscode.ExtensionContext) {
 	applyGlossary();
 
 	function loadExpansions(): Expansion[] {
-		const rawGlobal = vscode.workspace
-			.getConfiguration('verba')
-			.get<unknown[]>('expansions', []);
-		const rawGlobalArr = Array.isArray(rawGlobal) ? rawGlobal : [];
-		const globalExpansions = rawGlobalArr.filter(isValidExpansion);
-		const skippedGlobal = rawGlobalArr.length - globalExpansions.length;
-		if (skippedGlobal > 0) {
-			console.warn(`[Verba] Skipped ${skippedGlobal} invalid entries in verba.expansions setting`);
-			vscode.window.showWarningMessage(
-				`Verba: ${skippedGlobal} expansion(s) in settings were skipped (each entry must have non-empty "abbreviation" and "expansion" strings).`
-			);
-		}
+		const globalExpansions = resolvedVerbaConfig().expansions;
 
 		const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
 		let workspaceExpansions: Expansion[] = [];
@@ -292,11 +281,7 @@ export function activate(context: vscode.ExtensionContext) {
 	}
 
 	function loadGlossary(): string[] {
-		const rawGlobalTerms = vscode.workspace
-			.getConfiguration('verba')
-			.get<unknown[]>('glossary', []);
-		const globalTerms = (Array.isArray(rawGlobalTerms) ? rawGlobalTerms : [])
-			.filter((t): t is string => typeof t === 'string' && t.trim() !== '');
+		const globalTerms = resolvedVerbaConfig().glossary;
 
 		const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
 		let workspaceTerms: string[] = [];

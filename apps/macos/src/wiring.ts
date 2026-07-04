@@ -36,6 +36,7 @@ export async function createDictationController(): Promise<DictationController> 
 	cleanup.setExpansions(config.expansions);
 
 	const visualization = createVisualization(invoke);
+	visualization.setState('idle');
 
 	return new DictationController({
 		// Inject the configured glossary as Deepgram keyterms on every transcription.

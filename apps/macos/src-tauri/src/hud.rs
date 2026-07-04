@@ -38,8 +38,12 @@ pub fn set_hud_state(
 }
 
 fn position_bottom_center(win: &WebviewWindow) {
-    let Ok(Some(monitor)) = win.primary_monitor() else {
-        return;
+    let monitor = match win.current_monitor() {
+        Ok(Some(m)) => m,
+        _ => match win.primary_monitor() {
+            Ok(Some(m)) => m,
+            _ => return,
+        },
     };
     let Ok(size) = win.outer_size() else {
         return;

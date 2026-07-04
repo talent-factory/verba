@@ -133,4 +133,13 @@ suite('DictationController', () => {
 		const states = (deps.ui.setState as sinon.SinonStub).getCalls().map((c) => c.args[0]);
 		assert.deepStrictEqual(states, ['recording', 'transcribing', 'processing', 'idle']);
 	});
+
+	test('on a failing dictation, the last setState call is still idle', async () => {
+		(deps.invoke as unknown as sinon.SinonStub).withArgs('stop_capture').rejects(new Error('capture broke'));
+
+		await dictate(controller);
+
+		const states = (deps.ui.setState as sinon.SinonStub).getCalls().map((c) => c.args[0]);
+		assert.strictEqual(states[states.length - 1], 'idle');
+	});
 });

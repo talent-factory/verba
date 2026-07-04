@@ -114,8 +114,12 @@ Core exports the above via `index.ts`.
 - Strings pass a `nonEmptyString` check (empty/whitespace → default).
 - **Templates: all-or-nothing.** Honor `templates` only if it is a non-empty array **and every**
   entry is an object with a non-empty (trimmed) string `name` and a string `prompt`; otherwise
-  `DEFAULT_TEMPLATES`. (Exactly today's macOS TS + Rust semantics.)
-- `expansions`: each element needs a string `abbreviation` and a string `expansion`.
+  `DEFAULT_TEMPLATES`. (A half-broken template menu is worse than the defaults.)
+- **Glossary / expansions: per-element** (decided during implementation; supersedes macOS's earlier
+  all-or-nothing). `glossary` keeps each non-empty (trimmed) string entry and drops the rest;
+  `expansions` keeps each entry with string `abbreviation` + `expansion` and drops the rest. A single
+  stray entry no longer discards the whole list (restores VS Code's prior forgiving behavior; macOS
+  benefits too). A non-array falls back to `[]`.
 - `activeTemplate`: the entry named `activeTemplate` from the resolved template list, else the first.
 
 This is macOS's current `loadConfig` logic moved into core, extended with `provider`/`localModel`.

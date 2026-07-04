@@ -1,4 +1,5 @@
 mod audio;
+mod env;
 mod paste;
 mod secret;
 mod store;
@@ -27,6 +28,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             audio::start_capture,
             audio::stop_capture,
+            env::env_var,
             paste::has_accessibility_permission,
             paste::open_accessibility_settings,
             paste::paste_text,

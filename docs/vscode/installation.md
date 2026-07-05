@@ -12,48 +12,9 @@ Or search for **"Verba"** in the VS Code Extensions sidebar.
 
 ## Prerequisites
 
-Verba requires three things to work:
+Before installing, make sure you have ffmpeg, a Deepgram API key, and an Anthropic API key set up — see [Prerequisites](../getting-started/prerequisites.md) for install snippets and where to get keys.
 
-| Requirement | Purpose |
-|-------------|---------|
-| [ffmpeg](https://ffmpeg.org/) | Audio recording from your microphone |
-| Deepgram API Key | Nova-3 transcription |
-| Anthropic API Key | Claude post-processing |
-
-### Installing ffmpeg
-
-=== "macOS"
-
-    ```bash
-    brew install ffmpeg
-    ```
-
-=== "Linux (Debian/Ubuntu)"
-
-    ```bash
-    sudo apt install ffmpeg
-    ```
-
-=== "Linux (Fedora)"
-
-    ```bash
-    sudo dnf install ffmpeg
-    ```
-
-=== "Windows"
-
-    Download from [ffmpeg.org](https://ffmpeg.org/download.html) and add to PATH, or via [Chocolatey](https://chocolatey.org/):
-
-    ```powershell
-    choco install ffmpeg
-    ```
-
-### API Keys
-
-On first use, Verba prompts for your API keys. They are stored securely in VS Code's `SecretStorage` — never in plaintext.
-
-- **OpenAI API Key** — Get one at [platform.openai.com](https://platform.openai.com/api-keys)
-- **Anthropic API Key** — Get one at [console.anthropic.com](https://console.anthropic.com/)
+On first use, Verba prompts for your Deepgram and Anthropic API keys. They are stored securely in VS Code's `SecretStorage` — never in plaintext.
 
 ## Platform-Specific Notes
 

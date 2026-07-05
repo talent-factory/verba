@@ -7,7 +7,7 @@ All Verba settings are configured in VS Code's `settings.json`.
 | Setting | Type | Default | Description |
 |---------|------|---------|-------------|
 | `verba.audioDevice` | String | `""` | Audio input device name. Leave empty for system default. |
-| `verba.templates` | Array | 8 built-in templates | Prompt templates for post-processing. See [Templates](templates.md). |
+| `verba.templates` | Array | 8 built-in templates | Prompt templates for post-processing. See [Templates](../concepts/templates.md). |
 | `verba.terminal.executeCommand` | Boolean | `false` | If `true`, sends Enter after inserting text into the terminal. |
 | `verba.glossary` | Array | `[]` | Terms preserved during transcription and cleanup (limit: ~80 terms). |
 | `verba.transcription.provider` | String | `"deepgram"` | Transcription provider: `deepgram` (API) or `local` (whisper.cpp). |
@@ -91,7 +91,7 @@ Models are downloaded to VS Code's global storage and shared across all workspac
 
 ## Context Search Provider
 
-For [context-aware templates](templates.md#context-aware-templates), Verba needs a search provider:
+For [context-aware templates](../concepts/templates.md#context-aware-templates), Verba needs a search provider:
 
 | Provider | Setup | Speed |
 |----------|-------|-------|

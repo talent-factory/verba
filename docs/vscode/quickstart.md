@@ -28,6 +28,6 @@ Press `Cmd+Alt+T` (Mac) / `Ctrl+Alt+T` (Windows/Linux) to switch templates witho
 
 ## What's Next?
 
-- [Templates](../guide/templates.md) — Learn about built-in and custom templates
-- [Terminal Mode](../guide/terminal.md) — Dictate into the integrated terminal
-- [Claude Code Integration](../guide/claude-code.md) — Voice-to-prompt workflow for Claude Code
+- [Templates](../concepts/templates.md) — Learn about built-in and custom templates
+- [Editor & Terminal](editor-terminal.md) — Dictate into the integrated terminal
+- [Claude Code Integration](claude-code.md) — Voice-to-prompt workflow for Claude Code

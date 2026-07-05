@@ -1,48 +1,55 @@
-import { CleanupService, type ApiKeyPrompt } from '@verba/core';
-import { invoke } from '@tauri-apps/api/core';
-import { TauriSecretStore } from './adapters/secretStore';
-import { TauriKeyValueStore } from './adapters/keyValueStore';
-import { TauriNotifier } from './adapters/notifier';
-import { DeepgramTauriProvider } from './deepgramTauriProvider';
-import { promptForApiKey, setPhase, showAccessibilityOnboarding, showTranscript } from './ui';
+import type { CleanupService } from '@verba/core';
+import type { DictationState } from './visualization/statePresentation';
 
-/** CleanupService needs a host prompt for its API key; supply it via the window UI. */
-class TauriCleanupService extends CleanupService {
-	protected async promptForApiKey(): Promise<string | undefined> {
-		return promptForApiKey('Anthropic API key (sk-ant-…)');
-	}
+export type InvokeFn = <T>(cmd: string, args?: Record<string, unknown>) => Promise<T>;
+
+/** Window-UI surface the controller drives (implemented by `ui.ts`). */
+export interface ControllerUi {
+	setPhase(text: string): void;
+	setState(state: DictationState): void;
+	showTranscript(text: string): Promise<void>;
+	showAccessibilityOnboarding(onOpenSettings: () => Promise<void>): Promise<void>;
 }
 
 /**
- * Wires `@verba/core` to the macOS host adapters and owns the dictation flow.
+ * Everything the controller needs from the host, injected so the dictation
+ * flow is unit-testable: `@tauri-apps/api` is ESM-only and cannot be loaded
+ * by the CommonJS test build, so no module under test may import it directly
+ * (same pattern as `DeepgramTauriProvider`). `wiring.ts` builds the real set.
+ */
+export interface ControllerDeps {
+	deepgram: { transcribe(audioPath: string): Promise<{ text: string; detectedLanguage?: string }> };
+	cleanup: Pick<CleanupService, 'process'>;
+	notifier: { init(): Promise<void>; info(msg: string): void; warn(msg: string): void; error(msg: string): void };
+	store: { init(): Promise<void> };
+	invoke: InvokeFn;
+	ui: ControllerUi;
+}
+
+/**
+ * Owns the dictation flow on top of injected host adapters.
  *
  * **M2 (shipped):** the hotkey toggles microphone capture; on stop, the
  * recording is transcribed and the transcript is shown in the window.
- * Keychain-backed secrets; a window prompt for API keys.
  *
- * **M3, onboarding-UI slice (this milestone):** after each transcription, a
- * passive Accessibility-permission check runs; when ungranted, an onboarding
- * message with a System-Settings deep-link is shown before falling through to
- * the existing transcript display. Real paste and {@link CleanupService} are a
- * separate, higher-risk follow-up slice. Transcription uses
- * {@link DeepgramTauriProvider} (a native Rust HTTP call) rather than
- * `@verba/core`'s SDK-based `DeepgramProvider`, which cannot run inside a
- * WebView — see that class's doc comment for why.
+ * **M3 (this milestone):** the transcript runs through `CleanupService`
+ * (raw-transcript fallback when the key prompt is cancelled or the API
+ * fails) and is pasted into the frontmost app via `paste_text`. The window
+ * only appears for the Accessibility onboarding or when pasting fails.
  */
 export class DictationController {
-	private readonly secrets = new TauriSecretStore();
-	private readonly store = new TauriKeyValueStore();
-	private readonly notifier = new TauriNotifier();
-	private readonly deepgram: DeepgramTauriProvider;
-	private readonly cleanup: CleanupService;
-	private recording = false;
-	private working = false;
+	// Single source of truth for the flow. The visualization state and the
+	// hotkey guards read the SAME field, so they can never drift and the
+	// impossible "recording while also processing" combination (which a pair of
+	// booleans would admit) is unrepresentable. Mutate only via `setState`.
+	private state: DictationState = 'idle';
 
-	constructor() {
-		const deepgramPrompt: ApiKeyPrompt = () => promptForApiKey('Deepgram API key (dg-…)');
+	constructor(private readonly deps: ControllerDeps) {}
 
-		this.deepgram = new DeepgramTauriProvider(this.secrets, deepgramPrompt);
-		this.cleanup = new TauriCleanupService(this.secrets, this.notifier);
+	/** Updates the flow state and mirrors it to the visualization surfaces. */
+	private setState(state: DictationState): void {
+		this.state = state;
+		this.deps.ui.setState(state);
 	}
 
 	/** Requests permissions and loads persisted state. Call once at startup. */
@@ -52,18 +59,18 @@ export class DictationController {
 		// contract, and on this menu-bar (Accessory-policy) app the system
 		// dialog isn't reliably raised to the front, so awaiting it can hang
 		// indefinitely with no visible sign anything is wrong.
-		void this.notifier.init();
-		await this.store.init();
+		void this.deps.notifier.init();
+		await this.deps.store.init();
 	}
 
 	/**
 	 * Invoked by the global hotkey. First press starts capture; second press
-	 * stops it, transcribes, and shows the transcript.
+	 * stops it, transcribes, cleans up, and pastes.
 	 */
 	async handleHotkey(): Promise<void> {
-		if (this.working) { return; }
-
-		if (!this.recording) {
+		// Busy (transcribing/processing) → ignore. Idle → start. Recording → stop.
+		if (this.state === 'transcribing' || this.state === 'processing') { return; }
+		if (this.state === 'idle') {
 			await this.startRecording();
 			return;
 		}
@@ -72,33 +79,57 @@ export class DictationController {
 
 	private async startRecording(): Promise<void> {
 		try {
-			await invoke('start_capture');
-			this.recording = true;
-			setPhase('Recording… press the hotkey again to stop.');
-			this.notifier.info('Verba: recording…');
+			await this.deps.invoke('start_capture');
+			this.deps.ui.setPhase('Recording… press the hotkey again to stop.');
+			this.setState('recording');
+			this.deps.notifier.info('Verba: recording…');
 		} catch (err) {
-			this.notifier.error(`Verba: could not start recording — ${errText(err)}`);
+			// Stay idle: never entered the recording state, so the hotkey can retry.
+			this.deps.notifier.error(`Verba: could not start recording — ${errText(err)}`);
 		}
 	}
 
 	private async stopAndTranscribe(): Promise<void> {
-		this.working = true;
-		this.recording = false;
+		// Leave 'recording' synchronously (before the first await) so a re-entrant
+		// hotkey press during transcription is ignored by `handleHotkey`.
+		this.deps.ui.setPhase('Transcribing…');
+		this.setState('transcribing');
 		try {
-			const wavPath = await invoke<string>('stop_capture');
-			setPhase('Transcribing…');
-			const { text } = await this.deepgram.transcribe(wavPath);
+			const wavPath = await this.deps.invoke<string>('stop_capture');
+			const { text: transcript, detectedLanguage } = await this.deps.deepgram.transcribe(wavPath);
 
-			const hasAccessibility = await invoke<boolean>('has_accessibility_permission');
-			if (!hasAccessibility) {
-				await showAccessibilityOnboarding(() => invoke('open_accessibility_settings'));
+			this.deps.ui.setPhase('Processing…');
+			this.setState('processing');
+			let text = transcript;
+			try {
+				text = await this.deps.cleanup.process(transcript, { detectedLanguage });
+			} catch (err) {
+				// Cleanup is refinement, not a gate: a cancelled key prompt or an
+				// API failure must never cost the user their dictation.
+				this.deps.notifier.warn(`Verba: cleanup skipped — using raw transcript (${errText(err)})`);
 			}
-			await showTranscript(text);
+
+			const hasAccessibility = await this.deps.invoke<boolean>('has_accessibility_permission');
+			if (!hasAccessibility) {
+				await this.deps.ui.showAccessibilityOnboarding(() => this.deps.invoke('open_accessibility_settings'));
+				await this.deps.ui.showTranscript(text);
+				return;
+			}
+
+			try {
+				await this.deps.invoke('paste_text', { text });
+				this.deps.notifier.info('Verba: pasted.');
+				this.deps.ui.setPhase('Idle.');
+			} catch (err) {
+				// The window is the fallback surface: the user must never lose text.
+				this.deps.notifier.error(`Verba: paste failed — ${errText(err)}`);
+				await this.deps.ui.showTranscript(text);
+			}
 		} catch (err) {
-			this.notifier.error(`Verba: ${errText(err)}`);
-			setPhase('Idle.');
+			this.deps.notifier.error(`Verba: ${errText(err)}`);
+			this.deps.ui.setPhase('Idle.');
 		} finally {
-			this.working = false;
+			this.setState('idle');
 		}
 	}
 }

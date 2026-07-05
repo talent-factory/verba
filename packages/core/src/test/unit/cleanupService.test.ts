@@ -47,6 +47,36 @@ suite('CleanupService', () => {
 		sinon.restore();
 	});
 
+	suite('clientOptions passthrough', () => {
+		test('spreads clientOptions into the Anthropic client', () => {
+			const withOptions = new CleanupService(secretStorage as any, undefined, {
+				baseURL: 'http://localhost:9999',
+			});
+
+			const client = (withOptions as any).getClient('test-key');
+
+			assert.strictEqual(client.baseURL, 'http://localhost:9999');
+		});
+
+		test('constructs without clientOptions exactly as before', () => {
+			const withoutOptions = new CleanupService(secretStorage as any);
+
+			const client = (withoutOptions as any).getClient('test-key');
+
+			assert.strictEqual(client.apiKey, 'test-key');
+		});
+
+		test('resolved apiKey wins over an apiKey inside clientOptions', () => {
+			const withOptions = new CleanupService(secretStorage as any, undefined, {
+				apiKey: 'options-key',
+			});
+
+			const client = (withOptions as any).getClient('resolved-key');
+
+			assert.strictEqual(client.apiKey, 'resolved-key');
+		});
+	});
+
 	test('has name "Text Cleanup"', () => {
 		assert.strictEqual(service.name, 'Text Cleanup');
 	});

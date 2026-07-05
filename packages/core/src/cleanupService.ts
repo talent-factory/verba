@@ -1,4 +1,4 @@
-import Anthropic from '@anthropic-ai/sdk';
+import Anthropic, { type ClientOptions } from '@anthropic-ai/sdk';
 import { ProcessingStage, PipelineContext } from './pipeline';
 import { SecretStore, Notifier } from './adapters';
 
@@ -57,6 +57,7 @@ export class CleanupService implements ProcessingStage {
 	private _client: Anthropic | null = null;
 	private secretStorage: SecretStore;
 	private notifier?: Notifier;
+	private clientOptions?: ClientOptions;
 	private glossary: string[] = [];
 	private expansions: Expansion[] = [];
 	/** Token usage from the most recent API call, or undefined if unavailable. */
@@ -76,10 +77,14 @@ export class CleanupService implements ProcessingStage {
 	 * @param secretStorage Secure store for the Anthropic API key.
 	 * @param notifier Optional host UI for surfacing non-critical warnings
 	 *   (e.g. empty-response fallback). When omitted, warnings are only logged.
+	 * @param clientOptions Optional Anthropic SDK client options, spread into
+	 *   the client constructor. Lets browser-like hosts (Tauri WebView) pass
+	 *   `dangerouslyAllowBrowser: true`; the resolved API key always wins.
 	 */
-	constructor(secretStorage: SecretStore, notifier?: Notifier) {
+	constructor(secretStorage: SecretStore, notifier?: Notifier, clientOptions?: ClientOptions) {
 		this.secretStorage = secretStorage;
 		this.notifier = notifier;
+		this.clientOptions = clientOptions;
 	}
 
 	/** Optional callback invoked before each retry attempt (e.g. to update the status bar). */
@@ -325,7 +330,7 @@ export class CleanupService implements ProcessingStage {
 
 	private getClient(apiKey: string): Anthropic {
 		if (!this._client) {
-			this._client = new Anthropic({ apiKey });
+			this._client = new Anthropic({ ...this.clientOptions, apiKey });
 		}
 		return this._client;
 	}

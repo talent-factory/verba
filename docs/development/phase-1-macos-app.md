@@ -95,7 +95,7 @@ IPC.
 
 ### End-to-end flow
 
-1. User presses the global hotkey (e.g. `⌥Space`) → Rust emits `hotkey` event.
+1. User presses the global hotkey (e.g. `Ctrl+Alt+D`) → Rust emits `hotkey` event.
 2. Frontend starts capture (`invoke('start_capture')`); tray icon shows recording.
 3. Second press stops → Rust returns WAV bytes.
 4. Frontend calls `DeepgramTauriProvider.transcribe()`, which invokes the
@@ -109,7 +109,7 @@ IPC.
 ## 3. macOS system integration
 
 - **Global hotkey:** `tauri-plugin-global-shortcut`. User-configurable; default
-  chosen to avoid clashes (e.g. `⌥Space`).
+  chosen to avoid clashes (e.g. `Ctrl+Alt+D`).
 - **Menu-bar (tray):** status item with Idle/Recording state, template picker,
   settings, quit. No dock icon (`LSUIElement`).
 - **Permissions / entitlements:**
@@ -147,7 +147,7 @@ Templates, glossary, and expansions are the same feature set — only the
    consumes it via `@verba/core` (bundled by esbuild into `dist/extension.js`).
    Suite green (extension + core).
 2. **M1 — Tauri skeleton.** ✅ Scaffolded under `apps/macos/` — tray menu-bar app,
-   global hotkey (`Alt+Space`) → notification toast, and macOS host adapters
+   global hotkey (`Ctrl+Alt+D`) → notification toast, and macOS host adapters
    (`TauriNotifier`/`TauriSecretStore`/`TauriKeyValueStore`) + a
    `DictationController` that constructs `@verba/core` services (frontend
    type-checks against the package). No audio yet. The Rust/Tauri build targets

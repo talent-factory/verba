@@ -58,6 +58,9 @@ suite('DeepgramTauriProvider', () => {
 	});
 
 	test('clears the stored key and rethrows a friendly message when the sentinel arrives as an Error', async () => {
+		// Keychain-sourced key: after delete, nothing resolves → generic message.
+		secretStorage.get.onFirstCall().resolves('stored-key');
+		secretStorage.get.resolves(undefined);
 		invoke.rejects(new Error('deepgram_unauthorized'));
 
 		await assert.rejects(
@@ -68,6 +71,8 @@ suite('DeepgramTauriProvider', () => {
 	});
 
 	test('clears the stored key when the raw rejection value is the bare sentinel string', async () => {
+		secretStorage.get.onFirstCall().resolves('stored-key');
+		secretStorage.get.resolves(undefined);
 		invoke.callsFake(() => Promise.reject('deepgram_unauthorized'));
 
 		await assert.rejects(
@@ -75,6 +80,31 @@ suite('DeepgramTauriProvider', () => {
 			/Invalid Deepgram API key\. It has been removed/
 		);
 		assert.strictEqual(secretStorage.delete.calledOnceWith('verba.deepgramApiKey'), true);
+	});
+
+	test('reports an env-pinned key distinctly when a key still resolves after delete', async () => {
+		// A bad key sourced from the environment survives delete (which only
+		// clears the Keychain), so the generic "removed / will re-prompt" message
+		// would be misleading — the user must fix the env var instead.
+		secretStorage.get.resolves('bad-env-key');
+		invoke.rejects(new Error('deepgram_unauthorized'));
+
+		await assert.rejects(
+			() => provider.transcribe('/tmp/rec.wav'),
+			/environment \(VERBA_DEEPGRAM_API_KEY \/ DEEPGRAM_API_KEY\) is invalid/
+		);
+		assert.strictEqual(secretStorage.delete.calledOnceWith('verba.deepgramApiKey'), true);
+	});
+
+	test('falls back to the generic message when the store cannot be probed after delete', async () => {
+		secretStorage.get.onFirstCall().resolves('stored-key');
+		secretStorage.get.rejects(new Error('keychain unavailable'));
+		invoke.rejects(new Error('deepgram_unauthorized'));
+
+		await assert.rejects(
+			() => provider.transcribe('/tmp/rec.wav'),
+			/Invalid Deepgram API key\. It has been removed/
+		);
 	});
 
 	test('does not clear the stored key for a non-sentinel error', async () => {
@@ -116,5 +146,25 @@ suite('DeepgramTauriProvider', () => {
 		invoke.resolves({ text: '' });
 
 		await assert.rejects(() => provider.transcribe('/tmp/rec.wav'), /No speech detected in recording\./);
+	});
+
+	test('passes the default language "multi" in the transcribe request', async () => {
+		invoke.resolves({ text: 'hi' });
+		await provider.transcribe('/tmp/rec.wav');
+		assert.strictEqual(invoke.firstCall.args[1].language, 'multi');
+	});
+
+	test('passes a configured language in the transcribe request', async () => {
+		invoke.resolves({ text: 'hi' });
+		const deProvider = new DeepgramTauriProvider(secretStorage, promptForApiKey, invoke, 'de');
+		await deProvider.transcribe('/tmp/rec.wav');
+		assert.strictEqual(invoke.firstCall.args[1].language, 'de');
+	});
+
+	test('setLanguage changes the language used by the next transcribe', async () => {
+		invoke.resolves({ text: 'hi' });
+		provider.setLanguage('de');
+		await provider.transcribe('/tmp/rec.wav');
+		assert.strictEqual(invoke.firstCall.args[1].language, 'de');
 	});
 });

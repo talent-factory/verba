@@ -1,11 +1,16 @@
 import { register } from '@tauri-apps/plugin-global-shortcut';
-import { DictationController } from './controller';
+import { listen } from '@tauri-apps/api/event';
+import { createDictationController } from './wiring';
 
 /** Default global hotkey. User-configurable later (M4); avoids common clashes. */
-const HOTKEY = 'Alt+Space';
+const HOTKEY = 'Control+Alt+D';
 
 async function main(): Promise<void> {
-	const controller = new DictationController();
+	const { controller, reloadConfig, notifier } = await createDictationController();
+	void listen('config:changed', () => { void reloadConfig(); });
+	// The tray (Rust) emits this when it can't persist a settings change; on an
+	// Accessory app stderr/console are invisible, so relay it to a notification.
+	void listen<string>('config:error', (event) => { notifier.error(`Verba: ${event.payload}`); });
 	await controller.init();
 
 	try {
@@ -17,7 +22,12 @@ async function main(): Promise<void> {
 		});
 		setStatus(`Ready — press ${HOTKEY} to dictate.`);
 	} catch (err) {
+		// The main window is hidden at startup, so `setStatus` alone would leave a
+		// dead hotkey with no visible explanation. Surface it via the menu bar.
 		console.error('[Verba] Failed to register global shortcut:', err);
+		notifier.error(
+			`Verba: could not register the hotkey ${HOTKEY} — another app may already use it. The shortcut won't work until that's resolved.`,
+		);
 		setStatus(`Could not register ${HOTKEY}. Another app may already use it.`);
 	}
 }

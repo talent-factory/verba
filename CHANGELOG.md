@@ -4,14 +4,9 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
-## [0.6.0](https://github.com/talent-factory/verba/compare/verba-v0.5.0...verba-v0.6.0) (2026-07-05)
-
-
-### Added
-
-* macOS menu-bar app (Beta), shared @verba/core config schema, configurable transcription language ([625bf1a](https://github.com/talent-factory/verba/commit/625bf1aed1d54044f47d9f5cc2b0348c5da3f9b5))
-
 ## [Unreleased]
+
+## [0.6.0](https://github.com/talent-factory/verba/compare/verba-v0.5.0...verba-v0.6.0) (2026-07-05)
 
 ### Added
 

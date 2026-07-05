@@ -16,6 +16,10 @@ Before installing, make sure you have ffmpeg, a Deepgram API key, and an Anthrop
 
 On first use, Verba prompts for your Deepgram and Anthropic API keys. They are stored securely in VS Code's `SecretStorage` — never in plaintext.
 
+## Managing API Keys
+
+Use the command **Verba: Manage API Keys** (`dictation.manageApiKeys`) at any time to view your stored keys (masked), update them, or delete them — no need to reinstall or wait for the first-use prompt.
+
 ## Platform-Specific Notes
 
 | Platform | Audio Backend | Microphone Selection |

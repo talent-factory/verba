@@ -1,19 +1,24 @@
 # Configuration
 
-All Verba settings are configured in VS Code's `settings.json`.
+All Verba settings are configured in VS Code's `settings.json`. Two related concerns — [prompt templates](../concepts/templates.md) and the [glossary/expansions vocabulary](../concepts/glossary.md) — are shared `@verba/core` concepts also used by the macOS app; this page covers only the VS Code–specific `settings.json` schema for them.
 
 ## Settings Reference
 
 | Setting | Type | Default | Description |
 |---------|------|---------|-------------|
 | `verba.audioDevice` | String | `""` | Audio input device name. Leave empty for system default. |
-| `verba.templates` | Array | 8 built-in templates | Prompt templates for post-processing. See [Templates](../concepts/templates.md). |
+| `verba.templates` | Array | 9 built-in templates | Prompt templates for post-processing. See [Templates](../concepts/templates.md). |
+| `verba.autoSelectTemplate` | Boolean | `true` | Automatically select a matching template based on the active file's language (e.g. JavaDoc for `.java`). |
 | `verba.terminal.executeCommand` | Boolean | `false` | If `true`, sends Enter after inserting text into the terminal. |
-| `verba.glossary` | Array | `[]` | Terms preserved during transcription and cleanup (limit: ~80 terms). |
-| `verba.transcription.provider` | String | `"deepgram"` | Transcription provider: `deepgram` (API) or `local` (whisper.cpp). |
+| `verba.glossary` | Array | `[]` | Terms preserved during transcription and cleanup (limit: ~80 terms). See [Glossary & Expansions](../concepts/glossary.md). |
+| `verba.expansions` | Array | `[]` | Abbreviations automatically expanded during post-processing. See [Glossary & Expansions](../concepts/glossary.md#expansions-abbreviation-shorthand). |
+| `verba.language` | String | `"auto"` | Language for post-processing. `auto` uses Deepgram's detected language to hint Claude about the transcript's language. |
+| `verba.transcription.provider` | String | `"deepgram"` | Transcription provider: `deepgram` (API) or `local` (whisper.cpp). See [Offline Transcription](offline.md). |
 | `verba.transcription.localModel` | String | `"base"` | Whisper model for local transcription: `tiny`, `base`, `small`, `medium`, `large-v3-turbo`. |
+| `verba.transcription.language` | String | `"multi"` | Transcription language. `multi` uses Deepgram's multilingual model; a fixed code (e.g. `de`) forces that language. |
 | `verba.contextSearch.provider` | String | `"auto"` | Context search provider: `auto`, `grepai`, or `openai`. |
 | `verba.contextSearch.maxResults` | Number | `5` | Number of context snippets per dictation (1-20). |
+| `verba.history.maxEntries` | Number | `500` | Maximum number of dictation history entries to keep. See [Dictation History](history.md). |
 
 ## Audio Device
 
@@ -31,63 +36,20 @@ By default, Verba uses the system default microphone. To select a specific devic
 !!! tip
     On Windows, you can list available devices by running `ffmpeg -list_devices true -f dshow -i dummy` in a terminal.
 
-## Glossary / Dictionary
+## Glossary & Expansions { #glossary-dictionary }
 
-Define terms (product names, technical jargon, abbreviations) that must be preserved exactly during transcription and cleanup. Glossary terms are sent as hints to Deepgram and as protection instructions to Claude.
-
-**Global terms** are configured in `settings.json`:
+`verba.glossary` and `verba.expansions` are the VS Code–side configuration for two shared vocabulary features — protecting terms so they survive transcription and cleanup untouched, and expanding short abbreviations into full text. Both are documented in full, including the `.verba-glossary.json` / `.verba-expansions.json` workspace-file schema and the `dictation.generateGlossary` command, on [Glossary & Expansions](../concepts/glossary.md).
 
 ```json
 {
-  "verba.glossary": ["Kubernetes", "Visual Studio Code", "PostgreSQL", "gRPC"]
+  "verba.glossary": ["Kubernetes", "Visual Studio Code", "PostgreSQL", "gRPC"],
+  "verba.expansions": [{ "abbreviation": "brb", "expansion": "be right back" }]
 }
 ```
 
-**Project-specific terms** are defined in a `.verba-glossary.json` file at your workspace root:
+## Offline Transcription
 
-```json
-["Verba", "CleanupService", "TranscriptionService", "ffmpeg"]
-```
-
-Both sources are merged automatically. For best results, keep the combined glossary under ~80 terms (~300 Deepgram keyword tokens). If this limit is exceeded, a warning is shown and excess terms may be ignored by Deepgram.
-
-!!! tip
-    Place `.verba-glossary.json` under version control so that all team members share the same glossary. Changes to the file are picked up automatically.
-
-## Offline Transcription (whisper.cpp)
-
-By default, Verba uses the Deepgram Nova-3 API for transcription. You can switch to local, offline transcription via [whisper.cpp](https://github.com/ggml-org/whisper.cpp) for full privacy and zero API costs.
-
-### Setup
-
-1. Install whisper.cpp: `brew install whisper-cpp`
-2. Download a model: Run **Verba: Download Whisper Model** command
-3. Switch the provider:
-
-```json
-{
-  "verba.transcription.provider": "local",
-  "verba.transcription.localModel": "base"
-}
-```
-
-### Available Models
-
-| Model | Size | Speed | Quality |
-|-------|------|-------|---------|
-| `tiny` | ~75 MB | Fastest | Lower accuracy |
-| `base` | ~148 MB | Fast | Good balance |
-| `small` | ~488 MB | Moderate | Better accuracy |
-| `medium` | ~1.5 GB | Slow | High accuracy |
-| `large-v3-turbo` | ~1.6 GB | Slowest | Best accuracy |
-
-Models are downloaded to VS Code's global storage and shared across all workspaces.
-
-!!! tip
-    Start with the `base` model. If accuracy is insufficient, upgrade to `small` or `medium`. The `large-v3-turbo` model provides the best quality but requires significant disk space and processing time.
-
-!!! note
-    Offline transcription currently supports macOS. Linux and Windows support is planned for a future release.
+Switch `verba.transcription.provider` to `"local"` to transcribe entirely on-device via whisper.cpp — no audio leaves your machine, and there's no per-minute API cost. Currently macOS-only. See [Offline Transcription](offline.md) for setup, model choices, and how the strategy pattern behind `TranscriptionService` selects the backend.
 
 ## Context Search Provider
 

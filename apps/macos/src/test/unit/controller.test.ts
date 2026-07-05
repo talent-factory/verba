@@ -108,7 +108,13 @@ suite('DictationController', () => {
 		// Models a hung Anthropic request: the promise neither resolves nor rejects.
 		// Without the timeout this would freeze the flow in "Processing…" forever;
 		// the fallback only ever fired on a thrown error, never on a stall.
-		deps.cleanup.process = sinon.stub().returns(new Promise<string>(() => {}));
+		let captured: AbortSignal | undefined;
+		deps.cleanup.process = sinon.stub().callsFake(
+			(_input: string, _ctx: unknown, signal?: AbortSignal) => {
+				captured = signal;
+				return new Promise<string>(() => {});
+			},
+		);
 		const stalled = new DictationController({
 			...(deps as unknown as ControllerDeps),
 			cleanupTimeoutMs: 10,
@@ -116,12 +122,70 @@ suite('DictationController', () => {
 
 		await dictate(stalled);
 
-		assert.strictEqual(deps.notifier.warn.calledWithMatch(/raw transcript/), true);
+		assert.strictEqual(deps.notifier.warn.calledWithMatch(/timed out/), true);
 		assert.strictEqual(
 			(deps.invoke as unknown as sinon.SinonStub).calledWith('paste_text', { text: 'raw transcript' }),
 			true
 		);
 		assert.strictEqual(deps.notifier.error.called, false);
+		// The timeout aborts the underlying request so no API cost is wasted on a
+		// result we've already discarded.
+		assert.strictEqual(captured?.aborted, true, 'cleanup signal must be aborted on timeout');
+		// The flow must still settle back to idle, never leaving the state stuck.
+		const states = (deps.ui.setState as sinon.SinonStub).getCalls().map((c) => c.args[0]);
+		assert.strictEqual(states[states.length - 1], 'idle');
+	});
+
+	test('cleanup that rejects AFTER the timeout does not leak an unhandledRejection', async () => {
+		// The abandoned request settles late (e.g. the abort or a delayed API
+		// error surfaces after we've already fallen back). It must be consumed,
+		// not surface as an unhandledRejection that could crash/log-spam the host.
+		const unhandled: unknown[] = [];
+		const onUnhandled = (reason: unknown) => unhandled.push(reason);
+		process.on('unhandledRejection', onUnhandled);
+		try {
+			deps.cleanup.process = sinon.stub().returns(
+				new Promise<string>((_resolve, reject) =>
+					setTimeout(() => reject(new Error('late API failure')), 30),
+				),
+			);
+			const stalled = new DictationController({
+				...(deps as unknown as ControllerDeps),
+				cleanupTimeoutMs: 10,
+			});
+
+			await dictate(stalled);
+			// Give the late rejection time to fire against the already-elapsed timeout.
+			await new Promise((resolve) => setTimeout(resolve, 40));
+
+			assert.strictEqual(
+				(deps.invoke as unknown as sinon.SinonStub).calledWith('paste_text', { text: 'raw transcript' }),
+				true
+			);
+			assert.deepStrictEqual(unhandled, [], 'no unhandledRejection may escape the timeout wrapper');
+		} finally {
+			process.removeListener('unhandledRejection', onUnhandled);
+		}
+	});
+
+	test('cleanup that resolves just under the timeout still uses the CLEANED text', async () => {
+		// A slow-but-valid cleanup (resolves before the deadline) must not be
+		// mistaken for a stall: the cleaned text wins, not the raw fallback.
+		deps.cleanup.process = sinon.stub().returns(
+			new Promise<string>((resolve) => setTimeout(() => resolve('cleaned text'), 5)),
+		);
+		const slow = new DictationController({
+			...(deps as unknown as ControllerDeps),
+			cleanupTimeoutMs: 50,
+		});
+
+		await dictate(slow);
+
+		assert.strictEqual(
+			(deps.invoke as unknown as sinon.SinonStub).calledWith('paste_text', { text: 'cleaned text' }),
+			true
+		);
+		assert.strictEqual(deps.notifier.warn.called, false);
 	});
 
 	test('missing Accessibility permission shows onboarding + transcript window, never pastes', async () => {

@@ -24,7 +24,22 @@ export interface ControllerDeps {
 	store: { init(): Promise<void> };
 	invoke: InvokeFn;
 	ui: ControllerUi;
+	/**
+	 * Upper bound on the cleanup step (default {@link DEFAULT_CLEANUP_TIMEOUT_MS}).
+	 * A stalled Claude call must never hang the flow; on timeout we fall back to
+	 * the raw transcript, exactly as for an outright cleanup error. Overridable
+	 * so tests can drive the timeout path without waiting.
+	 */
+	cleanupTimeoutMs?: number;
 }
+
+/**
+ * Default cleanup timeout. Claude Haiku cleanup of a dictation is normally a
+ * few seconds; this is a safety ceiling that only trips on a genuine stall
+ * (network / Anthropic slowness), turning an indefinite hang into the
+ * raw-transcript fallback.
+ */
+const DEFAULT_CLEANUP_TIMEOUT_MS = 30_000;
 
 /**
  * Owns the dictation flow on top of injected host adapters.
@@ -43,8 +58,11 @@ export class DictationController {
 	// impossible "recording while also processing" combination (which a pair of
 	// booleans would admit) is unrepresentable. Mutate only via `setState`.
 	private state: DictationState = 'idle';
+	private readonly cleanupTimeoutMs: number;
 
-	constructor(private readonly deps: ControllerDeps) {}
+	constructor(private readonly deps: ControllerDeps) {
+		this.cleanupTimeoutMs = deps.cleanupTimeoutMs ?? DEFAULT_CLEANUP_TIMEOUT_MS;
+	}
 
 	/** Updates the flow state and mirrors it to the visualization surfaces. */
 	private setState(state: DictationState): void {
@@ -102,10 +120,16 @@ export class DictationController {
 			this.setState('processing');
 			let text = transcript;
 			try {
-				text = await this.deps.cleanup.process(transcript, { detectedLanguage });
+				// A stall (not just a thrown error) must also fall back: the Anthropic
+				// call has no short timeout of its own, so without this a hung request
+				// would freeze the flow in "Processing…" forever instead of pasting the
+				// raw transcript.
+				text = await this.withCleanupTimeout(
+					this.deps.cleanup.process(transcript, { detectedLanguage })
+				);
 			} catch (err) {
-				// Cleanup is refinement, not a gate: a cancelled key prompt or an
-				// API failure must never cost the user their dictation.
+				// Cleanup is refinement, not a gate: a cancelled key prompt, an
+				// API failure, or a timeout must never cost the user their dictation.
 				this.deps.notifier.warn(`Verba: cleanup skipped — using raw transcript (${errText(err)})`);
 			}
 
@@ -131,6 +155,26 @@ export class DictationController {
 		} finally {
 			this.setState('idle');
 		}
+	}
+
+	/**
+	 * Races the cleanup promise against `cleanupTimeoutMs`. On timeout it rejects,
+	 * so the caller's catch falls back to the raw transcript. The abandoned
+	 * cleanup promise is left to settle in the background; its late rejection is
+	 * swallowed so it can't surface as an unhandledRejection after we've moved on.
+	 */
+	private withCleanupTimeout(promise: Promise<string>): Promise<string> {
+		promise.catch(() => {});
+		return new Promise<string>((resolve, reject) => {
+			const timer = setTimeout(
+				() => reject(new Error(`cleanup timed out after ${this.cleanupTimeoutMs}ms`)),
+				this.cleanupTimeoutMs
+			);
+			promise.then(
+				(value) => { clearTimeout(timer); resolve(value); },
+				(err) => { clearTimeout(timer); reject(err); }
+			);
+		});
 	}
 }
 

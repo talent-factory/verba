@@ -104,6 +104,26 @@ suite('DictationController', () => {
 		assert.strictEqual(deps.notifier.error.called, false);
 	});
 
+	test('cleanup that stalls (never settles) still pastes the raw transcript within the timeout', async () => {
+		// Models a hung Anthropic request: the promise neither resolves nor rejects.
+		// Without the timeout this would freeze the flow in "Processing…" forever;
+		// the fallback only ever fired on a thrown error, never on a stall.
+		deps.cleanup.process = sinon.stub().returns(new Promise<string>(() => {}));
+		const stalled = new DictationController({
+			...(deps as unknown as ControllerDeps),
+			cleanupTimeoutMs: 10,
+		});
+
+		await dictate(stalled);
+
+		assert.strictEqual(deps.notifier.warn.calledWithMatch(/raw transcript/), true);
+		assert.strictEqual(
+			(deps.invoke as unknown as sinon.SinonStub).calledWith('paste_text', { text: 'raw transcript' }),
+			true
+		);
+		assert.strictEqual(deps.notifier.error.called, false);
+	});
+
 	test('missing Accessibility permission shows onboarding + transcript window, never pastes', async () => {
 		(deps.invoke as unknown as sinon.SinonStub).withArgs('has_accessibility_permission').resolves(false);
 

@@ -1,8 +1,7 @@
 <h1 align="center">Verba</h1>
 
 <p align="center">
-  <strong>The Developer's Dictation Extension</strong><br>
-  Voice dictation with AI-powered post-processing for VS Code.
+  <strong>Verba — developer-grade voice dictation, everywhere you type.</strong>
 </p>
 
 <p align="center">
@@ -10,35 +9,85 @@
   <a href="https://marketplace.visualstudio.com/items?itemName=talent-factory.verba"><img src="https://img.shields.io/visual-studio-marketplace/i/talent-factory.verba" alt="Installs"></a>
   <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
   <a href="https://github.com/talent-factory/verba"><img src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-blue" alt="Platform"></a>
+  <img src="https://img.shields.io/badge/macOS%20app-Beta-orange" alt="macOS app: Beta">
 </p>
 
 <p align="center">
-  Verba records speech via your microphone, transcribes it with Deepgram Nova-3, and post-processes the transcript with Claude — all directly inside VS Code. Filler words are removed, sentences are smoothed, and the result is inserted at your cursor position.
+  Speak instead of type. Verba records your voice, transcribes it with <strong>Deepgram Nova-3</strong>, and refines it with <strong>Claude</strong> — <strong>system-wide across macOS (Beta)</strong> or <strong>deep inside VS Code</strong>. Bring your own keys, keep your data.
 </p>
 
 ---
 
+## Why Verba
+
+- **Bring Your Own Key** -- your own Deepgram + Anthropic keys; no subscription.
+- **Privacy & data control** -- keys in the OS keystore; optional fully offline transcription (whisper.cpp); your audio/text is never routed through us.
+- **Developer- & code-aware** -- code-aware templates, Claude Code prompt generation, commit messages, JavaDoc, deep VS Code integration.
+- **Everywhere** -- the same dictation intelligence in your editor *and* across your whole Mac.
+
+## Two ways to use Verba
+
+### VS Code Extension
+
+*Dictate into your editor and terminal, with code-aware AI templates.*
+
+The shipped flagship, available today on the VS Code Marketplace:
+
+```
+ext install talent-factory.verba
+```
+
+Or search for "Verba" in the VS Code Extensions sidebar.
+
+Full guide: [VS Code Installation](docs/vscode/installation.md)
+
+### macOS App (Beta)
+
+*System-wide dictation into any app — press a hotkey, speak, and Verba pastes clean text wherever your cursor is.*
+
+**Beta -- build from source.** There is no packaged download yet; run it via `just macos-dev` (or `npm run tauri dev` from `apps/macos`).
+
+<!-- TODO: add macOS menu-bar / HUD screenshot (images/screenshots/macos-hud.png) -->
+
+Full guide: [macOS Installation](docs/macos/installation.md)
+
 ## Features
 
 <p align="center">
-  <img src="images/screenshots/dictation-workflow.gif" alt="Verba Dictation Workflow" width="800">
+  <img src="images/screenshots/dictation-workflow.gif" alt="Verba Dictation Workflow (VS Code)" width="800">
 </p>
 
-- **Dictation in Editor and Terminal** -- `Cmd+Shift+D` (Mac) / `Ctrl+Shift+D` (Windows/Linux) starts and stops recording. Text is inserted contextually in the editor or terminal.
-- **Streaming Post-Processing** -- Claude processes your transcript in real-time with a live character counter in the status bar. Cancel anytime by pressing the dictation shortcut again.
-- **Course Correction** -- Self-corrections in speech are automatically detected and removed. Say "let's meet tomorrow, no wait, on Friday at ten" and only "let's meet on Friday at ten" is kept. Works in all modes.
-- **Voice Commands** -- Speak formatting commands like "new paragraph", "comma", "bullet point" and they are converted to actual formatting. Works in any language.
-- **Glossary/Dictionary** -- Define terms that must be preserved exactly during transcription and cleanup (e.g. "Visual Studio Code", "Kubernetes"). Global terms in settings, project-specific terms in `.verba-glossary.json`.
-- **Prompt Templates** -- Choose a template on first use; it is automatically reused for subsequent recordings. Switch anytime with `Cmd+Alt+T`. 8 built-in templates: Freitext, Commit Message, JavaDoc, Markdown, E-Mail, and 3 context-aware templates (Code Comment, Explain Code, Claude Code Prompt). The template controls how Claude post-processes the transcript.
-- **Fully Configurable** -- Templates are defined in `settings.json` and freely extensible. Add custom templates with any prompt.
-- **Offline Transcription** -- Transcribe locally with [whisper.cpp](https://github.com/ggml-org/whisper.cpp) for full privacy and zero API costs. Audio never leaves your machine. Install whisper-cpp, download a model, and switch the provider to `local`.
-- **Bring Your Own Key** -- Use your own OpenAI and Anthropic API keys. No subscription costs, full data control. Keys are stored securely in VS Code's SecretStorage.
+### Core dictation intelligence (both surfaces)
+
+- **Streaming Post-Processing** -- Claude cleans up your transcript in real time as it streams back.
+- **Course Correction** -- self-corrections in speech are detected and removed automatically. Say "let's meet tomorrow, no wait, on Friday at ten" and only "let's meet on Friday at ten" is kept.
+- **Voice Commands** -- spoken formatting commands like "new paragraph", "comma", "bullet point" are converted to actual formatting, in any language.
+- **Glossary/Dictionary** -- define terms that must be preserved exactly during transcription and cleanup (e.g. "Visual Studio Code", "Kubernetes").
+- **Text Expansions** -- user-defined abbreviations are expanded during post-processing.
+- **Prompt Templates** -- template-driven post-processing (Free Text, Commit Message, JavaDoc, Markdown, E-Mail, and more), freely configurable with your own prompts.
+
+### VS Code
+
+- **Editor & Terminal Insertion** -- `Cmd+Shift+D` (Mac) / `Ctrl+Shift+D` (Windows/Linux) starts and stops recording; text is inserted contextually in the editor or the integrated terminal.
+- **Multi-Cursor / Selection-Aware Dictation** -- dictated text replaces a selection, fills every cursor position, or is passed to Claude as context for the transformation.
+- **Dictation History & Full-Text Search** -- every dictation is saved locally and searchable across raw transcript and cleaned text; re-insert or copy past results.
+- **Continuous Dictation** -- longer sessions via Deepgram Nova-3 WebSocket streaming with automatic pause segmentation (`Cmd+Shift+Alt+D`).
+- **Offline Transcription** -- transcribe fully locally with [whisper.cpp](https://github.com/ggml-org/whisper.cpp): zero API cost, audio never leaves your machine.
+- **File-Type-Aware Templates** -- the right template (e.g. JavaDoc for Java/Kotlin) is selected automatically from the active editor's language.
+
+### macOS (Beta)
+
+- **System-wide Global Hotkey** -- `Ctrl+Alt+D` toggles microphone capture from any app.
+- **Paste into the Frontmost App** -- transcribed, cleaned text is pasted wherever your cursor is; the previous clipboard content is restored afterwards.
+- **Menu-Bar Configuration & Template Picker** -- switch transcription provider, cleanup language, and active template straight from the tray menu.
+- **HUD Working Visualization** -- a non-activating, click-through pill shows idle/recording/transcribing/processing state.
+- **Keychain-Backed Keys** -- Deepgram and Anthropic keys are stored in the macOS Keychain.
 
 ## Prerequisites
 
-- [ffmpeg](https://ffmpeg.org/) must be installed (audio recording)
-- Deepgram API Key (Nova-3 transcription) -- *or* [whisper-cpp](https://github.com/ggml-org/whisper.cpp) for offline transcription
-- Anthropic API Key (Claude post-processing)
+- [ffmpeg](https://ffmpeg.org/) -- required for the VS Code extension's microphone recording (the macOS app captures audio natively via `cpal` and does not need ffmpeg)
+- Deepgram API Key (Nova-3 transcription), shared by both surfaces -- *or* [whisper-cpp](https://github.com/ggml-org/whisper.cpp) for offline transcription (VS Code only, for now)
+- Anthropic API Key (Claude post-processing), shared by both surfaces
 
 ### Installing ffmpeg
 
@@ -64,7 +113,7 @@ Download from [ffmpeg.org](https://ffmpeg.org/download.html) and add to PATH, or
 choco install ffmpeg
 ```
 
-### Platform-Specific Notes
+### Platform-Specific Notes (VS Code)
 
 | Platform | Audio Backend | Microphone Selection |
 |----------|--------------|---------------------|
@@ -82,151 +131,34 @@ On all platforms, you can select the microphone anytime with the command `Verba:
   <img src="images/screenshots/audio-device-selection.png" alt="Audio Device Selection" width="600">
 </p>
 
-## Installation
+## Get started
 
-Install from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=talent-factory.verba):
-
-```
-ext install talent-factory.verba
-```
-
-Or search for "Verba" in the VS Code Extensions sidebar.
-
-## Quick Start
-
-1. `Cmd+Shift+D` -- on first use, a Quick Pick with template selection appears
-
-<p align="center">
-  <img src="images/screenshots/template-picker.png" alt="Template Quick Pick" width="600">
-</p>
-
-2. Choose a template (e.g., "Free Text") -- recording starts
-3. Speak
-4. `Cmd+Shift+D` -- recording stops, text is transcribed and processed
-5. Result appears at your cursor position
-
-From now on, your last template is reused automatically -- just press `Cmd+Shift+D` to start recording immediately. To switch templates, press `Cmd+Alt+T` (Mac) / `Ctrl+Alt+T` (Windows/Linux) or use the command `Verba: Select Template`. The status bar shows the active template.
-
-On first use, you will be prompted for your API keys, which are stored securely.
-
-### Terminal Mode
-
-When the integrated terminal is focused, dictated text is inserted there instead. With `verba.terminal.executeCommand: true`, the text is additionally submitted with Enter.
-
-<p align="center">
-  <img src="images/screenshots/terminal-mode.png" alt="Terminal Mode" width="600">
-</p>
-
-### Claude Code Integration
-
-Use the **Claude Code Prompt** template to dictate tasks for Claude Code. Verba transcribes your voice, enriches it with codebase context, and generates an optimized prompt — ready to confirm in your terminal.
-
-**Setup:**
-1. Select the "Claude Code Prompt" template (`Cmd+Alt+T`)
-2. Set up a context provider for codebase-aware prompts:
-   - **Option A (recommended):** Install [grepai](https://yoanbernabeu.github.io/grepai/) and run `grepai init` in your project
-   - **Option B:** Run command `Verba: Index Project` to build the OpenAI Embeddings index
-3. Ensure `verba.terminal.executeCommand` is `false` (default) — text is pasted without submitting
-
-**Workflow:**
-
-```
-1. Focus your terminal running Claude Code
-2. Cmd+Shift+D → recording starts
-3. Speak your task naturally, e.g.:
-   "I want the pipeline to support streaming so that transcribed
-    text appears incrementally during post-processing"
-4. Cmd+Shift+D → recording stops
-5. Verba:
-   a) Transcribes via Deepgram
-   b) Searches codebase context (pipeline.ts, cleanupService.ts, ...)
-   c) Claude generates an optimized prompt:
-
-      "Implement streaming support in the processing pipeline.
-       Modify CleanupService.process() in src/cleanupService.ts
-       to use Claude's streaming API. Add a callback parameter
-       so that insertText.ts can display text incrementally
-       as chunks arrive from the API."
-
-6. Prompt appears in your terminal — review, edit if needed, press Enter
-7. Claude Code executes the task
-```
-
-The template references files and symbols from your codebase via semantic search (grepai or OpenAI Embeddings). The specificity of the generated prompt depends on the context provider's search results -- for best results, mention the area of code you want to modify.
+- **VS Code:** press `Cmd+Shift+D` / `Ctrl+Shift+D`, pick a template on first use, speak, then press the shortcut again -- the result appears at your cursor. Full walkthrough: [VS Code Quick Start](docs/vscode/quickstart.md).
+- **macOS (Beta):** build from source with `just macos-dev`, then press `Ctrl+Alt+D` anywhere to start dictating -- Verba pastes the cleaned text into the frontmost app. Full walkthrough: [macOS Installation](docs/macos/installation.md).
 
 ## Configuration
 
-### Custom Templates
-
-Define custom templates in `settings.json`:
-
-```json
-{
-  "verba.templates": [
-    {
-      "name": "Free Text",
-      "prompt": "Clean up the transcript: remove filler words, smooth broken sentence starts, fix transcription errors. Keep the original language and meaning. Return only the cleaned text."
-    },
-    {
-      "name": "Code Review",
-      "prompt": "Convert this transcript into structured code review feedback with bullet points for issues found and suggestions. Keep the original language.",
-      "contextAware": true
-    }
-  ]
-}
-```
-
-Each template consists of `name` (displayed in Quick Pick), `prompt` (instruction sent to Claude for post-processing), and optionally `contextAware` (if `true`, enables semantic code search and includes relevant code snippets as context for Claude).
-
-### Settings
-
-| Setting | Type | Default | Description |
-|---------|------|---------|-------------|
-| `verba.audioDevice` | String | `""` | Audio input device name. Leave empty for system default. |
-| `verba.templates` | Array | 8 built-in templates | Prompt templates for post-processing |
-| `verba.terminal.executeCommand` | Boolean | `false` | Submit text in terminal with Enter |
-| `verba.glossary` | Array | `[]` | Terms preserved during transcription and cleanup (recommended limit: ~80 terms) |
-| `verba.transcription.provider` | String | `"deepgram"` | Transcription provider: `deepgram` (API) or `local` (whisper.cpp) |
-| `verba.transcription.localModel` | String | `"base"` | Whisper model for local transcription: `tiny`, `base`, `small`, `medium`, `large-v3-turbo` |
-| `verba.contextSearch.provider` | String | `"auto"` | Context search provider: `auto` uses grepai if available, otherwise OpenAI Embeddings |
-| `verba.contextSearch.maxResults` | Number | `5` | Number of context snippets per dictation (1--20) |
+**VS Code** reads templates, glossary, and expansions from `settings.json`, with project-specific overrides in `.verba-glossary.json` and `.verba-expansions.json` -- see the [VS Code Configuration guide](docs/vscode/configuration.md). **macOS (Beta)** uses a single config file at `~/.config/verba/config.json` (XDG), editable via the tray menu or directly -- see the [macOS Configuration guide](docs/macos/configuration.md).
 
 ## Architecture
 
 ```
-Microphone --> ffmpeg (WAV) --> Deepgram API    --> Claude API --> Editor/Terminal
-                            \-> whisper.cpp CLI /   (Template)
+                          @verba/core
+        (pipeline · cleanup · Deepgram provider · config schema)
+                       /                        \
+          VS Code Extension                macOS App (Beta)
+          (Electron / Node.js)               (Tauri / Rust)
 ```
 
-| Module | Purpose |
-|--------|---------|
-| `recorder.ts` | ffmpeg child process for audio recording (macOS/Linux/Windows) |
-| `transcriptionService.ts` | Transcription via Deepgram pre-recorded API or local whisper.cpp CLI (glossary hints) |
-| `cleanupService.ts` | Anthropic Claude API integration (streaming, course correction, voice commands, glossary, text expansions) |
-| `pipeline.ts` | Processing stage orchestration |
-| `templatePicker.ts` | Quick Pick menu for template selection |
-| `insertText.ts` | Text insertion into editor or terminal (multi-cursor, selection replacement) |
-| `statusBarManager.ts` | Status bar display (Idle/Recording/Transcribing/Processing with character counter) |
-| `costTracker.ts` | API usage cost tracking with persistence via globalState |
-| `costOverviewPanel.ts` | WebView panel for cost overview (card layout, session/total toggle) |
-| `wavDuration.ts` | WAV file duration calculation from PCM header (for Deepgram cost tracking) |
-| `glossaryGenerator.ts` | Scans workspace for project-specific glossary terms (metadata, symbols, docs) |
-| `historyManager.ts` | Dictation history with globalState persistence and full-text search |
-| `historyCommands.ts` | Quick Pick UI for browsing, searching, and acting on history entries |
-| `continuousRecorder.ts` | Deepgram WebSocket streaming, ffmpeg audio capture, EventEmitter |
+Both hosts wrap the same dictation pipeline (record → transcribe → Claude post-process → insert/paste) around platform-specific adapters. Full breakdown: [Architecture](docs/development/architecture.md).
 
-## Development
+## Documentation
 
-```bash
-npm run compile     # Compile TypeScript
-npm run watch       # Watch mode
-npm run test:unit   # Unit tests
-npm run test        # All tests (compile + unit + integration)
-```
+Full documentation site: [talent-factory.github.io/verba](https://talent-factory.github.io/verba/) -- or browse the [`docs/`](docs) directory directly.
 
 ## Contributing
 
-Found a bug or have a feature request? [Open an issue](https://github.com/talent-factory/verba/issues).
+Found a bug or have a feature request? [Open an issue](https://github.com/talent-factory/verba/issues). For local development setup (monorepo layout, build commands), see [Contributing](docs/development/contributing.md).
 
 ## License
 

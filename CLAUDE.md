@@ -2,27 +2,32 @@
 
 ## Project
 
-Native VS Code extension for voice dictation with AI-powered post-processing.
-Powered by Deepgram Nova-3 (transcription) and Claude API (post-processing).
+Verba is a voice-dictation product with **two surfaces on a shared `@verba/core`**:
+the VS Code extension (shipped flagship, Marketplace) and the native macOS app
+(`apps/macos`, Tauri, **Public Beta**, build-from-source only). Both surfaces
+record audio, transcribe it with Deepgram Nova-3, and refine the transcript
+with the Claude API.
 
-**Positioning:** The Developer's Dictation Extension
+**Positioning:** Verba — developer-grade voice dictation, everywhere you type.
 **Repository:** git@github.com:talent-factory/verba.git
 **Linear Project:** https://linear.app/talent-factory/project/verba-the-developers-dictation-extension-8227f12a5e2c/
 
 ## Tech Stack
 
-- **Language:** TypeScript
-- **Platform:** VS Code Extension API (Electron/Node.js)
-- **Transcription:** Deepgram Nova-3 pre-recorded API (`@deepgram/sdk` npm package)
-- **Post-Processing:** Anthropic Claude API (`@anthropic-ai/sdk` npm package)
-- **Continuous Transcription:** Deepgram Nova-3 WebSocket streaming (`@deepgram/sdk` npm package)
-- **API Keys:** Bring-Your-Own-Key via `vscode.SecretStorage`
+- **Language:** TypeScript (both hosts) + Rust (macOS native backend)
+- **Monorepo:** npm workspaces (`packages/*`, `apps/*`) — `packages/core` (`@verba/core`, platform-agnostic dictation logic), repo root (VS Code extension), `apps/macos` (Tauri macOS app, Beta). See "Monorepo Layout" below.
+- **VS Code host platform:** VS Code Extension API (Electron/Node.js)
+- **macOS host platform:** Tauri v2 (Rust backend + WebView frontend)
+- **Transcription:** Deepgram Nova-3 pre-recorded API — `@deepgram/sdk` npm package on VS Code; a native Rust REST call on macOS, because `@deepgram/sdk` cannot run inside Tauri's WebView (see Conventions/Architecture)
+- **Post-Processing:** Anthropic Claude API (`@anthropic-ai/sdk` npm package) via `@verba/core`'s `CleanupService`, shared by both hosts
+- **Continuous Transcription:** Deepgram Nova-3 WebSocket streaming (`@deepgram/sdk` npm package, VS Code only)
+- **API Keys:** Bring-Your-Own-Key — `vscode.SecretStorage` (VS Code) / OS Keychain via the `keyring` crate (macOS)
 
 ## USPs
 
-1. **Native VS Code Integration** - Native extension, not a system-level tool. Cursor position, active editor, file context available.
-2. **Developer-Specific Prompt Templates** - Commit messages, JavaDoc, code comments, Markdown, emails. Configurable via `settings.json`.
-3. **Bring-Your-Own-Key** - Own Deepgram + Anthropic keys (+ OpenAI for embeddings). No subscription costs, full data control.
+1. **Native Integration — In the Editor and Across the OS** - Deep VS Code integration (cursor position, active editor, file context) *and*, on macOS, a system-wide menu-bar app that pastes cleaned dictation into any frontmost application via a global hotkey.
+2. **Developer-Specific Prompt Templates** - Commit messages, JavaDoc, code comments, Markdown, emails. Configurable via `settings.json` (VS Code) or `~/.config/verba/config.json` (macOS).
+3. **Bring-Your-Own-Key** - Own Deepgram + Anthropic keys (+ OpenAI for embeddings on VS Code). No subscription costs, full data control.
 
 ## Implementation Phases (Linear Issues)
 
@@ -51,6 +56,22 @@ All phases are sub-issues of TF-243 (project overview). All core phases are comp
 - **TF-260: Continuous Dictation** - Done. Longer dictation sessions with Deepgram Nova-3 WebSocket streaming. ffmpeg captures microphone audio (raw PCM to stdout), piped directly to Deepgram's real-time transcription API. Deepgram's built-in VAD handles pause detection and utterance segmentation — no ffmpeg silencedetect, no segment extraction. Each completed utterance goes through Claude cleanup, then insertion. New command `dictation.startContinuous` (`Cmd+Shift+Alt+D`). Deepgram API key via SecretStorage (Bring-Your-Own-Key). Per-utterance undo and history records.
 - **TF-272: Deepgram Consolidation** - Done. Replaced OpenAI Whisper API with Deepgram Nova-3 pre-recorded API for single-shot dictation. Both single-shot and continuous now use Deepgram (shared API key). `openai` npm package retained for embeddings only. Cost reduced from $0.006/min (Whisper) to $0.0043/min (Deepgram).
 
+### macOS App (Tauri, Beta)
+
+Sub-issues of TF-518. A system-wide dictation menu-bar app for macOS, built on
+`@verba/core`. **Public Beta** — no signed/notarized distributable yet; runs
+from source via `just macos-dev` (or `npm run tauri dev` from `apps/macos`).
+
+- **Tray accessory app** - No Dock icon; lives in the menu bar.
+- **Global hotkey** (`Control+Alt+D`) - Toggles microphone capture (`apps/macos/src/main.ts`).
+- **Native microphone capture** - `cpal` → WAV on a dedicated capture thread (`src-tauri/src/audio.rs`).
+- **Native Deepgram transcription** - Plain Rust REST call (`src-tauri/src/transcribe.rs`). Required because `@deepgram/sdk`'s `AbstractRestClient` refuses to run in any browser-like environment — including Tauri's WebView — so `@verba/core`'s SDK-based `DeepgramProvider` cannot be reused here; see `deepgramTauriProvider.ts`.
+- **Accessibility paste + clipboard restore** - `paste_text` (`src-tauri/src/paste.rs`) writes the clipboard, sends a synthetic ⌘V into the frontmost app, then restores the previous clipboard content even if the paste fails.
+- **Config system** - JSON file at `~/.config/verba/config.json` (XDG), resolved through `@verba/core`'s shared config schema.
+- **Template picker + tray settings** - Tray submenus (`src-tauri/src/menu.rs`) switch the active template, transcription provider, and cleanup/transcription language; each change writes the config file and emits `config:changed` for the frontend to re-apply live.
+- **HUD visualization** - Non-activating, click-through pill window showing idle/recording/transcribing/processing state (`src-tauri/src/hud.rs`, `apps/macos/src/visualization/*`).
+- **Keychain-backed secrets** - Deepgram/Anthropic API keys stored via the `keyring` crate (`src-tauri/src/secret.rs`), with an env-var override for local development.
+
 ## Git Workflow
 
 - **Branching:** `main` is the stable release branch, `develop` is the integration branch
@@ -78,6 +99,10 @@ release-please cannot parse emoji-prefixed conventional commits (`✨ feat:` →
 - `release-please-config.json` — release type, changelog sections, bootstrap SHA
 - `.release-please-manifest.json` — current version tracker (updated automatically by release-please)
 
+### Release scope
+
+release-please versions the **VS Code extension only** (`package.json` at the repo root). The macOS app (`apps/macos`) is Public Beta with no distributable build or CI packaging yet — it has no release path and is kept out of the release-please flow entirely.
+
 ## Conventions
 
 - **CHANGELOG.md is always written in English** — all entries, descriptions, and examples must be in English
@@ -97,8 +122,35 @@ release-please cannot parse emoji-prefixed conventional commits (`✨ feat:` →
 - API keys are stored exclusively via `vscode.SecretStorage` (never in plaintext)
 - TypeScript strict mode
 - Follow VS Code Extension best practices
+- **Stale `@verba/core` dist:** hosts import `@verba/core` from `dist/` (package `main` → `dist/index.js`), not `src/`. After changing `packages/core/src/**`, run `npm run compile:core` — `just macos-*` does this automatically; a direct `npm run tauri dev` does not. A stale `dist/` manifests as a dead macOS hotkey with no notification (see "Monorepo Layout" for the full rule).
+- **macOS config schema:** top-level bare keys (`language`, `transcription.language`, `glossary`, `expansions`, `templates`, `activeTemplate`, `audioDevice`) — **no** `verba.` prefix. A VS Code–style `verba.language` key is silently ignored. Templates are all-or-nothing: one invalid entry falls back to the 9 bundled defaults. Config lives at `~/.config/verba/config.json` (XDG).
+
+## Monorepo Layout
+
+npm workspaces (`workspaces: ["packages/*", "apps/*"]` in the root `package.json`):
+
+| Path | Package | Purpose |
+|------|---------|---------|
+| `packages/core` | `@verba/core` | Platform-agnostic dictation logic shared by both hosts: pipeline, `CleanupService`, config schema (`resolveConfig`), adapter contracts, portable Deepgram provider. Compiled to `dist/` (package `main` → `dist/index.js`). |
+| repo root | `verba` | The VS Code extension — the shipped flagship. Imports `@verba/core` from `dist/`. |
+| `apps/macos` | (Tauri app, unpublished) | The macOS app — system-wide menu-bar dictation, **Public Beta**. TypeScript frontend (`src/`) + Rust backend (`src-tauri/`). Imports `@verba/core` from `dist/`. |
+
+**Build rule:** "Hosts import `@verba/core` from `dist/` (package `main` → `dist/index.js`), not `src/`. After changing `packages/core/src/**`, run `npm run compile:core` — `just macos-*` does this automatically; a direct `npm run tauri dev` does not." A stale dist manifests as a dead macOS hotkey with no notification.
 
 ## Architecture
+
+Monorepo: `packages/core` (`@verba/core`) holds the platform-agnostic dictation logic — pipeline, `CleanupService`, config schema, adapter contracts — compiled to `dist/` and imported by both hosts.
+
+```
+                    packages/core (@verba/core)
+              pipeline · CleanupService · config schema
+                              │  compiled to dist/
+              ┌───────────────┴────────────────┐
+              │                                 │
+   repo root — VS Code host           apps/macos — macOS host (Beta)
+```
+
+### VS Code host
 
 ```
 Microphone --> ffmpeg (WAV) --> Deepgram API    --> Claude API --> Editor/Terminal
@@ -125,3 +177,27 @@ Microphone --> ffmpeg (WAV) --> Deepgram API    --> Claude API --> Editor/Termin
 | `historyManager.ts` | Dictation history with globalState persistence and full-text search |
 | `historyCommands.ts` | Quick Pick UI for browsing, searching, and acting on history entries |
 | `continuousRecorder.ts` | Deepgram WebSocket streaming, ffmpeg audio capture, EventEmitter |
+
+### macOS host
+
+```
+Microphone --> cpal (WAV) --> native Deepgram (Rust REST) --> Claude API (Template) --> Accessibility paste
+```
+
+| Module | Purpose |
+|--------|---------|
+| `apps/macos/src/main.ts` | Registers the global hotkey (`Control+Alt+D`) and dispatches hotkey events to the controller |
+| `apps/macos/src/wiring.ts` | Builds the production dependency set (Tauri IPC, Keychain-backed adapters, window UI) and hands it to the controller |
+| `apps/macos/src/controller.ts` | Owns the dictation flow (hotkey → capture → transcribe → cleanup → paste) on top of injected host adapters; kept free of `@tauri-apps/api` for testability |
+| `apps/macos/src/deepgramTauriProvider.ts` | Calls the native `deepgram_transcribe` Rust command instead of `@deepgram/sdk`, which cannot run inside Tauri's WebView |
+| `apps/macos/src/config/verbaConfig.ts` | Reads the config file via Tauri IPC and resolves it through `@verba/core`'s `resolveConfig` |
+| `apps/macos/src/visualization/*` | Drives the tray icon/tooltip and HUD window from the current dictation state |
+| `apps/macos/src/ui.ts` | Minimal DOM UI for the (normally hidden) main window: transcript display, API key prompt, Accessibility onboarding |
+| `apps/macos/src-tauri/src/config.rs` | Reads (`read_config`, for the frontend) and writes (`write_config_key`, for tray-menu changes) `~/.config/verba/config.json` (XDG); parsing/validation happen in `@verba/core`, not here |
+| `apps/macos/src-tauri/src/menu.rs` | Tray settings menu (provider, cleanup/transcription language, active template); writes the config file and emits `config:changed` |
+| `apps/macos/src-tauri/src/store.rs` | JSON-file key/value store backing the frontend `TauriKeyValueStore` |
+| `apps/macos/src-tauri/src/transcribe.rs` | Native Deepgram REST transcription call (Rust), replacing the SDK-based provider that cannot run in the WebView |
+| `apps/macos/src-tauri/src/paste.rs` | Accessibility permission check and `paste_text`: clipboard write, synthetic ⌘V, previous-clipboard restore |
+| `apps/macos/src-tauri/src/audio.rs` | Native microphone capture via `cpal`, written to WAV on a dedicated capture thread |
+| `apps/macos/src-tauri/src/hud.rs` | Floating, non-activating HUD window (show/hide/position owned by Rust so it never steals focus) |
+| `apps/macos/src-tauri/src/lib.rs` | App entry point: registers plugins, tray, and Tauri commands |

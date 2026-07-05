@@ -253,7 +253,7 @@
           "items": {
             "type": "string"
           },
-          "description": "Terms that must be preserved exactly during transcription and cleanup (e.g. product names, technical terms). These terms are sent as hints to Whisper and as protection instructions to Claude. Recommended limit: ~80 terms (~224 Whisper prompt tokens)."
+          "description": "Terms that must be preserved exactly during transcription and cleanup (e.g. product names, technical terms). These terms are sent as keyterm hints to Deepgram and as protection instructions to Claude. Recommended limit: ~80 terms; any beyond Deepgram's keyterm token budget are dropped."
         },
         "verba.expansions": {
           "type": "array",

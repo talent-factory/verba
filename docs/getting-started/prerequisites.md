@@ -40,7 +40,7 @@ Required for the **VS Code extension**. Skip this if you're only installing the 
 
 ## API Keys
 
-On first use, Verba prompts for your API keys. On VS Code they're stored in `SecretStorage`; on macOS they're stored in the system Keychain — never in plaintext, and never sent anywhere except Deepgram and Anthropic.
+On first use, Verba prompts for your API keys. On VS Code they're stored in `SecretStorage`; on macOS they're stored in the system Keychain — never in plaintext, and only sent to the providers you use: Deepgram (transcription), Anthropic (cleanup), and — in VS Code only — OpenAI if you enable embeddings for context-aware templates.
 
 - **Deepgram API Key** — Get one at [console.deepgram.com](https://console.deepgram.com/)
 - **Anthropic API Key** — Get one at [console.anthropic.com](https://console.anthropic.com/)

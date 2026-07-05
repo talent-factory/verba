@@ -13,6 +13,24 @@ You can open it directly from the tray menu (**Konfiguration öffnen…**), whic
 !!! warning "Bare top-level keys — no `verba.` prefix"
     Unlike the VS Code extension's `settings.json` (which namespaces everything under `verba.*`, e.g. `verba.glossary`), the macOS config file uses **bare top-level keys**: `glossary`, not `verba.glossary`. A VS Code–style key here is simply ignored — the corresponding default is used instead, silently.
 
+## API Keys
+
+Your Deepgram and Anthropic API keys are **not** stored in `config.json`. They live in the macOS **Keychain** (never in plaintext), and Verba resolves them in this order: **environment variable → Keychain → GUI prompt**.
+
+For the bundled `Verba.app`, store them in the Keychain: launch the app and dictate once — when no key is found, Verba prompts for the Deepgram key (transcription) and then the Anthropic key (cleanup), and saves each to the Keychain. This persists across restarts and is the recommended, secure path.
+
+!!! warning "`Verba.app` does not read `~/.zshrc`"
+    A `.app` launched from Finder / Spotlight / Dock is started by `launchd`, not a shell, so it never sources `~/.zshrc` (or `~/.zprofile`). Environment-variable keys — `VERBA_ANTHROPIC_API_KEY` / `ANTHROPIC_API_KEY` and `VERBA_DEEPGRAM_API_KEY` / `DEEPGRAM_API_KEY` — therefore only resolve when Verba is launched **from a terminal** (e.g. `just macos-dev`). This is standard macOS behaviour, not a Verba bug — so a `.app` that "ignores" your shell keys is expected; use the Keychain instead.
+
+    If you really do want env vars for the GUI app, set them in the `launchd` session and fully relaunch Verba:
+
+    ```bash
+    launchctl setenv ANTHROPIC_API_KEY "sk-ant-…"
+    launchctl setenv DEEPGRAM_API_KEY  "…"
+    ```
+
+    Caveats: this is **not persistent** across reboot/logout (you would need a LaunchAgent to re-run it at login) and is **less secure** than the Keychain. Prefer the Keychain prompt above.
+
 ## Schema
 
 | Key | Type | Default | Description |

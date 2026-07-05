@@ -1,5 +1,5 @@
 site_name: Verba
-site_description: The Developer's Dictation Extension — Voice dictation with AI-powered post-processing for VS Code
+site_description: Developer-grade voice dictation, everywhere you type — AI-powered dictation system-wide on macOS (Beta) or deep inside VS Code.
 site_url: https://talent-factory.github.io/verba/
 repo_url: https://github.com/talent-factory/verba
 repo_name: talent-factory/verba

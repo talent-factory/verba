@@ -1,7 +1,7 @@
 {
   "name": "verba",
   "displayName": "Verba",
-  "description": "The Developer's Dictation Extension – Voice dictation with AI-powered post-processing for VS Code",
+  "description": "Developer-grade voice dictation with AI post-processing — dictate into your editor and terminal, powered by Deepgram Nova-3 and Claude. Bring your own keys.",
   "version": "0.5.0",
   "publisher": "talent-factory",
   "repository": {

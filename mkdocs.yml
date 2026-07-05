@@ -64,8 +64,7 @@ nav:
   - Core Features:
     - How Verba Works: concepts/how-it-works.md
     - Prompt Templates: concepts/templates.md
-    - Glossary & Dictionary: concepts/glossary.md
-    - Text Expansions: concepts/expansions.md
+    - Glossary & Expansions: concepts/glossary.md
     - Voice Commands & Course Correction: concepts/voice-commands.md
     - Bring Your Own Key & Privacy: concepts/byok.md
   - VS Code Extension:

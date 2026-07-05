@@ -1,10 +1,22 @@
 # Templates
 
-Templates control how Claude post-processes your transcribed speech. Each template has a name (shown in the Quick Pick menu) and a prompt (the instruction sent to Claude).
+A template is nothing more than a Claude post-processing instruction: a name (shown in the Quick Pick menu on VS Code, or the tray "Vorlage" submenu on macOS) paired with a system prompt that shapes what your transcript is turned into. Templates are a shared `@verba/core` concept — the same 9 defaults, and the same `Template` schema, back both surfaces. What differs is *where* you configure them; see [Two Configuration Locations](#two-configuration-locations) below.
+
+## Template Schema
+
+A template is an object with this shape (`Template` in `packages/core/src/config.ts`):
+
+| Property | Type | Required | Description |
+|----------|------|:---:|-------------|
+| `name` | String | Yes | Display name shown in the picker/menu |
+| `prompt` | String | Yes | System prompt sent to Claude |
+| `icon` | String | No | Optional emoji, shown in the macOS tray menu; ignored by VS Code |
+| `contextAware` | Boolean | No | If `true`, includes code context from semantic search (VS Code only — inert on macOS) |
+| `fileTypes` | String[] | No | Auto-selects this template based on the active file's language (VS Code only — inert on macOS) |
 
 ## Built-in Templates
 
-Verba ships with 8 default templates:
+Verba ships with **9** default templates, defined once in `packages/core/src/config/defaultTemplates.json` and used as-is by both surfaces:
 
 | Template | Description | Context-Aware |
 |----------|-------------|:---:|
@@ -16,16 +28,16 @@ Verba ships with 8 default templates:
 | **Code Comment** | Generates a code comment based on transcript and surrounding code | Yes |
 | **Explain Code** | Answers questions about code using transcript and codebase context | Yes |
 | **Claude Code Prompt** | Converts transcript into a prompt for Claude Code with file references | Yes |
+| **Transform Selection** | Applies a spoken instruction to transform the currently selected text | |
 
-## Template Auto-Reuse
+## Selecting a Template
 
-On first dictation, Verba shows the Quick Pick menu for template selection. After that, your last template is automatically reused — press `Cmd+Shift+D` to start recording immediately.
-
-To switch templates, press `Cmd+Alt+T` (Mac) / `Ctrl+Alt+T` (Windows/Linux). The status bar always shows the currently active template.
+- **VS Code** — on first dictation, Verba shows the Quick Pick menu for template selection. After that, your last template is automatically reused — press `Cmd+Shift+D` to start recording immediately. To switch templates, press `Cmd+Alt+T` (Mac) / `Ctrl+Alt+T` (Windows/Linux); the status bar always shows the currently active template.
+- **macOS** — pick the active template from the tray's **Vorlage** submenu. The choice is written back to `activeTemplate` in `~/.config/verba/config.json` and stays active until changed again.
 
 ## Context-Aware Templates
 
-Templates with `contextAware: true` trigger a semantic code search before sending the transcript to Claude. Verba searches your codebase for relevant files, classes, and functions, and includes them as context snippets in the prompt.
+Templates with `contextAware: true` trigger a semantic code search before sending the transcript to Claude. Verba searches your codebase for relevant files, classes, and functions, and includes them as context snippets in the prompt. This is a **VS Code–only** feature — `contextAware` is inert on macOS.
 
 This requires a context provider:
 
@@ -43,9 +55,16 @@ Configure the provider in Settings:
 
 The `auto` setting uses grepai if installed, otherwise falls back to OpenAI Embeddings.
 
-## Custom Templates
+## Two Configuration Locations
 
-Define custom templates in `settings.json`:
+Custom templates replace the 9 built-in defaults **entirely** on both surfaces — this is validated as all-or-nothing by the shared `resolveConfig()` in `packages/core/src/config.ts`: if your array is present, non-empty, and every entry has at least a `name` and a `prompt`, it replaces the defaults; otherwise Verba falls back to all 9 defaults. Copy any defaults you want to keep into your own array.
+
+Where you define that array differs per surface:
+
+- **VS Code** — the `verba.templates` array in `settings.json`. See [VS Code Configuration](../vscode/configuration.md) for the settings reference.
+- **macOS** — the `templates` array in `~/.config/verba/config.json`. See [macOS Configuration](../macos/configuration.md#templates) for the schema and a full example.
+
+VS Code example:
 
 ```json
 {
@@ -63,46 +82,11 @@ Define custom templates in `settings.json`:
 }
 ```
 
-### Template Properties
-
-| Property | Type | Required | Description |
-|----------|------|:---:|-------------|
-| `name` | String | Yes | Display name in the Quick Pick menu |
-| `prompt` | String | Yes | System prompt sent to Claude |
-| `contextAware` | Boolean | No | If `true`, includes code context from semantic search |
-
 !!! tip "Writing Good Prompts"
     - Be specific about the desired output format
     - Tell Claude to "keep the original language" if you dictate in different languages
     - End with "Return only the [result]" to avoid explanatory text in the output
 
-## Glossary Interaction
+## Glossary, Expansions, Voice Commands & Course Correction
 
-If you have defined a [glossary](../vscode/configuration.md#glossary-dictionary), the glossary terms are automatically included in every template's Claude prompt. This ensures that product names, technical jargon, and abbreviations are preserved exactly — regardless of which template you use. No additional template configuration is needed.
-
-## Course Correction
-
-Verba automatically detects and removes self-corrections in your speech. If you say "let's meet tomorrow, no wait, on Friday at ten", only "let's meet on Friday at ten" is kept. This works in all templates — both the default cleanup and custom templates.
-
-Common correction phrases that are recognized: "no wait", "I meant", "actually rather", "correction", and similar patterns in German and English.
-
-## Voice Commands
-
-Verba recognizes spoken formatting commands and converts them to actual formatting. Say "new paragraph" to insert a paragraph break, "comma" to insert a comma, or "bullet point" to start a list item.
-
-Supported commands:
-
-| Command | Result |
-|---------|--------|
-| "New paragraph" / "Neuer Absatz" | Paragraph break |
-| "New line" / "Neue Zeile" | Line break |
-| "Period" / "Punkt" | `.` |
-| "Comma" / "Komma" | `,` |
-| "Colon" / "Doppelpunkt" | `:` |
-| "Semicolon" / "Semikolon" | `;` |
-| "Question mark" / "Fragezeichen" | `?` |
-| "Exclamation mark" / "Ausrufezeichen" | `!` |
-| "Bullet point" / "Aufzaehlung" | `- ` (list item) |
-| "Number one/two/three" / "Nummer eins/zwei/drei" | `1. ` / `2. ` / `3. ` |
-
-Commands work in any language — speak naturally and Verba will interpret them.
+[Glossary terms and expansions](glossary.md) are automatically included in every template's Claude prompt, and [voice commands and course correction](voice-commands.md) are applied to every template's output — the default cleanup and any custom template alike. None of this needs template-specific configuration.

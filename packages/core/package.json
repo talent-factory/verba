@@ -11,7 +11,7 @@
     "!dist/test"
   ],
   "scripts": {
-    "compile": "tsc -p ./",
+    "compile": "tsc -p ./ && node scripts/copy-assets.js",
     "test:unit": "npm run compile && mocha"
   },
   "dependencies": {

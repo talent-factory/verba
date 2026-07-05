@@ -5,7 +5,8 @@
 use std::path::PathBuf;
 
 /// The bundled default templates — the same file the frontend imports.
-pub const DEFAULT_TEMPLATES_JSON: &str = include_str!("../../src/config/defaultTemplates.json");
+pub const DEFAULT_TEMPLATES_JSON: &str =
+    include_str!("../../../../packages/core/src/config/defaultTemplates.json");
 
 /// `$XDG_CONFIG_HOME/verba/config.json` if that var is set and non-empty, else
 /// `$HOME/.config/verba/config.json`. `None` if `HOME` is also unavailable.
@@ -92,7 +93,7 @@ pub fn read_config_value(dotted: &str, default: &str) -> String {
 /// A JSON value counts as a valid template entry only if it is an object with
 /// a non-empty string `name` and a string `prompt` — mirrors the per-entry
 /// check inside the TS `isTemplateArray` predicate in
-/// `apps/macos/src/config/verbaConfig.ts` (the non-empty-array rule lives on
+/// `packages/core/src/config.ts` (the non-empty-array rule lives on
 /// [`template_choices_from_value`], matching `isTemplateArray`'s `length > 0`).
 fn is_valid_template_entry(t: &serde_json::Value) -> bool {
     t.is_object()

@@ -1,7 +1,13 @@
 import * as assert from 'assert';
 import * as sinon from 'sinon';
 
-import { loadConfig, resolveActiveTemplate, DEFAULT_TEMPLATES, cleanupContextFor } from '../../config/verbaConfig';
+import {
+	loadConfig,
+	resolveActiveTemplate,
+	DEFAULT_TEMPLATES,
+	cleanupContextFor,
+	ObjectConfigProvider,
+} from '../../config/verbaConfig';
 
 suite('loadConfig', () => {
 	test('returns all defaults when the file is missing (empty object)', async () => {
@@ -151,5 +157,15 @@ suite('cleanupContextFor', () => {
 		const cfg = await loadConfig(sinon.stub().resolves('{}'));
 		const ctx = cleanupContextFor(cfg, undefined);
 		assert.strictEqual(ctx.templatePrompt, DEFAULT_TEMPLATES[0].prompt);
+	});
+});
+
+suite('ObjectConfigProvider', () => {
+	test('resolves flat, nested, missing and non-object keys', () => {
+		const p = new ObjectConfigProvider({ language: 'de', transcription: { language: 'multi' } });
+		assert.strictEqual(p.get('language', 'auto'), 'de');
+		assert.strictEqual(p.get('transcription.language', 'x'), 'multi');
+		assert.strictEqual(p.get('transcription.provider', 'deepgram'), 'deepgram');
+		assert.strictEqual(p.get('nope.deep', 'fallback'), 'fallback');
 	});
 });

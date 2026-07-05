@@ -13,6 +13,8 @@ suite('applyConfig', () => {
 			{
 				transcriptionLanguage: 'de',
 				language: 'auto',
+				provider: 'deepgram',
+				localModel: 'base',
 				glossary: ['Verba'],
 				expansions: [{ abbreviation: 'z', expansion: 'zum Beispiel' }],
 				templates: [{ name: 'Freitext', prompt: 'noop' }],

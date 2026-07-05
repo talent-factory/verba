@@ -53,7 +53,6 @@ markdown_extensions:
 
 exclude_docs: |
   plans/
-  ROADMAP.md
   superpowers/
 
 nav:

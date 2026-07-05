@@ -67,13 +67,14 @@ npm run tauri dev
 > side must be built on a Mac. Validate `tauri.conf.json`/`Cargo.toml` versions
 > with `npm run tauri info` before relying on them.
 
-## Next milestones
+## Next
 
-- **M2** — ✅ shipped: mic capture (Rust) → transcription; Keychain-backed
-  `TauriSecretStore`; a key-entry window.
-- **M3** — ✅ shipped: native Deepgram transcription (replacing the SDK-based
-  provider from M2, which can't run in the WebView) and Accessibility
-  permission onboarding (see Status above). ⏳ still open: `CleanupService` +
-  paste into the frontmost app (`TextSink` via Accessibility / `CGEvent`).
-- **M4/M5** — template picker, settings, glossary/expansions, cost/history;
-  signing, notarization, updater.
+Everything in the Status section above has shipped. Genuinely open work:
+
+- No packaged/signed `.dmg` distribution yet — build-from-source only
+  (`just macos-dev`).
+- Local (whisper.cpp) transcription provider is not yet wired on macOS —
+  Deepgram-only for now; the "Lokal" tray entry is disabled (see
+  [`CLAUDE.md`](../../CLAUDE.md)).
+- Linux/Windows hosts are future work — see the [cross-platform
+  strategy](../../docs/development/cross-platform-strategy.md).

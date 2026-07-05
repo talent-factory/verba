@@ -20,10 +20,10 @@ just install    # or: npm install
 just compile
 
 # Run unit tests
-npm run test:unit
+just test-unit
 
 # Run all tests (compile + unit + integration)
-npm run test
+just test
 ```
 
 `just` (or `just --list`) shows every available recipe, grouped by target —

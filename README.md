@@ -21,8 +21,8 @@
 ## Why Verba
 
 - **Bring Your Own Key** -- your own Deepgram + Anthropic keys; no subscription.
-- **Privacy & data control** -- keys in the OS keystore; optional fully offline transcription (whisper.cpp); your audio/text is never routed through us.
-- **Developer- & code-aware** -- code-aware templates, Claude Code prompt generation, commit messages, JavaDoc, deep VS Code integration.
+- **Privacy & data control** -- keys in the OS keystore; optional fully offline transcription (whisper.cpp); your audio and text are never routed through us.
+- **Developer- & code-aware** -- code-aware templates, Claude Code prompt generation, commit messages, JavaDoc, and deep VS Code integration.
 - **Everywhere** -- the same dictation intelligence in your editor *and* across your whole Mac.
 
 ## Two ways to use Verba

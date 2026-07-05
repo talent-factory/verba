@@ -1,4 +1,4 @@
-# Verba - The Developer's Dictation Extension
+# Verba — Developer-Grade Voice Dictation, Everywhere You Type
 
 ## Project
 
@@ -196,6 +196,7 @@ Microphone --> cpal (WAV) --> native Deepgram (Rust REST) --> Claude API (Templa
 | `apps/macos/src-tauri/src/config.rs` | Reads (`read_config`, for the frontend) and writes (`write_config_key`, for tray-menu changes) `~/.config/verba/config.json` (XDG); parsing/validation happen in `@verba/core`, not here |
 | `apps/macos/src-tauri/src/menu.rs` | Tray settings menu (provider, cleanup/transcription language, active template); writes the config file and emits `config:changed` |
 | `apps/macos/src-tauri/src/store.rs` | JSON-file key/value store backing the frontend `TauriKeyValueStore` |
+| `apps/macos/src-tauri/src/secret.rs` | Keychain-backed secret store (via the `keyring` crate), exposing `secret_get`/`secret_set`/`secret_delete` |
 | `apps/macos/src-tauri/src/transcribe.rs` | Native Deepgram REST transcription call (Rust), replacing the SDK-based provider that cannot run in the WebView |
 | `apps/macos/src-tauri/src/paste.rs` | Accessibility permission check and `paste_text`: clipboard write, synthetic ⌘V, previous-clipboard restore |
 | `apps/macos/src-tauri/src/audio.rs` | Native microphone capture via `cpal`, written to WAV on a dedicated capture thread |

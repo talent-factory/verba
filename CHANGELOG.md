@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [0.6.0](https://github.com/talent-factory/verba/compare/verba-v0.5.0...verba-v0.6.0) (2026-07-05)
+
 ### Added
 
 - **VS Code Extension — Configurable Transcription Language (`verba.transcription.language`):** New setting to explicitly select the Deepgram transcription language — `multi` for multilingual auto-detection (default) or a fixed ISO code such as `de`, `en`, `fr`, `es`, `it`, `nl`, `pt`. This is a **backward-compatible optional override**: when it is not set, transcription continues to follow `verba.language` exactly as before. Changes apply live (no window reload needed). Closes the parity gap with the macOS app for users who dictate in a fixed language independent of their post-processing language.

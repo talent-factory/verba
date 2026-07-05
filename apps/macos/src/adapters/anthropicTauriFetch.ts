@@ -39,16 +39,24 @@ async function bodyToString(body: BodyInit | null | undefined): Promise<string |
 }
 
 // Statuses whose Response must have a null body — constructing one with a body throws.
-const NULL_BODY_STATUS = new Set([101, 204, 205, 304]);
+const NULL_BODY_STATUS = new Set([204, 205, 304]);
 
 /**
  * A `fetch`-compatible function that routes Anthropic HTTPS requests through the
  * Rust `anthropic_fetch` command (native `reqwest`) instead of the WKWebView's
- * `fetch`. In the production build the webview runs on a `tauri://` origin whose
- * cross-origin `fetch` to api.anthropic.com stalls indefinitely (no origin the
- * browser will do CORS for); the native path has no origin / CORS and carries
- * its own request timeout, exactly like `deepgram_transcribe`. Deepgram already
- * goes through Rust for this reason — this gives Claude cleanup the same path.
+ * `fetch`. Empirically, in the production build the webview runs on a `tauri://`
+ * origin and a `fetch` to api.anthropic.com from there never completes, freezing
+ * cleanup — while under `macos-dev` (origin `http://localhost:1420`) it works.
+ * The exact cause is unconfirmed (most likely the cross-origin preflight from a
+ * non-`http` origin); the fix is to leave the webview transport. The native path
+ * has no origin and its own 30s timeout. Transcription uses a native `reqwest`
+ * path too (`deepgram_transcribe`), for a different underlying reason.
+ *
+ * Cancellation is best-effort: an already-aborted signal is honored *before*
+ * dispatch, but a Tauri `invoke` cannot be cancelled once in flight, so an abort
+ * that arrives mid-request does not stop the native call — it runs to completion
+ * or the Rust 30s timeout. The caller's `withCleanupTimeout` bounds the
+ * user-visible wait regardless.
  */
 export function createAnthropicTauriFetch(invoke: InvokeFn): FetchFn {
 	return async (input, init) => {

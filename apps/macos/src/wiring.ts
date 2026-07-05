@@ -47,8 +47,9 @@ export async function createDictationController(): Promise<{
 
 	// Route the Anthropic SDK's HTTP through the Rust `anthropic_fetch` command
 	// instead of the WebView's `fetch`: from the production build's `tauri://`
-	// origin a cross-origin `fetch` to api.anthropic.com stalls forever. The
-	// native path (like Deepgram) has no origin/CORS and its own timeout.
+	// origin a `fetch` to api.anthropic.com never completes and freezes cleanup
+	// (it works under `macos-dev` on http://localhost). The native path has no
+	// origin and its own timeout — see anthropicTauriFetch.ts for details.
 	const cleanup = new TauriCleanupService(secrets, notifier, {
 		dangerouslyAllowBrowser: true,
 		fetch: createAnthropicTauriFetch(invoke),
@@ -77,9 +78,11 @@ export async function createDictationController(): Promise<{
 	const controller = new DictationController({
 		deepgram: { transcribe: (audioPath) => provider.transcribe(audioPath, configState.current.glossary) },
 		cleanup: {
-			// Forward the AbortSignal so a cleanup timeout actually cancels the
-			// in-flight Anthropic request (via core → the Rust fetch) instead of
-			// leaking it; the controller's `withCleanupTimeout` supplies it.
+			// Forward the AbortSignal to core so an abort *before* the request is
+			// dispatched is honored and the SDK won't start a retry. The native
+			// Rust fetch can't be cancelled mid-flight (see anthropicTauriFetch.ts),
+			// so a request already in flight runs to its 30s timeout — the
+			// controller's `withCleanupTimeout` bounds the user-visible wait.
 			process: (transcript, context, signal) =>
 				cleanup.process(transcript, cleanupContextFor(configState.current, context), signal),
 		},

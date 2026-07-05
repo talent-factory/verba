@@ -166,15 +166,18 @@ export class DictationController {
 
 	/**
 	 * Runs the cleanup with an upper time bound. `run` receives an AbortSignal;
-	 * on timeout we abort it — cancelling the in-flight request so no work or API
-	 * cost is wasted on a result we'll discard — and reject with a
-	 * {@link CleanupTimeoutError} so the caller falls back to the raw transcript.
+	 * on timeout we abort it and reject with a {@link CleanupTimeoutError} so the
+	 * caller falls back to the raw transcript.
 	 *
-	 * The signal is best-effort: a request that ignores it (or a hang outside the
-	 * request, e.g. a key prompt) still can't stall the flow, because the timeout
-	 * rejects regardless. A settle that arrives *after* the timeout can no longer
-	 * change the outcome; its late result/rejection is logged (never lost) and
-	 * kept from surfacing as an unhandledRejection.
+	 * The abort is best-effort and transport-dependent: it stops the SDK from
+	 * starting a *new* retry, but the macOS transport (a Tauri `invoke`, see
+	 * `anthropicTauriFetch.ts`) can't cancel a request already in flight, so that
+	 * request runs to its own timeout and its Anthropic cost is still incurred.
+	 * The user-visible flow never stalls regardless, because the timeout rejects
+	 * on its own timer even if `run` never settles (a hang outside the request,
+	 * e.g. a key prompt, is bounded too). A settle that arrives *after* the
+	 * timeout can no longer change the outcome; its late result/rejection is
+	 * logged (never lost) and kept from surfacing as an unhandledRejection.
 	 */
 	private withCleanupTimeout(run: (signal: AbortSignal) => Promise<string>): Promise<string> {
 		const controller = new AbortController();

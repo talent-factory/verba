@@ -47,4 +47,49 @@ suite('anthropicTauriFetch', () => {
 		);
 		assert.strictEqual(invoke.called, false);
 	});
+
+	test('passes a non-2xx status and error body through unchanged so the SDK handles it', async () => {
+		// The Rust command returns error statuses as Ok(HttpResponse), not Err, so
+		// the SDK sees the real 401/429/529 and core's handleApiError fires. If the
+		// adapter dropped the status this would silently degrade to an opaque error.
+		const invoke = sinon.stub().resolves({
+			status: 401,
+			headers: { 'content-type': 'application/json' },
+			body: '{"type":"error","error":{"type":"authentication_error"}}',
+		});
+		const fetchFn = createAnthropicTauriFetch(invoke as unknown as InvokeFn);
+
+		const res = await fetchFn('https://api.anthropic.com/v1/messages', { method: 'POST', body: '{}' });
+
+		assert.strictEqual(res.status, 401);
+		assert.strictEqual(res.ok, false);
+		assert.strictEqual(await res.text(), '{"type":"error","error":{"type":"authentication_error"}}');
+	});
+
+	test('converts plain-object headers (not just a Headers instance)', async () => {
+		const invoke = sinon.stub().resolves({ status: 200, headers: {}, body: '{}' });
+		const fetchFn = createAnthropicTauriFetch(invoke as unknown as InvokeFn);
+
+		await fetchFn('https://api.anthropic.com/v1/messages', {
+			method: 'POST',
+			headers: { 'x-api-key': 'sk-ant-xxx', 'anthropic-version': '2023-06-01' },
+			body: '{}',
+		});
+
+		const payload = (invoke.firstCall.args[1] as { request: { headers: Record<string, string> } }).request;
+		assert.strictEqual(payload.headers['x-api-key'], 'sk-ant-xxx');
+		assert.strictEqual(payload.headers['anthropic-version'], '2023-06-01');
+	});
+
+	test('a null-body status (204) rebuilds a Response without throwing', async () => {
+		// `new Response(body, { status: 204 })` throws if body is non-null; the
+		// adapter must pass null for such statuses.
+		const invoke = sinon.stub().resolves({ status: 204, headers: {}, body: '' });
+		const fetchFn = createAnthropicTauriFetch(invoke as unknown as InvokeFn);
+
+		const res = await fetchFn('https://api.anthropic.com/v1/messages', { method: 'POST', body: '{}' });
+
+		assert.strictEqual(res.status, 204);
+		assert.strictEqual(await res.text(), '');
+	});
 });

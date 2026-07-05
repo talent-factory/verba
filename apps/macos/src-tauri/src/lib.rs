@@ -1,6 +1,7 @@
 mod audio;
 mod config;
 mod env;
+mod http;
 mod hud;
 mod menu;
 mod paste;
@@ -31,6 +32,7 @@ pub fn run() {
             audio::stop_capture,
             config::read_config,
             env::env_var,
+            http::anthropic_fetch,
             hud::set_hud_state,
             paste::has_accessibility_permission,
             paste::open_accessibility_settings,

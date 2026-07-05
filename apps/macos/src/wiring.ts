@@ -5,6 +5,7 @@ import { EnvAwareSecretStore } from './adapters/envAwareSecretStore';
 import { TauriKeyValueStore } from './adapters/keyValueStore';
 import { TauriNotifier } from './adapters/notifier';
 import { DeepgramTauriProvider } from './deepgramTauriProvider';
+import { createAnthropicTauriFetch } from './adapters/anthropicTauriFetch';
 import { promptForApiKey, setPhase, showAccessibilityOnboarding, showTranscript } from './ui';
 import { DictationController } from './controller';
 import { loadConfig, applyConfig, cleanupContextFor } from './config/verbaConfig';
@@ -44,7 +45,14 @@ export async function createDictationController(): Promise<{
 	// is wired (the "Lokal" tray entry is disabled). See menu.rs PROVIDERS.
 	const provider = new DeepgramTauriProvider(secrets, deepgramPrompt, invoke, configState.current.transcriptionLanguage);
 
-	const cleanup = new TauriCleanupService(secrets, notifier, { dangerouslyAllowBrowser: true });
+	// Route the Anthropic SDK's HTTP through the Rust `anthropic_fetch` command
+	// instead of the WebView's `fetch`: from the production build's `tauri://`
+	// origin a cross-origin `fetch` to api.anthropic.com stalls forever. The
+	// native path (like Deepgram) has no origin/CORS and its own timeout.
+	const cleanup = new TauriCleanupService(secrets, notifier, {
+		dangerouslyAllowBrowser: true,
+		fetch: createAnthropicTauriFetch(invoke),
+	});
 	cleanup.setGlossary(configState.current.glossary);
 	cleanup.setExpansions(configState.current.expansions);
 
@@ -69,8 +77,11 @@ export async function createDictationController(): Promise<{
 	const controller = new DictationController({
 		deepgram: { transcribe: (audioPath) => provider.transcribe(audioPath, configState.current.glossary) },
 		cleanup: {
-			process: (transcript, context) =>
-				cleanup.process(transcript, cleanupContextFor(configState.current, context)),
+			// Forward the AbortSignal so a cleanup timeout actually cancels the
+			// in-flight Anthropic request (via core → the Rust fetch) instead of
+			// leaking it; the controller's `withCleanupTimeout` supplies it.
+			process: (transcript, context, signal) =>
+				cleanup.process(transcript, cleanupContextFor(configState.current, context), signal),
 		},
 		notifier,
 		store: new TauriKeyValueStore(),

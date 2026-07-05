@@ -11,6 +11,20 @@ export default defineConfig({
 	build: {
 		outDir: 'dist',
 		target: 'es2022',
+		commonjsOptions: {
+			// `@verba/core` compiles to CommonJS but resolves to
+			// `packages/core/dist/*` — a workspace symlink whose real path is
+			// OUTSIDE `node_modules`. Vite's default `commonjsOptions.include`
+			// is `[/node_modules/]`, so the CJS→ESM transform skips the core
+			// dist and Rollup mis-reads `dist/index.js` as ESM, failing the
+			// build with `"resolveApiKey" is not exported by dist/index.js`
+			// (other symbols happen to survive Rollup's partial interop; this
+			// one does not). `vite dev` avoids this because `optimizeDeps` (see
+			// below) pre-bundles the package with esbuild. Extending the include
+			// here runs the same @rollup/plugin-commonjs transform on the core
+			// dist for `vite build`, which resolves every named export.
+			include: [/node_modules/, /packages\/core\/dist/],
+		},
 		rollupOptions: {
 			input: {
 				main: 'index.html',

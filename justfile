@@ -58,19 +58,29 @@ install-local:
 # ─── macOS app (Tauri, M1 skeleton) ────────────────────────────────────────────
 # apps/macos — reuses @verba/core; build not yet verified in CI (see apps/macos/README.md).
 
+# The macOS app imports @verba/core's COMPILED output (package "main" →
+# dist/index.js), not src/, and `tauri dev`/`build` do not rebuild it. Every
+# macos-* recipe depends on this so they never run against a stale dist (which
+# manifests as e.g. a dead hotkey after @verba/core changed).
+#
+# Compile @verba/core to dist/ (macOS app imports the built output, not src/)
+[group('macos')]
+compile-core:
+	npm run compile:core
+
 # Run the native app (builds @verba/core, starts vite, launches Tauri)
 [group('macos')]
-macos-dev:
+macos-dev: compile-core
 	cd apps/macos && npm run tauri dev
 
 # Build the native app bundle (.dmg)
 [group('macos')]
-macos-build:
+macos-build: compile-core
 	cd apps/macos && npm run tauri build
 
 # Type-check the macOS frontend against @verba/core
 [group('macos')]
-macos-typecheck:
+macos-typecheck: compile-core
 	cd apps/macos && npm run typecheck
 
 # ─── Docs ───────────────────────────────────────────────────────────────────────

@@ -8,34 +8,27 @@ hotkey, mic capture, Accessibility paste, keychain) plus a native Deepgram
 transcription call that replaces `@verba/core`'s SDK-based `DeepgramProvider`,
 which cannot run inside Tauri's WebView — see the Status section below.
 
-## Status: M3 in progress — onboarding UI done, paste still open
+## Status: Public Beta
 
-- ✅ Menu-bar (tray) app with a Quit item; no Dock icon (macOS *accessory*
-  activation).
-- ✅ Global hotkey (`Ctrl+Alt+D`) **toggles microphone capture**; on stop the
-  recording is transcribed natively and shown in the window.
-- ✅ macOS host adapters implementing the core seams — `TauriNotifier`
-  (notification plugin), `TauriSecretStore` (Keychain via `keyring`),
-  `TauriKeyValueStore` (JSON file) — plus a window prompt for API keys.
-- ✅ Rust commands: `start_capture`/`stop_capture` (cpal → WAV),
-  `deepgram_transcribe` (native REST call — `@deepgram/sdk` refuses to run in
-  a browser/WebView context), `has_accessibility_permission` /
-  `open_accessibility_settings`, `secret_*`, `kv_*`.
-- ✅ `NSMicrophoneUsageDescription` in `src-tauri/Info.plist` — without it,
-  macOS silently kills the process on first mic access (TCC), regardless of
-  the audio API used.
-- ✅ Accessibility onboarding: after each transcription, an ungranted
-  permission shows an in-window message with a System-Settings deep-link,
-  falling through to the transcript display either way.
-- ⏳ **Next:** run `CleanupService` on the transcript and paste into the
-  frontmost app (`TextSink`) instead of just displaying it.
-
-> **Manually verified end-to-end on real macOS hardware** (`npm run tauri
-> dev`): hotkey → recording → transcription → Accessibility check →
-> onboarding UI → transcript. Transcription uses a native Rust HTTP call
-> (`transcribe.rs`) rather than `@verba/core`'s SDK-based `DeepgramProvider`,
-> which cannot run in a WebView at all — see
-> `../../docs/development/phase-1-macos-app.md`'s M3 entry for why.
+- ✅ Menu-bar (tray) accessory app — no Dock icon; global hotkey
+  (`Ctrl+Alt+D`) toggles microphone capture.
+- ✅ Native mic capture (cpal → WAV, `audio.rs`) and native Deepgram Nova-3
+  transcription (`transcribe.rs`) — `@deepgram/sdk` refuses to run inside
+  Tauri's WebView, so this replaces `@verba/core`'s SDK-based
+  `DeepgramProvider` with a plain REST call.
+- ✅ `CleanupService` post-processing (glossary, expansions, templates), then
+  paste into the frontmost app (`paste_text`) via clipboard write + synthetic
+  ⌘V, with the previous clipboard content restored afterwards.
+- ✅ Config system at `~/.config/verba/config.json` (`language`, `glossary`,
+  `expansions`, `templates`, `activeTemplate`); tray menu to switch
+  transcription provider, cleanup language, and active template, or open/reload
+  the config file.
+- ✅ HUD window visualizing the working state (idle/recording/transcribing/processing)
+  as a non-activating, click-through pill; Accessibility and Microphone
+  permission onboarding (System-Settings deep-links) with a fallback to the
+  in-window transcript on ungranted permissions or a failed paste.
+- 📦 **Public Beta**: no `.dmg`/notarized distribution yet — run from source
+  via `just macos-dev` (or `npm run tauri dev` from `apps/macos`).
 
 ## Layout
 
@@ -74,13 +67,14 @@ npm run tauri dev
 > side must be built on a Mac. Validate `tauri.conf.json`/`Cargo.toml` versions
 > with `npm run tauri info` before relying on them.
 
-## Next milestones
+## Next
 
-- **M2** — ✅ shipped: mic capture (Rust) → transcription; Keychain-backed
-  `TauriSecretStore`; a key-entry window.
-- **M3** — ✅ shipped: native Deepgram transcription (replacing the SDK-based
-  provider from M2, which can't run in the WebView) and Accessibility
-  permission onboarding (see Status above). ⏳ still open: `CleanupService` +
-  paste into the frontmost app (`TextSink` via Accessibility / `CGEvent`).
-- **M4/M5** — template picker, settings, glossary/expansions, cost/history;
-  signing, notarization, updater.
+Everything in the Status section above has shipped. Genuinely open work:
+
+- No packaged/signed `.dmg` distribution yet — build-from-source only
+  (`just macos-dev`).
+- Local (whisper.cpp) transcription provider is not yet wired on macOS —
+  Deepgram-only for now; the "Lokal" tray entry is disabled (see
+  [`CLAUDE.md`](../../CLAUDE.md)).
+- Linux/Windows hosts are future work — see the [cross-platform
+  strategy](../../docs/development/cross-platform-strategy.md).

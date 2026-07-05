@@ -1,7 +1,7 @@
 {
   "name": "verba",
   "displayName": "Verba",
-  "description": "The Developer's Dictation Extension – Voice dictation with AI-powered post-processing for VS Code",
+  "description": "Developer-grade voice dictation with AI post-processing — dictate into your editor and terminal, powered by Deepgram Nova-3 and Claude. Bring your own keys.",
   "version": "0.5.0",
   "publisher": "talent-factory",
   "repository": {
@@ -253,7 +253,7 @@
           "items": {
             "type": "string"
           },
-          "description": "Terms that must be preserved exactly during transcription and cleanup (e.g. product names, technical terms). These terms are sent as hints to Whisper and as protection instructions to Claude. Recommended limit: ~80 terms (~224 Whisper prompt tokens)."
+          "description": "Terms that must be preserved exactly during transcription and cleanup (e.g. product names, technical terms). These terms are sent as keyterm hints to Deepgram and as protection instructions to Claude. Recommended limit: ~80 terms; any beyond Deepgram's keyterm token budget are dropped."
         },
         "verba.expansions": {
           "type": "array",

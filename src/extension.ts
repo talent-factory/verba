@@ -4,9 +4,8 @@ import * as path from 'path';
 import * as https from 'https';
 import { FfmpegRecorder } from './recorder';
 import { StatusBarManager } from './statusBarManager';
-import { PipelineContext } from './pipeline';
+import { PipelineContext, CleanupService, Expansion, Notifier } from '@verba/core';
 import { TranscriptionService, TranscriptionProvider, TranscriptionResult } from './transcriptionService';
-import { CleanupService, Expansion } from './cleanupService';
 import { insertText, InsertionResult } from './insertText';
 import { recordDictation, clearLastDictation, computeInsertedRanges, executeUndo, UndoEditor, PreEditSelection } from './undoManager';
 import { selectTemplate, findTemplateForLanguage, Template } from './templatePicker';
@@ -25,6 +24,7 @@ import {
 	WHISPER_MODELS, WHISPER_MODEL_BASE_URL,
 	isTrustedDownloadHost, cleanupFile, isValidExpansion,
 } from './extensionHelpers';
+import { resolvedVerbaConfig, transcriptionLanguageOverride, overrideTranscriptionLanguage } from './verbaConfig';
 
 const DEEPGRAM_API_KEY_STORAGE_KEY = 'verba.deepgramApiKey';
 
@@ -83,7 +83,7 @@ function wrapVscodeEditor(editor: vscode.TextEditor): UndoEditor {
 
 /** Resolves the effective language: manual setting overrides auto-detection. Returns undefined if no valid language. */
 function resolveLanguage(autoDetected: string | undefined): string | undefined {
-	const setting = vscode.workspace.getConfiguration('verba').get<string>('language', 'auto');
+	const setting = resolvedVerbaConfig().language;
 	const lang = setting !== 'auto' ? setting : autoDetected;
 	if (!lang) { return undefined; }
 	if (!/^[a-z]{2,3}(-[A-Za-z]{2,4})?$/.test(lang)) {
@@ -98,13 +98,18 @@ export function activate(context: vscode.ExtensionContext) {
 	const recorder = new FfmpegRecorder();
 	const statusBar = new StatusBarManager();
 	const transcriptionService = new VerbaTranscriptionService(context.secrets);
-	const cleanupService = new VerbaCleanupService(context.secrets);
+	const notifier: Notifier = {
+		warn: (message) => { void vscode.window.showWarningMessage(message).then(undefined, () => {}); },
+		info: (message) => { void vscode.window.showInformationMessage(message).then(undefined, () => {}); },
+		error: (message) => { void vscode.window.showErrorMessage(message).then(undefined, () => {}); },
+	};
+	const cleanupService = new VerbaCleanupService(context.secrets, notifier);
 	cleanupService.onRetry = (attempt, maxAttempts) => {
 		statusBar.setRetrying(attempt, maxAttempts);
 	};
-	const costTracker = new CostTracker(context.globalState);
+	const costTracker = new CostTracker(context.globalState, notifier);
 	const maxHistoryEntries = vscode.workspace.getConfiguration('verba').get<number>('history.maxEntries', 500);
-	const historyManager = new HistoryManager(context.globalState, maxHistoryEntries);
+	const historyManager = new HistoryManager(context.globalState, maxHistoryEntries, notifier);
 	let selectedTemplate: Template | undefined;
 	let preferTerminal = false;
 	let processingAbortController: AbortController | null = null;
@@ -156,7 +161,17 @@ export function activate(context: vscode.ExtensionContext) {
 	applyTranscriptionProvider();
 
 	function applyLanguageSetting(): string {
-		const raw = vscode.workspace.getConfiguration('verba').get<string>('language', 'auto');
+		const override = transcriptionLanguageOverride();
+		if (override !== undefined) {
+			// New explicit setting: 'multi' is Deepgram's multilingual mode, which
+			// this host expresses as 'auto'.
+			const language = overrideTranscriptionLanguage(override);
+			transcriptionService.setLanguage(language);
+			console.log(`[Verba] Transcription language (transcription.language): ${language}`);
+			return language;
+		}
+		// Legacy: derive transcription language from verba.language (back-compat).
+		const raw = resolvedVerbaConfig().language;
 		let language = raw;
 		if (raw !== 'auto' && !/^[a-z]{2,3}(-[A-Za-z]{2,4})?$/.test(raw)) {
 			console.warn(`[Verba] Invalid language setting "${raw}", falling back to auto`);
@@ -186,18 +201,7 @@ export function activate(context: vscode.ExtensionContext) {
 	applyGlossary();
 
 	function loadExpansions(): Expansion[] {
-		const rawGlobal = vscode.workspace
-			.getConfiguration('verba')
-			.get<unknown[]>('expansions', []);
-		const rawGlobalArr = Array.isArray(rawGlobal) ? rawGlobal : [];
-		const globalExpansions = rawGlobalArr.filter(isValidExpansion);
-		const skippedGlobal = rawGlobalArr.length - globalExpansions.length;
-		if (skippedGlobal > 0) {
-			console.warn(`[Verba] Skipped ${skippedGlobal} invalid entries in verba.expansions setting`);
-			vscode.window.showWarningMessage(
-				`Verba: ${skippedGlobal} expansion(s) in settings were skipped (each entry must have non-empty "abbreviation" and "expansion" strings).`
-			);
-		}
+		const globalExpansions = resolvedVerbaConfig().expansions;
 
 		const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
 		let workspaceExpansions: Expansion[] = [];
@@ -283,22 +287,11 @@ export function activate(context: vscode.ExtensionContext) {
 	let contextProvider = setupContextProvider();
 
 	function loadTemplates(): Template[] {
-		const rawTemplates = vscode.workspace
-			.getConfiguration('verba')
-			.get<Template[]>('templates', []);
-		return rawTemplates.filter(
-			(t): t is Template =>
-				typeof t?.name === 'string' && t.name.trim() !== ''
-				&& typeof t?.prompt === 'string' && t.prompt.trim() !== '',
-		);
+		return resolvedVerbaConfig().templates;
 	}
 
 	function loadGlossary(): string[] {
-		const rawGlobalTerms = vscode.workspace
-			.getConfiguration('verba')
-			.get<unknown[]>('glossary', []);
-		const globalTerms = (Array.isArray(rawGlobalTerms) ? rawGlobalTerms : [])
-			.filter((t): t is string => typeof t === 'string' && t.trim() !== '');
+		const globalTerms = resolvedVerbaConfig().glossary;
 
 		const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
 		let workspaceTerms: string[] = [];
@@ -591,7 +584,7 @@ export function activate(context: vscode.ExtensionContext) {
 					return;
 				}
 
-				let audioDevice = vscode.workspace.getConfiguration('verba').get<string>('audioDevice', '').trim() || undefined;
+				let audioDevice = resolvedVerbaConfig().audioDevice;
 				if (!audioDevice && process.platform === 'win32') {
 					audioDevice = await pickAudioDevice(true);
 					if (!audioDevice) {
@@ -637,7 +630,7 @@ export function activate(context: vscode.ExtensionContext) {
 			return undefined;
 		}
 
-		const currentDevice = vscode.workspace.getConfiguration('verba').get<string>('audioDevice', '');
+		const currentDevice = resolvedVerbaConfig().audioDevice ?? '';
 		const items = devices.map(name => ({
 			label: name,
 			description: name === currentDevice ? '(current)' : undefined,
@@ -781,6 +774,10 @@ export function activate(context: vscode.ExtensionContext) {
 			try { applyTranscriptionProvider(); } catch (err) {
 				console.error('[Verba] Failed to reload transcription provider from settings:', err);
 				vscode.window.showWarningMessage('Verba: Failed to reload transcription settings. Changes may not take effect until VS Code is restarted.');
+			}
+			try { applyLanguageSetting(); } catch (err) {
+				console.error('[Verba] Failed to reload language setting:', err);
+				vscode.window.showWarningMessage('Verba: Failed to reload language setting. Changes may not take effect until VS Code is restarted.');
 			}
 			statusBar.setIdle(selectedTemplate?.name);
 		}
@@ -1558,7 +1555,7 @@ export function activate(context: vscode.ExtensionContext) {
 			});
 
 			// Start recording
-			const preferredDevice = vscode.workspace.getConfiguration('verba').get<string>('audioDevice', '').trim() || undefined;
+			const preferredDevice = resolvedVerbaConfig().audioDevice;
 			await continuousRecorder.start(preferredDevice);
 			statusBar.setRecordingContinuous();
 			selectedTemplate = continuousTemplate;

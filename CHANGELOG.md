@@ -4,6 +4,32 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **VS Code Extension — Configurable Transcription Language (`verba.transcription.language`):** New setting to explicitly select the Deepgram transcription language — `multi` for multilingual auto-detection (default) or a fixed ISO code such as `de`, `en`, `fr`, `es`, `it`, `nl`, `pt`. This is a **backward-compatible optional override**: when it is not set, transcription continues to follow `verba.language` exactly as before. Changes apply live (no window reload needed). Closes the parity gap with the macOS app for users who dictate in a fixed language independent of their post-processing language.
+- **macOS App — Native menu-bar dictation app (TF-518):** The macOS build ships as a standalone Tauri menu-bar app with the full dictation flow — record → Deepgram Nova-3 transcription → Claude post-processing → paste into the frontmost application — triggered by a global hotkey (Ctrl+Alt+D). Includes:
+  - **Clipboard paste mechanism:** pastes via the clipboard plus a synthetic ⌘V, saving and restoring the user's previous clipboard text.
+  - **API keys from the environment:** keys resolve ENV → Keychain → GUI prompt, so a shell-launched build needs no prompt; the native `env_var` command is allowlisted to the Verba/Deepgram/Anthropic key names.
+  - **JSON configuration** at `~/.config/verba/config.json` (XDG-aware), with defensive defaults — a missing or malformed file falls back to defaults rather than failing.
+  - **Working-state visualization:** tray-icon states (idle / recording / transcribing / processing) plus a focus-safe, click-through HUD pill that never steals focus from the target application.
+  - **Settings UI** via tray submenus (transcription language, cleanup language, provider, and active template) that write the config and apply on the next dictation without a restart.
+  - **Post-processing templates** shipped as config data (the nine built-in templates), with an active-template selector persisted to the config; user overrides via a `templates` array in `config.json`.
+
+### Changed
+
+- **Shared configuration schema in `@verba/core`:** Configuration resolution — defaults, type validation, and active-template selection — is now defined once in the platform-agnostic `@verba/core` package and consumed by **both** the VS Code extension and the macOS app through a common `ConfigProvider` adapter. Behaviour for valid settings is unchanged, and `verba.glossary`, `verba.expansions`, and `verba.templates` are now portable between the two hosts (identical validation on both). The scattered `getConfiguration('verba')` reads in the extension, and the macOS app's own resolver, now go through this single source; the macOS tray reads the same canonical default templates.
+- **VS Code Extension — Stricter template validation (all-or-nothing):** If any entry in `verba.templates` is malformed — missing a non-empty `name` or a string `prompt` — the extension now falls back to the complete set of built-in default templates instead of silently loading only the valid entries. This prevents a partially-broken template menu and matches the macOS app. A parity test keeps the built-in template defaults in `package.json` in lockstep with the canonical set shipped by `@verba/core`.
+- **Glossary/expansion settings validated per entry (both hosts):** `verba.glossary` and `verba.expansions` are validated element by element in the shared schema — invalid entries are dropped while valid ones are kept, and empty/whitespace-only glossary terms are ignored. A single malformed entry never discards the whole list.
+
+### Fixed
+
+- **macOS App — Transcription language mis-detection:** removed the contradictory `detect_language=true` that was sent alongside `language=multi`, which caused some German dictation to be transcribed as Dutch. The transcription language is now configurable and defaults to multilingual mode.
+- **macOS App — Invalid environment API key no longer dead-ends:** when a Deepgram key sourced from an environment variable is rejected, Verba now shows a distinct, actionable message (correct or unset the variable) instead of silently re-prompting in an unrecoverable loop.
+- **macOS App — Silent failures surfaced:** a failed global-hotkey registration, a malformed `config.json`, and a failed tray settings write now raise a native notification instead of only writing to a hidden window or stderr (invisible on a menu-bar app).
+- **macOS App — Clipboard restore on paste failure:** the previous clipboard is now restored even when the synthetic ⌘V fails, so a failed paste no longer leaves the transcript stranded on the clipboard with the user's prior content lost.
+
 ## [0.5.0](https://github.com/talent-factory/verba/compare/verba-v0.4.0...verba-v0.5.0) (2026-03-04)
 
 ### Added

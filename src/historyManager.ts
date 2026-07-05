@@ -1,7 +1,9 @@
 /**
  * Manages dictation history records with full-text search.
- * Persists records via VS Code globalState for cross-session access.
+ * Persists records via a KeyValueStore for cross-session access.
  */
+
+import { KeyValueStore, Notifier } from '@verba/core';
 
 const STORAGE_KEY = 'verba.history';
 const DEFAULT_MAX_ENTRIES = 500;
@@ -71,26 +73,22 @@ export interface HistoryRecord {
 	workspaceFolder?: string;
 }
 
-export interface GlobalState {
-	get<T>(key: string, defaultValue: T): T;
-	update(key: string, value: unknown): Thenable<void>;
-}
-
-// Lazy-load vscode module so HistoryManager remains testable outside the extension host.
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-function getVscode(): typeof import('vscode') { return require('vscode'); }
+/** @deprecated Use {@link KeyValueStore} from '@verba/core'. Retained as an alias for compatibility. */
+export type GlobalState = KeyValueStore;
 
 let _globalIdCounter = 0;
 
 export class HistoryManager {
-	private readonly _globalState: GlobalState;
+	private readonly _globalState: KeyValueStore;
+	private readonly _notifier?: Notifier;
 	private readonly _maxEntries: number;
 	private _records: HistoryRecord[];
 	private _persistFailureWarned = false;
 	private _persistQueue: Promise<void> = Promise.resolve();
 
-	constructor(globalState: GlobalState, maxEntries: number = DEFAULT_MAX_ENTRIES) {
+	constructor(globalState: KeyValueStore, maxEntries: number = DEFAULT_MAX_ENTRIES, notifier?: Notifier) {
 		this._globalState = globalState;
+		this._notifier = notifier;
 		this._maxEntries = Math.max(1, maxEntries);
 		const raw = globalState.get<unknown[]>(STORAGE_KEY, []);
 		const candidates = Array.isArray(raw) ? raw : [];
@@ -156,13 +154,7 @@ export class HistoryManager {
 				console.error('[Verba] Failed to persist history records:', err);
 				if (!this._persistFailureWarned) {
 					this._persistFailureWarned = true;
-					try {
-						getVscode().window.showWarningMessage('Verba: Failed to save dictation history. History data for this session may be lost.');
-					} catch (vsErr: unknown) {
-						if (!(vsErr instanceof Error && vsErr.message.includes('Cannot find module'))) {
-							console.warn('[Verba] Failed to show persist-failure warning:', vsErr);
-						}
-					}
+					this._notifier?.warn('Verba: Failed to save dictation history. History data for this session may be lost.');
 				}
 			}
 		});

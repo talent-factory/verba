@@ -1,14 +1,5 @@
-/** A prompt template for dictation post-processing. */
-export interface Template {
-	/** Display name shown in the Quick Pick menu (e.g. "Freitext", "Commit Message"). */
-	name: string;
-	/** The system prompt sent to Claude for post-processing the transcript. */
-	prompt: string;
-	/** If true, semantic code search provides context snippets alongside the transcript. */
-	contextAware?: boolean;
-	/** VS Code language IDs that trigger automatic selection of this template (e.g. ["java", "kotlin"]). */
-	fileTypes?: string[];
-}
+import type { Template } from '@verba/core';
+export type { Template };
 
 interface QuickPickItem {
 	label: string;

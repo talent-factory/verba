@@ -1,5 +1,5 @@
 site_name: Verba
-site_description: The Developer's Dictation Extension — Voice dictation with AI-powered post-processing for VS Code
+site_description: Developer-grade voice dictation, everywhere you type — AI-powered dictation system-wide on macOS (Beta) or deep inside VS Code.
 site_url: https://talent-factory.github.io/verba/
 repo_url: https://github.com/talent-factory/verba
 repo_name: talent-factory/verba
@@ -53,20 +53,37 @@ markdown_extensions:
 
 exclude_docs: |
   plans/
-  ROADMAP.md
+  superpowers/
 
 nav:
   - Home: index.md
   - Getting Started:
-    - Installation: getting-started/installation.md
-    - Quick Start: getting-started/quickstart.md
-  - User Guide:
-    - Templates: guide/templates.md
-    - Terminal Mode: guide/terminal.md
-    - Claude Code Integration: guide/claude-code.md
-    - Configuration: guide/configuration.md
+    - Choose Your Surface: getting-started/choose-surface.md
+    - Prerequisites: getting-started/prerequisites.md
+  - Core Features:
+    - How Verba Works: concepts/how-it-works.md
+    - Prompt Templates: concepts/templates.md
+    - Glossary & Expansions: concepts/glossary.md
+    - Voice Commands & Course Correction: concepts/voice-commands.md
+    - Bring Your Own Key & Privacy: concepts/byok.md
+  - VS Code Extension:
+    - Installation: vscode/installation.md
+    - Quick Start: vscode/quickstart.md
+    - Editor & Terminal: vscode/editor-terminal.md
+    - Claude Code Integration: vscode/claude-code.md
+    - Offline Transcription: vscode/offline.md
+    - Dictation History: vscode/history.md
+    - Configuration: vscode/configuration.md
+  - macOS App (Beta):
+    - Overview & Status: macos/overview.md
+    - Installation: macos/installation.md
+    - Usage: macos/usage.md
+    - Configuration: macos/configuration.md
+    - Permissions: macos/permissions.md
   - Development:
     - Architecture: development/architecture.md
+    - Cross-Platform Strategy: development/cross-platform-strategy.md
+    - macOS App Internals: development/macos-internals.md
     - ADR - Deepgram Migration: development/adr-deepgram-migration.md
     - Contributing: development/contributing.md
   - Changelog: changelog.md

@@ -45,6 +45,15 @@ function isOverloadedError(err: unknown): boolean {
 	return err instanceof Error && (err as any).status === 529;
 }
 
+/** Throws a named `AbortError` if `signal` has been aborted. */
+function throwIfAborted(signal?: AbortSignal): void {
+	if (signal?.aborted) {
+		const abortError = new Error('Cleanup aborted');
+		abortError.name = 'AbortError';
+		throw abortError;
+	}
+}
+
 /**
  * Cleans up a raw transcript using Claude API: removes filler words,
  * smooths sentences, corrects transcription errors, preserves glossary terms,
@@ -90,8 +99,13 @@ export class CleanupService implements ProcessingStage {
 	/** Optional callback invoked before each retry attempt (e.g. to update the status bar). */
 	onRetry?: (attempt: number, maxAttempts: number) => void;
 
-	/** Cleans up the transcript in a single (non-streaming) API call. */
-	async process(input: string, context?: PipelineContext): Promise<string> {
+	/**
+	 * Cleans up the transcript in a single (non-streaming) API call.
+	 * @param signal - Optional AbortSignal to cancel the request mid-flight (e.g.
+	 *   when the caller enforces its own timeout); aborts the in-flight HTTP call
+	 *   so no work or API cost is wasted on a result that will be discarded.
+	 */
+	async process(input: string, context?: PipelineContext, signal?: AbortSignal): Promise<string> {
 		const { client, systemPrompt, userMessage } = await this.prepareRequest(context, input);
 
 		const requestParams = {
@@ -104,11 +118,15 @@ export class CleanupService implements ProcessingStage {
 		let response;
 		let lastError: unknown;
 		for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+			throwIfAborted(signal);
 			try {
-				response = await client.messages.create(requestParams);
+				response = await client.messages.create(requestParams, { signal });
 				break;
 			} catch (err: unknown) {
 				lastError = err;
+				// An abort is a deliberate cancellation, not a transient failure:
+				// stop immediately rather than retrying or mapping to an API error.
+				throwIfAborted(signal);
 				if (isOverloadedError(err) && attempt < MAX_ATTEMPTS) {
 					const delay = RETRY_BASE_DELAY_MS * Math.pow(2, attempt - 1);
 					console.log(`[Verba] API overloaded (attempt ${attempt}/${MAX_ATTEMPTS}), retrying in ${delay}ms…`);

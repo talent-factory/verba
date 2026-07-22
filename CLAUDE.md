@@ -123,7 +123,7 @@ release-please versions the **VS Code extension only** (`package.json` at the re
 - TypeScript strict mode
 - Follow VS Code Extension best practices
 - **Stale `@verba/core` dist:** hosts import `@verba/core` from `dist/` (package `main` → `dist/index.js`), not `src/`. After changing `packages/core/src/**`, run `npm run compile:core` — `just macos-*` does this automatically; a direct `npm run tauri dev` does not. A stale `dist/` manifests as a dead macOS hotkey with no notification (see "Monorepo Layout" for the full rule).
-- **macOS config schema:** top-level bare keys (`language`, `transcription.language`, `glossary`, `expansions`, `templates`, `activeTemplate`, `audioDevice`) — **no** `verba.` prefix. A VS Code–style `verba.language` key is silently ignored. Templates are all-or-nothing: one invalid entry falls back to the 9 bundled defaults. Config lives at `~/.config/verba/config.json` (XDG).
+- **macOS config schema:** top-level bare keys (`language`, `transcription.language`, `glossary`, `expansions`, `templates`, `activeTemplate`, `audioDevice`) — **no** `verba.` prefix. A VS Code–style `verba.language` key is silently ignored. Templates are all-or-nothing: one invalid entry falls back to the 10 bundled defaults. Config lives at `~/.config/verba/config.json` (XDG).
 
 ## Monorepo Layout
 

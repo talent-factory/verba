@@ -206,7 +206,7 @@ mod tests {
     #[test]
     fn template_choices_falls_back_to_bundled_defaults() {
         let choices = template_choices_from_value(&serde_json::json!({}), DEFAULT_TEMPLATES_JSON);
-        assert_eq!(choices.len(), 9);
+        assert_eq!(choices.len(), 10);
         assert_eq!(choices[0].1, "Freitext");
         assert_eq!(choices[0].0, "✏️ Freitext");
     }
@@ -215,15 +215,15 @@ mod tests {
     fn template_choices_falls_back_when_any_entry_is_invalid() {
         // non-array templates → defaults
         let bad = serde_json::json!({ "templates": "nope" });
-        assert_eq!(template_choices_from_value(&bad, DEFAULT_TEMPLATES_JSON).len(), 9);
+        assert_eq!(template_choices_from_value(&bad, DEFAULT_TEMPLATES_JSON).len(), 10);
         // a mixed array where one entry lacks a valid name/prompt is entirely
-        // invalid (all-or-nothing) → falls back to the 9 bundled defaults,
+        // invalid (all-or-nothing) → falls back to the 10 bundled defaults,
         // matching the TS `isTemplateArray` semantics.
         let mixed = serde_json::json!({
             "templates": [ { "prompt": "no name" }, { "name": "Ok", "prompt": "y" } ]
         });
         let choices = template_choices_from_value(&mixed, DEFAULT_TEMPLATES_JSON);
-        assert_eq!(choices.len(), 9);
+        assert_eq!(choices.len(), 10);
         assert_eq!(choices[0].1, "Freitext");
     }
 
@@ -236,7 +236,7 @@ mod tests {
             "templates": [ { "name": "   ", "prompt": "x" } ]
         });
         let choices = template_choices_from_value(&cfg, DEFAULT_TEMPLATES_JSON);
-        assert_eq!(choices.len(), 9);
+        assert_eq!(choices.len(), 10);
         assert_eq!(choices[0].1, "Freitext");
     }
 

@@ -117,7 +117,7 @@ suite('loadConfig', () => {
 });
 
 suite('templates', () => {
-	test('defaults to the 9 bundled templates when config has none', async () => {
+	test('defaults to the 10 bundled templates when config has none', async () => {
 		const cfg = await loadConfig(sinon.stub().resolves('{}'));
 		assert.strictEqual(cfg.templates.length, 10);
 		assert.strictEqual(cfg.templates[0].name, 'Freitext');

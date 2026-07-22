@@ -2,11 +2,14 @@ import { invoke } from '@tauri-apps/api/core';
 import {
 	resolveConfig,
 	resolveActiveTemplate,
+	resolveTemplateOutputLanguage,
 	DEFAULT_TEMPLATES,
+	AGENT_INSTRUCTION_TEMPLATE_NAME,
 	type ConfigProvider,
 	type Expansion,
 	type PipelineContext,
 	type ResolvedConfig,
+	type SurfaceClass,
 	type Template,
 } from '@verba/core';
 
@@ -75,9 +78,9 @@ export function applyConfig(config: ResolvedConfig, targets: ApplyTargets): void
  */
 /** Picks the template for a detected surface: an agent surface → the "Agent
  *  Instruction" template (if present); otherwise the configured active template. */
-export function templateForSurface(config: ResolvedConfig, surfaceClass: string): Template {
+export function templateForSurface(config: ResolvedConfig, surfaceClass: SurfaceClass): Template {
 	if (surfaceClass === 'agent') {
-		const agent = config.templates.find(t => t.name === 'Agent Instruction');
+		const agent = config.templates.find(t => t.name === AGENT_INSTRUCTION_TEMPLATE_NAME);
 		if (agent) {
 			return agent;
 		}
@@ -91,8 +94,9 @@ export function cleanupContextFor(config: ResolvedConfig, context?: PipelineCont
 	if (config.language !== 'auto') {
 		merged.detectedLanguage = config.language;
 	}
-	if (template.outputLanguage) {
-		merged.outputLanguage = template.outputLanguage;
+	const outputLanguage = resolveTemplateOutputLanguage(template.outputLanguage);
+	if (outputLanguage) {
+		merged.outputLanguage = outputLanguage;
 	}
 	return merged;
 }

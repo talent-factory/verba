@@ -33,20 +33,65 @@ pub(crate) fn focused_herdr_agent_from_json(snapshot: &str) -> Option<HerdrAgent
 /// touches the environment; the parsing it relies on is tested below.
 pub(crate) fn query_herdr() -> Option<HerdrAgent> {
     // `std::process::Command` has no built-in timeout; herdr answers a local
-    // socket in milliseconds, but guard against a hung server by waiting on a
-    // short-lived thread.
+    // socket in milliseconds. Spawn with a piped stdout, read it on a short-lived
+    // thread, and bound the wait — so a hung herdr can be killed rather than left
+    // to linger. Every distinguishable failure is logged, matching the eprintln!
+    // convention of the sibling modules (transcribe.rs, store.rs); only "herdr not
+    // installed" stays silent, since that is the common, benign case.
+    let mut child = match std::process::Command::new("herdr")
+        .args(["api", "snapshot"])
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+    {
+        Ok(child) => child,
+        Err(err) => {
+            if err.kind() != std::io::ErrorKind::NotFound {
+                eprintln!("[Verba] herdr invocation failed: {err}");
+            }
+            return None;
+        }
+    };
+
+    let mut stdout = child.stdout.take()?;
     let (tx, rx) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
-        let out = std::process::Command::new("herdr")
-            .args(["api", "snapshot"])
-            .output();
-        let _ = tx.send(out);
+        use std::io::Read;
+        let mut buf = String::new();
+        let result = stdout.read_to_string(&mut buf).map(|_| buf);
+        let _ = tx.send(result);
     });
-    let out = rx.recv_timeout(Duration::from_millis(500)).ok()?.ok()?;
-    if !out.status.success() {
-        return None;
+
+    match rx.recv_timeout(Duration::from_millis(500)) {
+        Ok(Ok(stdout)) => {
+            // A non-zero exit is an actionable "herdr present but broken" signal
+            // (distinct from "not installed"), so surface it.
+            if let Ok(status) = child.wait() {
+                if !status.success() {
+                    eprintln!("[Verba] herdr api snapshot exited with {status}; treating as no agent");
+                }
+            }
+            let parsed = focused_herdr_agent_from_json(&stdout);
+            // JSON that parsed but yielded no focused agent when it *looks* like a
+            // herdr envelope is a possible schema drift — surface it rather than
+            // silently reporting "no agent".
+            if parsed.is_none() && stdout.trim_start().starts_with('{') {
+                eprintln!("[Verba] herdr snapshot parsed but no focused agent was found (possible schema drift)");
+            }
+            parsed
+        }
+        Ok(Err(err)) => {
+            let _ = child.wait();
+            eprintln!("[Verba] reading herdr snapshot failed: {err}");
+            None
+        }
+        Err(_) => {
+            eprintln!("[Verba] herdr api snapshot timed out after 500ms; killing it and treating as no agent");
+            let _ = child.kill();
+            let _ = child.wait();
+            None
+        }
     }
-    focused_herdr_agent_from_json(&String::from_utf8_lossy(&out.stdout))
 }
 
 // ---- Tier 3: frontmost application (NSWorkspace) ----
@@ -86,15 +131,25 @@ pub(crate) fn focused_window_title(pid: i32) -> Option<String> {
 
 // ---- Orchestration ----
 
-#[derive(serde::Serialize)]
-pub struct Surface {
-    pub class: String,
-    pub agent: Option<String>,
-    pub status: Option<String>,
+/// The detected surface, serialized to the frontend as `{ "class": "...", ... }`.
+/// A tagged enum makes illegal states unrepresentable (no `agent` payload on a
+/// non-agent surface, no `agent` variant without an agent name) and gives
+/// `classify` compiler-checked exhaustiveness. The `#[serde(tag = "class")]`
+/// shape is wire-compatible with the `DetectedSurface` type the TS host reads.
+#[derive(serde::Serialize, Debug, PartialEq, Eq)]
+#[serde(tag = "class", rename_all = "lowercase")]
+pub enum Surface {
+    Generic,
+    Editor,
+    Agent {
+        agent: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        status: Option<String>,
+    },
 }
 
 fn generic() -> Surface {
-    Surface { class: "generic".into(), agent: None, status: None }
+    Surface::Generic
 }
 
 /// Pure decision logic — see the "Surface-class decision" contract.
@@ -111,16 +166,16 @@ pub(crate) fn classify(
         None => return generic(),
     };
     if editors.iter().any(|e| e == &front.bundle_id) {
-        return Surface { class: "editor".into(), agent: None, status: None };
+        return Surface::Editor;
     }
     if terminals.iter().any(|t| t == &front.bundle_id) {
         if let Some(h) = herdr {
-            return Surface { class: "agent".into(), agent: Some(h.agent), status: Some(h.status) };
+            return Surface::Agent { agent: h.agent, status: Some(h.status) };
         }
         if let Some(t) = title {
             let lc = t.to_lowercase();
             if let Some(m) = markers.iter().find(|m| lc.contains(&m.to_lowercase())) {
-                return Surface { class: "agent".into(), agent: Some(m.clone()), status: None };
+                return Surface::Agent { agent: m.clone(), status: None };
             }
         }
         return generic();
@@ -137,12 +192,28 @@ pub async fn detect_surface(
 ) -> Surface {
     tauri::async_runtime::spawn_blocking(move || {
         let front = frontmost_app();
-        let herdr = query_herdr();
-        let title = front.as_ref().and_then(|f| focused_window_title(f.pid));
+        // The costly tiers (herdr shell-out, AX title lookup) only matter for a
+        // focused terminal — the sole surface classify() can turn into "agent".
+        // Skip them for editors and unknown apps, avoiding a per-dictation herdr
+        // call and an unnecessary Accessibility touch. This reuses classify()'s
+        // exact terminal predicate, so the shortcut can never change the outcome.
+        let is_terminal = front
+            .as_ref()
+            .is_some_and(|f| terminal_apps.iter().any(|t| t == &f.bundle_id));
+        let (herdr, title) = if is_terminal {
+            (query_herdr(), front.as_ref().and_then(|f| focused_window_title(f.pid)))
+        } else {
+            (None, None)
+        };
         classify(front, herdr, title, &agent_markers, &terminal_apps, &editor_apps)
     })
     .await
-    .unwrap_or_else(|_| generic())
+    .unwrap_or_else(|err| {
+        // A JoinError here means a tier panicked (e.g. an AX/objc2 nil). Degrade to
+        // generic — but log it, so a recurring panic isn't invisibly silent.
+        eprintln!("[Verba] detect_surface task panicked: {err}");
+        generic()
+    })
 }
 
 #[cfg(test)]
@@ -157,7 +228,7 @@ mod tests {
     fn editor_app_is_editor() {
         let s = classify(front("com.microsoft.VSCode"), None, None,
             &["claude".into()], &["com.apple.Terminal".into()], &["com.microsoft.VSCode".into()]);
-        assert_eq!(s.class, "editor");
+        assert_eq!(s, Surface::Editor);
     }
 
     #[test]
@@ -165,37 +236,42 @@ mod tests {
         let herdr = Some(HerdrAgent { agent: "claude".into(), status: "working".into() });
         let s = classify(front("com.apple.Terminal"), herdr, None,
             &["claude".into()], &["com.apple.Terminal".into()], &[]);
-        assert_eq!(s.class, "agent");
-        assert_eq!(s.agent.as_deref(), Some("claude"));
-        assert_eq!(s.status.as_deref(), Some("working"));
+        assert_eq!(s, Surface::Agent { agent: "claude".into(), status: Some("working".into()) });
     }
 
     #[test]
     fn terminal_with_marker_in_title_is_agent() {
         let s = classify(front("com.apple.Terminal"), None, Some("~ — codex — 80x24".into()),
             &["codex".into()], &["com.apple.Terminal".into()], &[]);
-        assert_eq!(s.class, "agent");
-        assert_eq!(s.agent.as_deref(), Some("codex"));
+        assert_eq!(s, Surface::Agent { agent: "codex".into(), status: None });
+    }
+
+    #[test]
+    fn marker_matching_is_case_insensitive_on_both_sides() {
+        // Mixed-case marker vs. upper-case title: exercises the double `to_lowercase`.
+        let s = classify(front("com.apple.Terminal"), None, Some("session: CLAUDE".into()),
+            &["Claude".into()], &["com.apple.Terminal".into()], &[]);
+        assert_eq!(s, Surface::Agent { agent: "Claude".into(), status: None });
     }
 
     #[test]
     fn plain_terminal_is_generic() {
         let s = classify(front("com.apple.Terminal"), None, Some("~ — zsh".into()),
             &["claude".into()], &["com.apple.Terminal".into()], &[]);
-        assert_eq!(s.class, "generic");
+        assert_eq!(s, Surface::Generic);
     }
 
     #[test]
     fn unknown_app_is_generic() {
         let s = classify(front("com.tinyspeck.slackmacgap"), None, None,
             &["claude".into()], &["com.apple.Terminal".into()], &["com.microsoft.VSCode".into()]);
-        assert_eq!(s.class, "generic");
+        assert_eq!(s, Surface::Generic);
     }
 
     #[test]
     fn no_frontmost_app_is_generic() {
         let s = classify(None, None, None, &[], &[], &[]);
-        assert_eq!(s.class, "generic");
+        assert_eq!(s, Surface::Generic);
     }
 
     const SNAPSHOT: &str = r#"{"id":"cli:api:snapshot","result":{"snapshot":{"agents":[

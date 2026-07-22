@@ -1,5 +1,7 @@
-import type { Template } from '@verba/core';
+import { AGENT_INSTRUCTION_TEMPLATE_NAME, type Template } from '@verba/core';
 export type { Template };
+/** Re-exported from `@verba/core` so existing importers keep their path. */
+export { AGENT_INSTRUCTION_TEMPLATE_NAME };
 
 interface QuickPickItem {
 	label: string;
@@ -52,9 +54,6 @@ export function findTemplateForLanguage(templates: Template[], languageId: strin
 		Array.isArray(t.fileTypes) && t.fileTypes.some(ft => typeof ft === 'string' && ft.toLowerCase() === id),
 	);
 }
-
-/** The bundled template used for dictation into an AI-agent surface (e.g. a focused terminal). */
-export const AGENT_INSTRUCTION_TEMPLATE_NAME = 'Agent Instruction';
 
 /**
  * Chooses a template automatically from the dictation surface:

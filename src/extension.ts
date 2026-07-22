@@ -4,7 +4,7 @@ import * as path from 'path';
 import * as https from 'https';
 import { FfmpegRecorder } from './recorder';
 import { StatusBarManager } from './statusBarManager';
-import { PipelineContext, CleanupService, Expansion, Notifier } from '@verba/core';
+import { PipelineContext, CleanupService, Expansion, Notifier, resolveTemplateOutputLanguage } from '@verba/core';
 import { TranscriptionService, TranscriptionProvider, TranscriptionResult } from './transcriptionService';
 import { insertText, InsertionResult } from './insertText';
 import { recordDictation, clearLastDictation, computeInsertedRanges, executeUndo, UndoEditor, PreEditSelection } from './undoManager';
@@ -400,7 +400,7 @@ export function activate(context: vscode.ExtensionContext) {
 				// Step 3: Claude post-processing (pass captured selection as context only with a template)
 				const pipelineContext: PipelineContext = {
 					templatePrompt: selectedTemplate?.prompt,
-					outputLanguage: selectedTemplate?.outputLanguage,
+					outputLanguage: resolveTemplateOutputLanguage(selectedTemplate?.outputLanguage),
 					contextSnippets,
 					selectedText: capturedSelectedText,
 					detectedLanguage: resolveLanguage(transcriptionResult.detectedLanguage),
@@ -1439,7 +1439,7 @@ export function activate(context: vscode.ExtensionContext) {
 						// Claude cleanup
 						const pipelineContext: PipelineContext = {
 							templatePrompt: continuousTemplate?.prompt,
-							outputLanguage: continuousTemplate?.outputLanguage,
+							outputLanguage: resolveTemplateOutputLanguage(continuousTemplate?.outputLanguage),
 							selectedText: capturedText,
 							detectedLanguage: resolveLanguage(event.detectedLanguage),
 						};

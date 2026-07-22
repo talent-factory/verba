@@ -1,6 +1,7 @@
 import Anthropic, { type ClientOptions } from '@anthropic-ai/sdk';
 import { ProcessingStage, PipelineContext } from './pipeline';
 import { SecretStore, Notifier } from './adapters';
+import { isLanguageCode } from './config';
 
 export interface Expansion {
 	abbreviation: string;
@@ -248,13 +249,14 @@ export class CleanupService implements ProcessingStage {
 		context: PipelineContext | undefined,
 		input: string,
 	): Promise<{ client: Anthropic; systemPrompt: string; userMessage: string }> {
-		const isValidLangCode = (c: unknown): c is string =>
-			typeof c === 'string' && /^[a-z]{2,3}(-[A-Za-z]{2,4})?$/.test(c);
+		// Re-validate at the interpolation site (defense in depth): even though
+		// `outputLanguage` is branded upstream, this is the sink where the value
+		// enters the prompt, so the guard stays here regardless of the type.
 		const outputLang = context?.outputLanguage;
 		const langCode = context?.detectedLanguage;
-		const languageHint = isValidLangCode(outputLang)
+		const languageHint = isLanguageCode(outputLang)
 			? `\nAlways write the output in the language identified by ISO code "${outputLang}", regardless of the transcript's language.\n`
-			: isValidLangCode(langCode)
+			: isLanguageCode(langCode)
 				? `\nThe transcript language is: ${langCode}. Respond in the same language.\n`
 				: '';
 		const glossaryInstruction = this.glossary.length > 0

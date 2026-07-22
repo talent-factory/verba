@@ -11,8 +11,56 @@ export interface Template {
 	contextAware?: boolean;
 	fileTypes?: string[];
 	/** Opt-in: force the cleanup output into this ISO 639 language (e.g. "en"),
-	 *  regardless of the dictation language. Absent → follow the detected language. */
+	 *  regardless of the dictation language. Untrusted (from user config); it is
+	 *  narrowed via {@link toLanguageCode} before it can reach a Claude prompt.
+	 *  Absent → follow the detected language. */
 	outputLanguage?: string;
+}
+
+/**
+ * A string proven to match the ISO 639 shape (e.g. `"en"`, `"pt-BR"`). Only a
+ * value carrying this brand may be interpolated into a Claude language directive,
+ * which is what makes the language field safe against prompt injection — the brand
+ * is unforgeable except through {@link toLanguageCode}.
+ */
+export type LanguageCode = string & { readonly __brand: 'LanguageCode' };
+
+/** The single source of truth for the accepted language-code shape. */
+const LANGUAGE_CODE_RE = /^[a-z]{2,3}(-[A-Za-z]{2,4})?$/;
+
+/** Type guard: `true` when `v` is a well-formed ISO 639 language code. */
+export function isLanguageCode(v: unknown): v is LanguageCode {
+	return typeof v === 'string' && LANGUAGE_CODE_RE.test(v);
+}
+
+/** Narrows an untrusted value to a {@link LanguageCode}, or `undefined` when it is
+ *  absent or malformed. The one gate through which a language code may become a prompt directive. */
+export function toLanguageCode(v: unknown): LanguageCode | undefined {
+	return isLanguageCode(v) ? v : undefined;
+}
+
+/** Narrows a template's raw `outputLanguage`, warning once when a non-empty value is
+ *  rejected so a misconfigured code (e.g. `"english"`) is diagnosable rather than silently dropped. */
+export function resolveTemplateOutputLanguage(raw: unknown): LanguageCode | undefined {
+	const code = toLanguageCode(raw);
+	if (raw && !code) {
+		console.warn(`[Verba] Ignoring invalid template outputLanguage ${JSON.stringify(raw)}; expected an ISO 639 code like "en".`);
+	}
+	return code;
+}
+
+/** Canonical name of the bundled template selected when dictating into an AI-agent surface.
+ *  Shared by both hosts so a rename can't silently desync the two agent-selection paths. */
+export const AGENT_INSTRUCTION_TEMPLATE_NAME = 'Agent Instruction';
+
+/** The surface class the macOS host detects for the frontmost app. */
+export type SurfaceClass = 'generic' | 'editor' | 'agent';
+
+/** The `detect_surface` IPC payload — mirrors the Rust `Surface` enum's tagged shape. */
+export interface DetectedSurface {
+	class: SurfaceClass;
+	agent?: string;
+	status?: string;
 }
 
 /** The 10 bundled default templates — the single canonical source for both hosts. */

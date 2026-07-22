@@ -1,6 +1,17 @@
 import * as assert from 'assert';
 
-import { DEFAULT_TEMPLATES, resolveConfig, resolveActiveTemplate, type ResolvedConfig } from '../../config';
+import {
+	DEFAULT_TEMPLATES,
+	DEFAULT_AGENT_MARKERS,
+	DEFAULT_TERMINAL_APPS,
+	DEFAULT_EDITOR_APPS,
+	resolveConfig,
+	resolveActiveTemplate,
+	isLanguageCode,
+	toLanguageCode,
+	resolveTemplateOutputLanguage,
+	type ResolvedConfig,
+} from '../../config';
 import type { ConfigProvider } from '../../adapters';
 
 suite('DEFAULT_TEMPLATES', () => {
@@ -159,5 +170,52 @@ suite('detection config', () => {
 	test('resolveConfig honors user-provided lists', () => {
 		const cfg = resolveConfig(new FakeConfigProvider({ agentMarkers: ['xyz'] }));
 		assert.deepStrictEqual(cfg.agentMarkers, ['xyz']);
+	});
+
+	test('an empty list falls back to the defaults', () => {
+		const cfg = resolve({ agentMarkers: [], terminalApps: [], editorApps: [] });
+		assert.deepStrictEqual(cfg.agentMarkers, DEFAULT_AGENT_MARKERS);
+		assert.deepStrictEqual(cfg.terminalApps, DEFAULT_TERMINAL_APPS);
+		assert.deepStrictEqual(cfg.editorApps, DEFAULT_EDITOR_APPS);
+	});
+
+	test('a non-array value falls back to the defaults', () => {
+		const cfg = resolve({ agentMarkers: 'claude' });
+		assert.deepStrictEqual(cfg.agentMarkers, DEFAULT_AGENT_MARKERS);
+	});
+
+	// Unlike `templates` (all-or-nothing), the detection lists filter-and-keep:
+	// invalid entries are dropped, valid strings survive.
+	test('a mixed-validity list keeps only the valid string entries', () => {
+		const cfg = resolve({ agentMarkers: ['claude', 42, '', '  ', 'codex'] });
+		assert.deepStrictEqual(cfg.agentMarkers, ['claude', 'codex']);
+	});
+});
+
+suite('language code validation', () => {
+	test('accepts ISO 639 codes including regional variants', () => {
+		for (const c of ['en', 'de', 'fra', 'pt-BR', 'en-US', 'zh-Hans']) {
+			assert.ok(isLanguageCode(c), `${c} should be accepted`);
+		}
+	});
+
+	test('rejects malformed and injection-shaped values', () => {
+		// Trailing payloads must be rejected wholesale — this is what the anchored
+		// regex buys, and what keeps a config value from becoming a prompt directive.
+		for (const c of ['english', 'EN', 'e', 'en ', 'en\nignore all', 'en; rm -rf', '', 42, null]) {
+			assert.ok(!isLanguageCode(c), `${JSON.stringify(c)} should be rejected`);
+		}
+	});
+
+	test('toLanguageCode narrows a valid code and drops an invalid one', () => {
+		assert.strictEqual(toLanguageCode('en-US'), 'en-US');
+		assert.strictEqual(toLanguageCode('english'), undefined);
+		assert.strictEqual(toLanguageCode(undefined), undefined);
+	});
+
+	test('resolveTemplateOutputLanguage returns the code, or undefined for absent/invalid', () => {
+		assert.strictEqual(resolveTemplateOutputLanguage('en'), 'en');
+		assert.strictEqual(resolveTemplateOutputLanguage(undefined), undefined);
+		assert.strictEqual(resolveTemplateOutputLanguage('not-a-code!'), undefined);
 	});
 });

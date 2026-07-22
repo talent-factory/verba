@@ -1,4 +1,4 @@
-import { CleanupService, type ApiKeyPrompt } from '@verba/core';
+import { CleanupService, type ApiKeyPrompt, type DetectedSurface, type SurfaceClass } from '@verba/core';
 import { invoke } from '@tauri-apps/api/core';
 import { TauriSecretStore } from './adapters/secretStore';
 import { EnvAwareSecretStore } from './adapters/envAwareSecretStore';
@@ -85,9 +85,9 @@ export async function createDictationController(): Promise<{
 			// controller's `withCleanupTimeout` bounds the user-visible wait.
 			process: async (transcript, context, signal) => {
 				const cfg = configState.current;
-				let surfaceClass = 'generic';
+				let surfaceClass: SurfaceClass = 'generic';
 				try {
-					const surface = await invoke<{ class: string }>('detect_surface', {
+					const surface = await invoke<DetectedSurface>('detect_surface', {
 						agentMarkers: cfg.agentMarkers,
 						terminalApps: cfg.terminalApps,
 						editorApps: cfg.editorApps,

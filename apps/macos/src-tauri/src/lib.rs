@@ -1,5 +1,6 @@
 mod audio;
 mod config;
+mod detect;
 mod env;
 mod http;
 mod hud;
@@ -37,6 +38,7 @@ pub fn run() {
             paste::has_accessibility_permission,
             paste::open_accessibility_settings,
             paste::paste_text,
+            detect::detect_surface,
             secret::secret_get,
             secret::secret_set,
             secret::secret_delete,

@@ -33,3 +33,10 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 # docs/superpowers/specs/2026-07-03-macos-paste-cleanup-design.md.
 arboard = "3"
 core-graphics = "0.25"
+
+# Surface detection (frontmost app + AX window title) for agent-aware templates.
+objc2-app-kit = { version = "0.3", features = ["NSWorkspace", "NSRunningApplication"] }
+objc2-foundation = "0.3"
+accessibility = "0.1"
+# core-foundation pinned to 0.9 to match the `accessibility` crate's CFType/CFString.
+core-foundation = "0.9"

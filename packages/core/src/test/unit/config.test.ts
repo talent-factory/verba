@@ -4,8 +4,8 @@ import { DEFAULT_TEMPLATES, resolveConfig, resolveActiveTemplate, type ResolvedC
 import type { ConfigProvider } from '../../adapters';
 
 suite('DEFAULT_TEMPLATES', () => {
-	test('ships the 9 canonical templates', () => {
-		assert.strictEqual(DEFAULT_TEMPLATES.length, 9);
+	test('ships the 10 canonical templates', () => {
+		assert.strictEqual(DEFAULT_TEMPLATES.length, 10);
 		assert.strictEqual(DEFAULT_TEMPLATES[0].name, 'Freitext');
 	});
 
@@ -14,6 +14,26 @@ suite('DEFAULT_TEMPLATES', () => {
 		const javadoc = DEFAULT_TEMPLATES.find((t) => t.name === 'JavaDoc')!;
 		assert.ok(freitext.icon && freitext.icon.length > 0, 'Freitext keeps its icon');
 		assert.deepStrictEqual(javadoc.fileTypes, ['java', 'kotlin'], 'JavaDoc keeps fileTypes');
+	});
+});
+
+suite('Agent Instruction template', () => {
+	test('DEFAULT_TEMPLATES contains an "Agent Instruction" template', () => {
+		const t = DEFAULT_TEMPLATES.find((x) => x.name === 'Agent Instruction');
+		assert.ok(t, 'a template named "Agent Instruction" must exist');
+	});
+
+	test('the template is context-aware and has a non-empty prompt', () => {
+		const t = DEFAULT_TEMPLATES.find((x) => x.name === 'Agent Instruction')!;
+		assert.strictEqual(t.contextAware, true, 'should use code context when available');
+		assert.ok(t.prompt.trim().length > 0, 'prompt must be non-empty');
+	});
+
+	test('the prompt encodes adaptive structure and terseness rules', () => {
+		const t = DEFAULT_TEMPLATES.find((x) => x.name === 'Agent Instruction')!;
+		// The two load-bearing behaviors from the spec: adapt to length, do not over-format.
+		assert.match(t.prompt, /terse/i, 'must instruct terse output for short utterances');
+		assert.match(t.prompt, /Constraints/, 'must mention the Constraints section for boundaries');
 	});
 });
 
@@ -46,7 +66,7 @@ suite('resolveConfig', () => {
 		assert.strictEqual(c.localModel, 'base');
 		assert.deepStrictEqual(c.glossary, []);
 		assert.deepStrictEqual(c.expansions, []);
-		assert.strictEqual(c.templates.length, 9);
+		assert.strictEqual(c.templates.length, 10);
 		assert.strictEqual(c.activeTemplate.name, 'Freitext');
 		assert.strictEqual(c.audioDevice, undefined);
 	});
@@ -83,17 +103,17 @@ suite('resolveConfig', () => {
 
 	test('templates: whitespace-only name → defaults (all-or-nothing)', () => {
 		const c = resolve({ templates: [{ name: '   ', prompt: 'x' }] });
-		assert.strictEqual(c.templates.length, 9);
+		assert.strictEqual(c.templates.length, 10);
 	});
 
 	test('templates: a single invalid entry invalidates the whole array', () => {
 		const c = resolve({ templates: [{ prompt: 'no name' }, { name: 'Ok', prompt: 'y' }] });
-		assert.strictEqual(c.templates.length, 9);
+		assert.strictEqual(c.templates.length, 10);
 	});
 
 	test('templates: empty array → defaults', () => {
 		const c = resolve({ templates: [] });
-		assert.strictEqual(c.templates.length, 9);
+		assert.strictEqual(c.templates.length, 10);
 	});
 
 	test('activeTemplate selects the named template, else the first', () => {

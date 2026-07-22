@@ -1,7 +1,7 @@
 import * as assert from 'assert';
 import * as sinon from 'sinon';
 
-import { selectTemplate, findTemplateForLanguage, Template } from '../../templatePicker';
+import { selectTemplate, findTemplateForLanguage, chooseAutoTemplate, AGENT_INSTRUCTION_TEMPLATE_NAME, Template } from '../../templatePicker';
 
 const DEFAULT_TEMPLATES: Template[] = [
 	{ name: 'Freitext', prompt: 'Clean up the transcript.' },
@@ -150,5 +150,34 @@ suite('findTemplateForLanguage', () => {
 		];
 		const result = findTemplateForLanguage(templates, 'java');
 		assert.strictEqual(result, undefined);
+	});
+});
+
+suite('chooseAutoTemplate', () => {
+	const templates: Template[] = [
+		{ name: 'Freitext', prompt: 'f' },
+		{ name: 'JavaDoc', prompt: 'j', fileTypes: ['java'] },
+		{ name: 'Agent Instruction', prompt: 'a' },
+	];
+
+	test('terminal dictation selects the Agent Instruction template', () => {
+		const t = chooseAutoTemplate(templates, { forTerminal: true, languageId: 'java' });
+		assert.strictEqual(t?.name, AGENT_INSTRUCTION_TEMPLATE_NAME);
+	});
+
+	test('terminal dictation returns undefined when no Agent Instruction template exists', () => {
+		const without = templates.filter(t => t.name !== 'Agent Instruction');
+		const t = chooseAutoTemplate(without, { forTerminal: true });
+		assert.strictEqual(t, undefined);
+	});
+
+	test('non-terminal dictation with a matching languageId selects the file-type template', () => {
+		const t = chooseAutoTemplate(templates, { forTerminal: false, languageId: 'java' });
+		assert.strictEqual(t?.name, 'JavaDoc');
+	});
+
+	test('non-terminal dictation without a languageId returns undefined', () => {
+		const t = chooseAutoTemplate(templates, { forTerminal: false });
+		assert.strictEqual(t, undefined);
 	});
 });

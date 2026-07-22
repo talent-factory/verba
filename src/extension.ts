@@ -8,7 +8,7 @@ import { PipelineContext, CleanupService, Expansion, Notifier } from '@verba/cor
 import { TranscriptionService, TranscriptionProvider, TranscriptionResult } from './transcriptionService';
 import { insertText, InsertionResult } from './insertText';
 import { recordDictation, clearLastDictation, computeInsertedRanges, executeUndo, UndoEditor, PreEditSelection } from './undoManager';
-import { selectTemplate, findTemplateForLanguage, Template } from './templatePicker';
+import { selectTemplate, chooseAutoTemplate, Template } from './templatePicker';
 import { ContextProvider } from './contextProvider';
 import { EmbeddingService } from './embeddingService';
 import { Indexer } from './indexer';
@@ -535,13 +535,11 @@ export function activate(context: vscode.ExtensionContext) {
 				// Auto-selected templates are transient — they do not update lastTemplateName,
 				// so the user's manual template choice remains the stable fallback.
 				const autoSelect = vscode.workspace.getConfiguration('verba').get<boolean>('autoSelectTemplate', true);
-				if (autoSelect && !forTerminal) {
-					const languageId = vscode.window.activeTextEditor?.document.languageId;
-					if (languageId) {
-						template = findTemplateForLanguage(templates, languageId);
-						if (template) {
-							console.log(`[Verba] Auto-selected template "${template.name}" for language "${languageId}"`);
-						}
+				if (autoSelect) {
+					const languageId = forTerminal ? undefined : vscode.window.activeTextEditor?.document.languageId;
+					template = chooseAutoTemplate(templates, { forTerminal, languageId });
+					if (template) {
+						console.log(`[Verba] Auto-selected template "${template.name}" (${forTerminal ? 'terminal→agent' : `file-type ${languageId}`})`);
 					}
 				}
 
@@ -1377,11 +1375,9 @@ export function activate(context: vscode.ExtensionContext) {
 			const autoSelect = vscode.workspace.getConfiguration('verba').get<boolean>('autoSelectTemplate', true);
 			if (autoSelect) {
 				const languageId = vscode.window.activeTextEditor?.document.languageId;
-				if (languageId) {
-					template = findTemplateForLanguage(templates, languageId);
-					if (template) {
-						console.log(`[Verba] Continuous: Auto-selected template "${template.name}" for language "${languageId}"`);
-					}
+				template = chooseAutoTemplate(templates, { forTerminal: false, languageId });
+				if (template) {
+					console.log(`[Verba] Continuous: Auto-selected template "${template.name}" for language "${languageId}"`);
 				}
 			}
 			if (!template && lastUsedName) {

@@ -248,10 +248,15 @@ export class CleanupService implements ProcessingStage {
 		context: PipelineContext | undefined,
 		input: string,
 	): Promise<{ client: Anthropic; systemPrompt: string; userMessage: string }> {
+		const isValidLangCode = (c: unknown): c is string =>
+			typeof c === 'string' && /^[a-z]{2,3}(-[A-Za-z]{2,4})?$/.test(c);
+		const outputLang = context?.outputLanguage;
 		const langCode = context?.detectedLanguage;
-		const languageHint = langCode && /^[a-z]{2,3}(-[A-Za-z]{2,4})?$/.test(langCode)
-			? `\nThe transcript language is: ${langCode}. Respond in the same language.\n`
-			: '';
+		const languageHint = isValidLangCode(outputLang)
+			? `\nAlways write the output in the language identified by ISO code "${outputLang}", regardless of the transcript's language.\n`
+			: isValidLangCode(langCode)
+				? `\nThe transcript language is: ${langCode}. Respond in the same language.\n`
+				: '';
 		const glossaryInstruction = this.glossary.length > 0
 			? `\nBehalte folgende Begriffe exakt bei (nicht uebersetzen, nicht kuerzen, nicht aendern): ${this.glossary.join(', ')}.`
 			: '';

@@ -8,6 +8,10 @@ export interface PipelineContext {
 	selectedText?: string;
 	/** ISO 639-1 language code detected by the transcription provider (e.g. "de", "en"). */
 	detectedLanguage?: string;
+	/** ISO 639 code (e.g. "en"). When set, the cleanup writes its output in this
+	 *  language regardless of the transcript language, overriding the
+	 *  same-language hint. Populated from the active template's `outputLanguage`. */
+	outputLanguage?: string;
 }
 
 /** A single step in the dictation processing pipeline. */

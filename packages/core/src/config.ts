@@ -10,6 +10,9 @@ export interface Template {
 	icon?: string;
 	contextAware?: boolean;
 	fileTypes?: string[];
+	/** Opt-in: force the cleanup output into this ISO 639 language (e.g. "en"),
+	 *  regardless of the dictation language. Absent → follow the detected language. */
+	outputLanguage?: string;
 }
 
 /** The 9 bundled default templates — the single canonical source for both hosts. */

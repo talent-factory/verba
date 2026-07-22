@@ -21,6 +21,9 @@ suite('cleanupContextFor outputLanguage', () => {
 			expansions: [],
 			templates: [activeTemplate],
 			activeTemplate,
+			agentMarkers: [],
+			terminalApps: [],
+			editorApps: [],
 		};
 	}
 

@@ -146,3 +146,18 @@ suite('resolveConfig', () => {
 		assert.deepStrictEqual(c.expansions, [{ abbreviation: 'mfg', expansion: 'mit freundlichen Grüßen' }]);
 	});
 });
+
+suite('detection config', () => {
+	test('resolveConfig supplies default agent markers and app lists', () => {
+		const cfg = resolveConfig(new FakeConfigProvider({}));
+		assert.ok(cfg.agentMarkers.includes('claude'), 'default markers include claude');
+		assert.ok(cfg.agentMarkers.includes('herdr'), 'default markers include herdr');
+		assert.ok(cfg.terminalApps.includes('com.googlecode.iterm2'), 'default terminals include iTerm2');
+		assert.ok(cfg.editorApps.includes('com.microsoft.VSCode'), 'default editors include VS Code');
+	});
+
+	test('resolveConfig honors user-provided lists', () => {
+		const cfg = resolveConfig(new FakeConfigProvider({ agentMarkers: ['xyz'] }));
+		assert.deepStrictEqual(cfg.agentMarkers, ['xyz']);
+	});
+});

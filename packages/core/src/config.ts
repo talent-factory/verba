@@ -18,6 +18,16 @@ export interface Template {
 /** The 9 bundled default templates — the single canonical source for both hosts. */
 export const DEFAULT_TEMPLATES: Template[] = defaultTemplatesData as Template[];
 
+/** Default agent markers matched (case-insensitive) against a focused terminal's window title. */
+export const DEFAULT_AGENT_MARKERS = ['claude', 'herdr', 'codex', 'aider', 'cursor'];
+/** Default terminal-app bundle identifiers that count as a potential agent surface. */
+export const DEFAULT_TERMINAL_APPS = [
+	'com.apple.Terminal', 'com.googlecode.iterm2', 'com.mitchellh.ghostty',
+	'com.github.wez.wezterm', 'net.kovidgoyal.kitty', 'org.alacritty', 'dev.warp.Warp-Stable',
+];
+/** Default code-editor bundle identifiers that count as an editor surface. */
+export const DEFAULT_EDITOR_APPS = ['com.microsoft.VSCode', 'com.todesktop.230313mzl4w4u92', 'dev.zed.Zed'];
+
 /** Raw on-disk/settings shape — every field optional and untrusted. */
 export interface VerbaConfig {
 	language?: string;
@@ -27,6 +37,9 @@ export interface VerbaConfig {
 	templates?: unknown[];
 	activeTemplate?: string;
 	audioDevice?: string;
+	agentMarkers?: string[];
+	terminalApps?: string[];
+	editorApps?: string[];
 }
 
 /** Fully resolved, validated config — total for downstream consumers. */
@@ -40,6 +53,9 @@ export interface ResolvedConfig {
 	templates: Template[];
 	activeTemplate: Template;
 	audioDevice?: string;
+	agentMarkers: string[];
+	terminalApps: string[];
+	editorApps: string[];
 }
 
 function nonEmptyString(v: unknown): v is string {
@@ -79,7 +95,7 @@ export function resolveActiveTemplate(templates: Template[], name?: string): Tem
 /**
  * Resolves the shared config from a host's raw values. Never throws: every
  * wrong-typed or absent field falls back to its default. Templates are
- * all-or-nothing (one invalid entry → the 9 bundled defaults).
+ * all-or-nothing (one invalid entry → the 10 bundled defaults).
  */
 export function resolveConfig(provider: ConfigProvider): ResolvedConfig {
 	const rawLanguage = provider.get<unknown>('language', 'auto');
@@ -91,6 +107,9 @@ export function resolveConfig(provider: ConfigProvider): ResolvedConfig {
 	const rawTemplates = provider.get<unknown>('templates', []);
 	const rawActiveTemplate = provider.get<unknown>('activeTemplate', '');
 	const rawAudioDevice = provider.get<unknown>('audioDevice', '');
+	const agentMarkers = resolveStringArray(provider.get<unknown>('agentMarkers', DEFAULT_AGENT_MARKERS));
+	const terminalApps = resolveStringArray(provider.get<unknown>('terminalApps', DEFAULT_TERMINAL_APPS));
+	const editorApps = resolveStringArray(provider.get<unknown>('editorApps', DEFAULT_EDITOR_APPS));
 
 	const templates = isTemplateArray(rawTemplates) ? rawTemplates : DEFAULT_TEMPLATES;
 
@@ -104,5 +123,8 @@ export function resolveConfig(provider: ConfigProvider): ResolvedConfig {
 		templates,
 		activeTemplate: resolveActiveTemplate(templates, nonEmptyString(rawActiveTemplate) ? rawActiveTemplate : undefined),
 		audioDevice: nonEmptyString(rawAudioDevice) ? rawAudioDevice.trim() : undefined,
+		agentMarkers: agentMarkers.length ? agentMarkers : DEFAULT_AGENT_MARKERS,
+		terminalApps: terminalApps.length ? terminalApps : DEFAULT_TERMINAL_APPS,
+		editorApps: editorApps.length ? editorApps : DEFAULT_EDITOR_APPS,
 	};
 }

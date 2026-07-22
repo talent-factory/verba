@@ -78,5 +78,8 @@ export function cleanupContextFor(config: ResolvedConfig, context?: PipelineCont
 	if (config.language !== 'auto') {
 		merged.detectedLanguage = config.language;
 	}
+	if (config.activeTemplate.outputLanguage) {
+		merged.outputLanguage = config.activeTemplate.outputLanguage;
+	}
 	return merged;
 }

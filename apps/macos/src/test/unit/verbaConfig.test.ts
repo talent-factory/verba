@@ -8,6 +8,35 @@ import {
 	cleanupContextFor,
 	ObjectConfigProvider,
 } from '../../config/verbaConfig';
+import type { ResolvedConfig, Template } from '@verba/core';
+
+suite('cleanupContextFor outputLanguage', () => {
+	function baseConfig(activeTemplate: Template): ResolvedConfig {
+		return {
+			language: 'auto',
+			transcriptionLanguage: 'multi',
+			provider: 'deepgram',
+			localModel: 'base',
+			glossary: [],
+			expansions: [],
+			templates: [activeTemplate],
+			activeTemplate,
+		};
+	}
+
+	test('passes the active template outputLanguage into the context', () => {
+		const cfg = baseConfig({ name: 'Agent Instruction', prompt: 'p', outputLanguage: 'en' });
+		const ctx = cleanupContextFor(cfg);
+		assert.strictEqual(ctx.outputLanguage, 'en');
+		assert.strictEqual(ctx.templatePrompt, 'p');
+	});
+
+	test('leaves outputLanguage undefined when the template has none', () => {
+		const cfg = baseConfig({ name: 'Freitext', prompt: 'p' });
+		const ctx = cleanupContextFor(cfg);
+		assert.strictEqual(ctx.outputLanguage, undefined);
+	});
+});
 
 suite('loadConfig', () => {
 	test('returns all defaults when the file is missing (empty object)', async () => {

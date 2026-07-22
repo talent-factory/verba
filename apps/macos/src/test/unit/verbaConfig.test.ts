@@ -6,6 +6,7 @@ import {
 	resolveActiveTemplate,
 	DEFAULT_TEMPLATES,
 	cleanupContextFor,
+	templateForSurface,
 	ObjectConfigProvider,
 } from '../../config/verbaConfig';
 import type { ResolvedConfig, Template } from '@verba/core';
@@ -38,6 +39,33 @@ suite('cleanupContextFor outputLanguage', () => {
 		const cfg = baseConfig({ name: 'Freitext', prompt: 'p' });
 		const ctx = cleanupContextFor(cfg);
 		assert.strictEqual(ctx.outputLanguage, undefined);
+	});
+});
+
+suite('templateForSurface + override', () => {
+	const agent: Template = { name: 'Agent Instruction', prompt: 'AGENT' };
+	const active: Template = { name: 'Freitext', prompt: 'FREE' };
+	function cfg(): ResolvedConfig {
+		return {
+			language: 'auto', transcriptionLanguage: 'multi', provider: 'deepgram', localModel: 'base',
+			glossary: [], expansions: [], templates: [active, agent], activeTemplate: active,
+			agentMarkers: [], terminalApps: [], editorApps: [],
+		};
+	}
+
+	test('agent surface selects the Agent Instruction template', () => {
+		assert.strictEqual(templateForSurface(cfg(), 'agent').name, 'Agent Instruction');
+	});
+	test('non-agent surface keeps the active template', () => {
+		assert.strictEqual(templateForSurface(cfg(), 'generic').name, 'Freitext');
+	});
+	test('agent surface falls back to active when no Agent Instruction template exists', () => {
+		const c = cfg(); c.templates = [active];
+		assert.strictEqual(templateForSurface(c, 'agent').name, 'Freitext');
+	});
+	test('cleanupContextFor uses the override prompt', () => {
+		const ctx = cleanupContextFor(cfg(), undefined, agent);
+		assert.strictEqual(ctx.templatePrompt, 'AGENT');
 	});
 });
 

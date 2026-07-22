@@ -59,7 +59,7 @@ suite('loadConfig', () => {
 suite('templates', () => {
 	test('defaults to the 9 bundled templates when config has none', async () => {
 		const cfg = await loadConfig(sinon.stub().resolves('{}'));
-		assert.strictEqual(cfg.templates.length, 9);
+		assert.strictEqual(cfg.templates.length, 10);
 		assert.strictEqual(cfg.templates[0].name, 'Freitext');
 		assert.strictEqual(cfg.activeTemplate.name, 'Freitext');
 	});
@@ -89,7 +89,7 @@ suite('templates', () => {
 	test('malformed templates fall back to the defaults', async () => {
 		const raw = JSON.stringify({ templates: [{ name: 'NoPrompt' }, 'nope'] });
 		const cfg = await loadConfig(sinon.stub().resolves(raw));
-		assert.strictEqual(cfg.templates.length, 9);
+		assert.strictEqual(cfg.templates.length, 10);
 	});
 
 	// Parity with the Rust `template_choices_from_value` tests in config.rs: the
@@ -98,7 +98,7 @@ suite('templates', () => {
 	test('a whitespace-only template name falls back to the defaults', async () => {
 		const raw = JSON.stringify({ templates: [{ name: '   ', prompt: 'x' }] });
 		const cfg = await loadConfig(sinon.stub().resolves(raw));
-		assert.strictEqual(cfg.templates.length, 9);
+		assert.strictEqual(cfg.templates.length, 10);
 		assert.strictEqual(cfg.templates[0].name, 'Freitext');
 	});
 
@@ -107,14 +107,14 @@ suite('templates', () => {
 			templates: [{ prompt: 'no name' }, { name: 'Ok', prompt: 'y' }],
 		});
 		const cfg = await loadConfig(sinon.stub().resolves(raw));
-		assert.strictEqual(cfg.templates.length, 9);
+		assert.strictEqual(cfg.templates.length, 10);
 		assert.strictEqual(cfg.templates[0].name, 'Freitext');
 	});
 
 	test('an empty templates array falls back to the defaults', async () => {
 		const raw = JSON.stringify({ templates: [] });
 		const cfg = await loadConfig(sinon.stub().resolves(raw));
-		assert.strictEqual(cfg.templates.length, 9);
+		assert.strictEqual(cfg.templates.length, 10);
 	});
 
 	test('resolveActiveTemplate returns the first template when name is undefined', () => {

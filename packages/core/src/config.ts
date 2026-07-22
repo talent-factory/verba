@@ -15,7 +15,7 @@ export interface Template {
 	outputLanguage?: string;
 }
 
-/** The 9 bundled default templates — the single canonical source for both hosts. */
+/** The 10 bundled default templates — the single canonical source for both hosts. */
 export const DEFAULT_TEMPLATES: Template[] = defaultTemplatesData as Template[];
 
 /** Default agent markers matched (case-insensitive) against a focused terminal's window title. */

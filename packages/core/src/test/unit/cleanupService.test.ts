@@ -1,7 +1,7 @@
 import * as assert from 'assert';
 import * as sinon from 'sinon';
 
-import { CleanupService } from '../../cleanupService';
+import { CleanupService, stripOuterCodeFence } from '../../cleanupService';
 import { PipelineContext } from '../../pipeline';
 import type { LanguageCode } from '../../config';
 
@@ -27,6 +27,42 @@ function createFakeAnthropicClient() {
 		},
 	};
 }
+
+suite('stripOuterCodeFence', () => {
+	test('strips a plain ``` fence wrapping the whole output', () => {
+		const input = '```\n/**\n * Docs.\n */\n```';
+		assert.strictEqual(stripOuterCodeFence(input), '/**\n * Docs.\n */');
+	});
+
+	test('strips a language-tagged fence (```java)', () => {
+		const input = '```java\npublic void f() {}\n```';
+		assert.strictEqual(stripOuterCodeFence(input), 'public void f() {}');
+	});
+
+	test('tolerates surrounding whitespace around the fence', () => {
+		const input = '\n\n```\nhello\n```\n\n';
+		assert.strictEqual(stripOuterCodeFence(input), 'hello');
+	});
+
+	test('leaves unfenced text untouched', () => {
+		const input = 'Just a normal sentence.';
+		assert.strictEqual(stripOuterCodeFence(input), input);
+	});
+
+	test('leaves inner fences intact when the output is not fully fenced', () => {
+		const input = 'Here is code:\n```java\nfoo();\n```';
+		assert.strictEqual(stripOuterCodeFence(input), input);
+	});
+
+	test('does not strip when only the end has a fence', () => {
+		const input = 'no opening fence\nsome text\n```';
+		assert.strictEqual(stripOuterCodeFence(input), input);
+	});
+
+	test('returns empty string for an output that is only a fence', () => {
+		assert.strictEqual(stripOuterCodeFence('```\n```'), '');
+	});
+});
 
 suite('CleanupService', () => {
 	let service: CleanupService;

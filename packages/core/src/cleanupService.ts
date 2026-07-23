@@ -14,6 +14,29 @@ function sanitize(s: string): string {
 	return s.replace(/[\r\n]+/g, ' ').replace(/"/g, "'");
 }
 
+/**
+ * Removes a single outer markdown code fence from model output. LLMs frequently wrap
+ * code-oriented answers (JavaDoc, code comments, transformed selections) in ```lang … ```
+ * fences that would otherwise be pasted literally into the editor. Only a fence spanning
+ * the entire output is stripped; fenced blocks that are part of the content (e.g. a code
+ * block inside a Markdown answer) are left intact.
+ */
+export function stripOuterCodeFence(text: string): string {
+	const trimmed = text.trim();
+	const firstNewline = trimmed.indexOf('\n');
+	// Need at least an opening fence line and a closing ``` on separate lines.
+	if (firstNewline === -1 || !trimmed.endsWith('```')) {
+		return text;
+	}
+	const firstLine = trimmed.slice(0, firstNewline).trim();
+	// Opening fence: ``` optionally followed by a language identifier (e.g. ```java).
+	if (!/^```[a-zA-Z0-9+#.-]*$/.test(firstLine)) {
+		return text;
+	}
+	// Drop the opening fence line and the trailing ```, plus the newline before it.
+	return trimmed.slice(firstNewline + 1, trimmed.length - 3).replace(/\n?[ \t]*$/, '');
+}
+
 const API_KEY_STORAGE_KEY = 'anthropic-api-key';
 
 const COURSE_CORRECTION_INSTRUCTION = 'Erkenne und entferne Selbstkorrekturen (z.B. "nein warte", "ich meinte", "also doch", "beziehungsweise", "korrektur"). Behalte nur die finale, korrigierte Aussage.';
@@ -157,7 +180,7 @@ export class CleanupService implements ProcessingStage {
 
 		console.log(`[Verba] Claude response (${(text || '').length} chars): ${(text || '').substring(0, 200)}`);
 
-		return this.fallbackIfEmpty(text, input, !!context?.selectedText);
+		return this.fallbackIfEmpty(stripOuterCodeFence(text), input, !!context?.selectedText);
 	}
 
 	/**
@@ -242,7 +265,7 @@ export class CleanupService implements ProcessingStage {
 
 		console.log(`[Verba] Claude streaming response (${accumulated.length} chars): ${accumulated.substring(0, 200)}`);
 
-		return this.fallbackIfEmpty(accumulated, input, !!context?.selectedText);
+		return this.fallbackIfEmpty(stripOuterCodeFence(accumulated), input, !!context?.selectedText);
 	}
 
 	private async prepareRequest(

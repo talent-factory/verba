@@ -70,6 +70,33 @@ suite('DictationController', () => {
 		assert.strictEqual(deps.ui.setPhase.calledWith('Idle.'), true);
 	});
 
+	test('stop_capture that stalls (never settles) recovers to idle within the timeout', async () => {
+		// Models the native capture thread hanging on cpal/CoreAudio stream teardown:
+		// `invoke('stop_capture')` neither resolves nor rejects. Without the timeout this
+		// froze the flow in "Transcribing…" forever with no error and no logs.
+		(deps.invoke as unknown as sinon.SinonStub)
+			.withArgs('stop_capture')
+			.returns(new Promise<string>(() => {}));
+		const stalled = new DictationController({
+			...(deps as unknown as ControllerDeps),
+			stopCaptureTimeoutMs: 10,
+		});
+
+		await dictate(stalled);
+
+		assert.strictEqual(deps.notifier.error.calledWithMatch(/timed out/), true);
+		assert.strictEqual(deps.ui.setPhase.calledWith('Idle.'), true);
+		// Transcription/cleanup/paste must never run when the recording can't be finalized.
+		assert.strictEqual(deps.deepgram.transcribe.called, false);
+		assert.strictEqual(
+			(deps.invoke as unknown as sinon.SinonStub).calledWith('paste_text', sinon.match.any),
+			false
+		);
+		// The flow must settle back to idle, never leaving the state stuck.
+		const states = (deps.ui.setState as sinon.SinonStub).getCalls().map((c) => c.args[0]);
+		assert.strictEqual(states[states.length - 1], 'idle');
+	});
+
 	test('init initializes the store', async () => {
 		await controller.init();
 

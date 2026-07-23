@@ -31,6 +31,15 @@ export interface ControllerDeps {
 	 * so tests can drive the timeout path without waiting.
 	 */
 	cleanupTimeoutMs?: number;
+	/**
+	 * Upper bound on the recording-stop step (default {@link DEFAULT_STOP_CAPTURE_TIMEOUT_MS}).
+	 * Finalizing the WAV is normally instant, but the native capture thread can hang on
+	 * cpal/CoreAudio stream teardown, which — via `stop_capture`'s unbounded `join()` —
+	 * would otherwise freeze the flow in "Transcribing…" forever with no error. On
+	 * timeout we abandon the recording and reset to idle. Overridable so tests can
+	 * drive the timeout path without waiting.
+	 */
+	stopCaptureTimeoutMs?: number;
 }
 
 /**
@@ -40,6 +49,13 @@ export interface ControllerDeps {
  * fallback.
  */
 const DEFAULT_CLEANUP_TIMEOUT_MS = 30_000;
+
+/**
+ * Default recording-stop timeout. Finalizing the WAV is normally instantaneous;
+ * this only trips when the native capture thread's cpal/CoreAudio stream teardown
+ * hangs, turning an indefinite "Transcribing…" freeze into a recoverable error.
+ */
+const DEFAULT_STOP_CAPTURE_TIMEOUT_MS = 10_000;
 
 /**
  * Owns the dictation flow on top of injected host adapters.
@@ -59,9 +75,11 @@ export class DictationController {
 	// booleans would admit) is unrepresentable. Mutate only via `setState`.
 	private state: DictationState = 'idle';
 	private readonly cleanupTimeoutMs: number;
+	private readonly stopCaptureTimeoutMs: number;
 
 	constructor(private readonly deps: ControllerDeps) {
 		this.cleanupTimeoutMs = deps.cleanupTimeoutMs ?? DEFAULT_CLEANUP_TIMEOUT_MS;
+		this.stopCaptureTimeoutMs = deps.stopCaptureTimeoutMs ?? DEFAULT_STOP_CAPTURE_TIMEOUT_MS;
 	}
 
 	/** Updates the flow state and mirrors it to the visualization surfaces. */
@@ -113,7 +131,7 @@ export class DictationController {
 		this.deps.ui.setPhase('Transcribing…');
 		this.setState('transcribing');
 		try {
-			const wavPath = await this.deps.invoke<string>('stop_capture');
+			const wavPath = await this.stopCaptureWithTimeout();
 			const { text: transcript, detectedLanguage } = await this.deps.deepgram.transcribe(wavPath);
 
 			this.deps.ui.setPhase('Processing…');
@@ -157,7 +175,16 @@ export class DictationController {
 				await this.deps.ui.showTranscript(text);
 			}
 		} catch (err) {
-			this.deps.notifier.error(`Verba: ${errText(err)}`);
+			if (err instanceof StopCaptureTimeoutError) {
+				// The native capture thread hung while finalizing the WAV (a cpal/CoreAudio
+				// stream-teardown stall). Recover to idle instead of freezing forever in
+				// "Transcribing…" — the recording is lost, but the app stays usable.
+				this.deps.notifier.error(
+					`Verba: recording could not be finalized (stop timed out after ${this.stopCaptureTimeoutMs}ms) — the audio device may be stuck; retry, and restart Verba if it persists.`
+				);
+			} else {
+				this.deps.notifier.error(`Verba: ${errText(err)}`);
+			}
 			this.deps.ui.setPhase('Idle.');
 		} finally {
 			this.setState('idle');
@@ -212,6 +239,45 @@ export class DictationController {
 			);
 		});
 	}
+
+	/**
+	 * Invokes `stop_capture` with an upper time bound. The native capture thread
+	 * finalizes the WAV synchronously and `stop_capture` joins it; if cpal/CoreAudio
+	 * stream teardown hangs, that join blocks forever, so without this bound a stuck
+	 * recording would freeze the flow in "Transcribing…" with no error. On timeout we
+	 * reject with a {@link StopCaptureTimeoutError} and abandon the recording. Tauri's
+	 * `invoke` can't be cancelled, so the stuck native thread leaks until the app
+	 * restarts; a late settlement is logged (never lost) and consumed so it can't
+	 * surface as an unhandledRejection.
+	 */
+	private stopCaptureWithTimeout(): Promise<string> {
+		const op = this.deps.invoke<string>('stop_capture');
+		return new Promise<string>((resolve, reject) => {
+			let timedOut = false;
+			const timer = setTimeout(() => {
+				timedOut = true;
+				reject(new StopCaptureTimeoutError(this.stopCaptureTimeoutMs));
+			}, this.stopCaptureTimeoutMs);
+			op.then(
+				(value) => {
+					clearTimeout(timer);
+					if (timedOut) {
+						console.warn('[Verba] stop_capture resolved after timeout; recording was already abandoned');
+						return;
+					}
+					resolve(value);
+				},
+				(err) => {
+					clearTimeout(timer);
+					if (timedOut) {
+						console.warn(`[Verba] stop_capture rejected after timeout: ${errText(err)}`);
+						return;
+					}
+					reject(err);
+				}
+			);
+		});
+	}
 }
 
 /** Raised by {@link DictationController} when cleanup exceeds its time budget. */
@@ -219,6 +285,14 @@ class CleanupTimeoutError extends Error {
 	constructor(timeoutMs: number) {
 		super(`cleanup timed out after ${timeoutMs}ms`);
 		this.name = 'CleanupTimeoutError';
+	}
+}
+
+/** Raised by {@link DictationController} when finalizing the recording exceeds its time budget. */
+class StopCaptureTimeoutError extends Error {
+	constructor(timeoutMs: number) {
+		super(`stop_capture timed out after ${timeoutMs}ms`);
+		this.name = 'StopCaptureTimeoutError';
 	}
 }
 

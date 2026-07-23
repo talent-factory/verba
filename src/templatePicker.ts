@@ -6,7 +6,6 @@ export { AGENT_INSTRUCTION_TEMPLATE_NAME };
 interface QuickPickItem {
 	label: string;
 	description?: string;
-	active?: boolean;
 	template: Template;
 }
 
@@ -18,9 +17,8 @@ type ShowQuickPickFn = (
 /**
  * Shows a Quick Pick menu for template selection.
  * Each item shows the template's emoji icon (parity with the macOS tray). The active
- * (last-used) template is flagged via `active`, so the host renders a check marker in
- * the icon gutter (aligned column); context-aware templates carry a search hint in the
- * description.
+ * (last-used) template is tagged with a clearly visible "aktiv" marker in the item
+ * description; context-aware templates carry a search hint in the same description.
  * @returns The selected template, or `undefined` if the user dismissed the picker.
  */
 export async function selectTemplate(
@@ -34,10 +32,16 @@ export async function selectTemplate(
 
 	const items: QuickPickItem[] = templates.map((t) => {
 		const icon = t.icon ? `${t.icon} ` : '';
+		const notes: string[] = [];
+		if (t.name === lastUsedName) {
+			notes.push('$(check) aktiv');
+		}
+		if (t.contextAware) {
+			notes.push('$(search) context-aware');
+		}
 		return {
 			label: `${icon}${t.name}`,
-			description: t.contextAware ? '$(search) context-aware' : undefined,
-			active: t.name === lastUsedName,
+			description: notes.length > 0 ? notes.join(' · ') : undefined,
 			template: t,
 		};
 	});

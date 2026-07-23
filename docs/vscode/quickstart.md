@@ -4,13 +4,13 @@ Get up and running with Verba in under a minute.
 
 ## Your First Dictation
 
-1. Press `Cmd+Shift+D` (Mac) / `Ctrl+Shift+D` (Windows/Linux) — on first use, a Quick Pick menu appears with template selection.
+1. Press `Cmd+Alt+V` (Mac) / `Ctrl+Alt+V` (Windows/Linux) — on first use, a Quick Pick menu appears with template selection.
 2. Choose a template (e.g., "Freitext") — recording starts immediately.
 3. Speak naturally.
-4. Press `Cmd+Shift+D` again — recording stops, text is transcribed and processed.
+4. Press `Cmd+Alt+V` again — recording stops, text is transcribed and processed.
 5. The result appears at your cursor position.
 
-From now on, your last template is reused automatically — just press `Cmd+Shift+D` to start recording immediately.
+From now on, your last template is reused automatically — just press `Cmd+Alt+V` to start recording immediately.
 
 ## Switching Templates
 
@@ -20,8 +20,8 @@ Press `Cmd+Alt+T` (Mac) / `Ctrl+Alt+T` (Windows/Linux) to switch templates witho
 
 | Command | Shortcut | Description |
 |---------|----------|-------------|
-| `Verba: Toggle Dictation` | `Cmd+Shift+D` | Start/stop recording in the editor |
-| `Verba: Toggle Dictation (Terminal)` | `Cmd+Shift+D` (terminal focused) | Start/stop recording for terminal insertion |
+| `Verba: Toggle Dictation` | `Cmd+Alt+V` | Start/stop recording in the editor |
+| `Verba: Toggle Dictation (Terminal)` | `Cmd+Alt+V` (terminal focused) | Start/stop recording for terminal insertion |
 | `Verba: Select Template` | `Cmd+Alt+T` | Switch the active template |
 | `Verba: Select Audio Device` | — | Choose a microphone |
 | `Verba: Index Project` | — | Build the local embeddings index for context-aware templates |

@@ -4,7 +4,7 @@ When the VS Code integrated terminal is focused, Verba inserts dictated text dir
 
 ## How It Works
 
-The same keybinding `Cmd+Shift+D` (Mac) / `Ctrl+Shift+D` (Windows/Linux) works in both contexts:
+The same keybinding `Cmd+Alt+V` (Mac) / `Ctrl+Alt+V` (Windows/Linux) works in both contexts:
 
 - **Editor focused** — Text is inserted at the cursor position in the active editor.
 - **Terminal focused** — Text is pasted into the active terminal.

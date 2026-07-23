@@ -66,10 +66,13 @@ Legende: ⬜ offen · ✅ Pass · ❌ Fail (mit Notiz)
 ### Bereich B — VS Code: Terminal-Fokus → Agent-Template
 
 #### TC-B1 — Terminal-Diktat wählt automatisch „Agent Instruction“
-- **Vorbedingung:** `verba.autoSelectTemplate = true` (Default).
+- **Vorbedingung:**
+  - `verba.autoSelectTemplate = true` (Default).
+  - **Build 0.6.0 aktiv** (via `just dev` / F5-Extension-Host; eine installierte ältere Verba muss deaktiviert/deinstalliert sein, sonst handhabt deren alter Code den Shortcut).
+  - `dictation.startFromTerminal` steht in `terminal.integrated.commandsToSkipShell` — sonst reicht VS Code die Taste bei fokussiertem Terminal an die Shell durch, statt Verba auszulösen.
 - **Schritte:**
-  1. Integriertes Terminal fokussieren (hineinklicken).
-  2. `Cmd+Shift+D` (löst `dictation.startFromTerminal` aus).
+  1. Integriertes Terminal fokussieren (hineinklicken; zur Sicherheit ein Zeichen tippen + löschen, damit der Tastatur-Fokus wirklich im Terminal liegt).
+  2. `Cmd+Alt+V` (löst `dictation.startFromTerminal` aus).
   3. Bewusst „meta-lastig“ sprechen, z. B.:
      *„Also, was ich von dir will, ist: führ die Datenbank-Migration aus und lass danach die Tests laufen.“*
   4. Aufnahme stoppen.
@@ -80,13 +83,13 @@ Legende: ⬜ offen · ✅ Pass · ❌ Fail (mit Notiz)
 
 #### TC-B2 — Editor-Diktat bleibt datei-typ-basiert (Regression)
 - **Vorbedingung:** `verba.autoSelectTemplate = true`; eine **`.java`**-Datei geöffnet und fokussiert.
-- **Schritte:** `Cmd+Shift+D`, kurzen Satz diktieren.
+- **Schritte:** `Cmd+Alt+V`, kurzen Satz diktieren.
 - **Erwartung:** Es wird das **JavaDoc**-Template gewählt (**nicht** Agent Instruction). Dev-Console: `… (file-type java)`.
 - **Ergebnis:** ⬜
 
 #### TC-B3 — Kein Agent-Template, wenn Nutzer es entfernt hat (Fallback)
 - **Vorbedingung:** In `settings.json` unter `verba.templates` eine eigene Liste **ohne** „Agent Instruction“ definieren.
-- **Schritte:** Terminal fokussieren, `Cmd+Shift+D`, diktieren.
+- **Schritte:** Terminal fokussieren, `Cmd+Alt+V`, diktieren.
 - **Erwartung:** Kein Absturz. Es greift der Fallback (zuletzt genutztes Template / Picker); die Bereinigung läuft normal durch.
 - **Ergebnis:** ⬜
 
@@ -200,7 +203,7 @@ Legende: ⬜ offen · ✅ Pass · ❌ Fail (mit Notiz)
 ### Bereich F — Regression (beide Hosts)
 
 #### TC-F1 — Standard-Diktat unverändert (VS Code)
-- **Schritte:** Normales Editor-Diktat (`Cmd+Shift+D`) in einer Textdatei ohne besondere Templates.
+- **Schritte:** Normales Editor-Diktat (`Cmd+Alt+V`) in einer Textdatei ohne besondere Templates.
 - **Erwartung:** Verhalten exakt wie vor dem PR (Bereinigung, Einfügen, Undo, History).
 - **Ergebnis:** ⬜
 

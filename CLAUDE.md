@@ -108,7 +108,7 @@ release-please versions the **VS Code extension only** (`package.json` at the re
 - **CHANGELOG.md is always written in English** — all entries, descriptions, and examples must be in English
 - Extension name: `verba`
 - Command prefix: `dictation.`
-- Main command: `dictation.start` (`Cmd+Shift+D` / `Ctrl+Shift+D`)
+- Main command: `dictation.start` (`Cmd+Alt+V` / `Ctrl+Alt+V`)
 - Terminal command: `dictation.startFromTerminal` (same shortcut when terminal is focused)
 - Audio device command: `dictation.selectAudioDevice` (microphone selection via Quick Pick)
 - Template command: `dictation.selectTemplate` (`Cmd+Alt+T` / `Ctrl+Alt+T`) — switch template without recording

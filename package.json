@@ -109,14 +109,14 @@
     "keybindings": [
       {
         "command": "dictation.startFromTerminal",
-        "key": "ctrl+shift+d",
-        "mac": "cmd+shift+d",
+        "key": "ctrl+alt+v",
+        "mac": "cmd+alt+v",
         "when": "terminalFocus"
       },
       {
         "command": "dictation.start",
-        "key": "ctrl+shift+d",
-        "mac": "cmd+shift+d",
+        "key": "ctrl+alt+v",
+        "mac": "cmd+alt+v",
         "when": "!terminalFocus"
       },
       {
@@ -375,7 +375,7 @@
     "compile": "npm run compile:core && tsc -p ./",
     "bundle": "npm run compile:core && esbuild src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node --minify",
     "watch": "npm run compile:core && tsc -watch -p ./",
-    "dev": "npm run compile && code --extensionDevelopmentPath=.",
+    "dev": "npm run bundle && code --extensionDevelopmentPath=.",
     "package:vsix": "npx @vscode/vsce package --allow-missing-repository",
     "install:local": "npm run package:vsix && node -e \"var p=require('./package.json');require('child_process').execSync('code --install-extension '+p.name+'-'+p.version+'.vsix',{stdio:'inherit'})\"",
     "test:core": "npm --workspace @verba/core run test:unit",

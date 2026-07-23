@@ -8,7 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Changed
 
-- **VS Code Extension — Dictation shortcut moved to `Cmd+Alt+V` / `Ctrl+Alt+V`:** The start/stop dictation keybinding (`dictation.start` in the editor and `dictation.startFromTerminal` in the integrated terminal) moved off `Cmd+Shift+D` / `Ctrl+Shift+D`, which collides with VS Code's built-in **Run and Debug** view (`workbench.view.debug`). In the integrated terminal the built-in shortcut always won, so terminal dictation never triggered. `Cmd+Alt+V` avoids both that collision and the macOS **Dock hiding** system shortcut (`Cmd+Alt+D`). All VS Code docs and the quick-start shortcut table were updated; the continuous-dictation shortcut (`Cmd+Shift+Alt+D`) is unchanged. Note: to trigger dictation while the integrated terminal is focused, `dictation.startFromTerminal` must be listed in `terminal.integrated.commandsToSkipShell`, otherwise VS Code forwards the keystroke to the shell.
+- **VS Code Extension — Dictation shortcut moved to `Cmd+Alt+V` / `Ctrl+Alt+V`:** The start/stop dictation keybinding (`dictation.start` in the editor and `dictation.startFromTerminal` in the integrated terminal) moved off `Cmd+Shift+D` / `Ctrl+Shift+D`, which collides with VS Code's built-in **Run and Debug** view (`workbench.view.debug`). In the integrated terminal the built-in shortcut always won, so terminal dictation never triggered. `Cmd+Alt+V` avoids both that collision and the macOS **Dock hiding** system shortcut (`Cmd+Alt+D`). All VS Code docs and the quick-start shortcut table were updated; the continuous-dictation shortcut (`Cmd+Shift+Alt+D`) is unchanged.
 
 ### Fixed
 

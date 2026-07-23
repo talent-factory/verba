@@ -69,7 +69,6 @@ Legende: ⬜ offen · ✅ Pass · ❌ Fail (mit Notiz)
 - **Vorbedingung:**
   - `verba.autoSelectTemplate = true` (Default).
   - **Build 0.6.0 aktiv** (via `just dev` / F5-Extension-Host; eine installierte ältere Verba muss deaktiviert/deinstalliert sein, sonst handhabt deren alter Code den Shortcut).
-  - `dictation.startFromTerminal` steht in `terminal.integrated.commandsToSkipShell` — sonst reicht VS Code die Taste bei fokussiertem Terminal an die Shell durch, statt Verba auszulösen.
 - **Schritte:**
   1. Integriertes Terminal fokussieren (hineinklicken; zur Sicherheit ein Zeichen tippen + löschen, damit der Tastatur-Fokus wirklich im Terminal liegt).
   2. `Cmd+Alt+V` (löst `dictation.startFromTerminal` aus).
@@ -79,7 +78,7 @@ Legende: ⬜ offen · ✅ Pass · ❌ Fail (mit Notiz)
 - **Erwartung:**
   - Eingefügter Text ist eine **knappe imperative Anweisung** (z. B. „Führe die Datenbank-Migration aus, danach die Tests.“) — **ohne** das „Also, was ich von dir will“.
   - Dev-Console: `[Verba] Auto-selected template "Agent Instruction" (terminal→agent)`.
-- **Ergebnis:** ⬜
+- **Ergebnis:** ✅
 
 #### TC-B2 — Editor-Diktat bleibt datei-typ-basiert (Regression)
 - **Vorbedingung:** `verba.autoSelectTemplate = true`; eine **`.java`**-Datei geöffnet und fokussiert.

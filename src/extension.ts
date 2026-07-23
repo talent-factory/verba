@@ -94,6 +94,22 @@ function resolveLanguage(autoDetected: string | undefined): string | undefined {
 }
 
 /** Activates the Verba extension: registers commands, wires up services, and initializes the status bar. */
+/**
+ * Quick Pick adapter for `selectTemplate`: renders the active template's check marker in
+ * VS Code's icon gutter (an aligned column, parity with the macOS tray) instead of inline
+ * in the label. The picker logic itself stays free of `vscode` for testability.
+ */
+function showTemplateQuickPick(
+	items: { label: string; description?: string; active?: boolean; template: Template }[],
+	options?: { placeHolder?: string; activeItems?: unknown[] },
+): Thenable<any> {
+	const withGutter = items.map((it) => ({
+		...it,
+		iconPath: it.active ? new vscode.ThemeIcon('check') : undefined,
+	}));
+	return vscode.window.showQuickPick(withGutter as any, options as any);
+}
+
 export function activate(context: vscode.ExtensionContext) {
 	const recorder = new FfmpegRecorder();
 	const statusBar = new StatusBarManager();
@@ -553,7 +569,7 @@ export function activate(context: vscode.ExtensionContext) {
 					template = await selectTemplate(
 						templates,
 						undefined,
-						(items, options) => vscode.window.showQuickPick(items, options) as any,
+						showTemplateQuickPick,
 					);
 					if (!template) {
 						return;
@@ -797,7 +813,7 @@ export function activate(context: vscode.ExtensionContext) {
 		const template = await selectTemplate(
 			templates,
 			lastUsedName,
-			(items, options) => vscode.window.showQuickPick(items, options) as any,
+			showTemplateQuickPick,
 		);
 		if (!template) {
 			return;
@@ -1387,7 +1403,7 @@ export function activate(context: vscode.ExtensionContext) {
 				template = await selectTemplate(
 					templates,
 					undefined,
-					(items, options) => vscode.window.showQuickPick(items, options) as any,
+					showTemplateQuickPick,
 				);
 				if (!template) { return; }
 				await context.workspaceState.update('verba.lastTemplateName', template.name);

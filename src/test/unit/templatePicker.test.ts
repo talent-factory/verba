@@ -88,7 +88,7 @@ suite('selectTemplate', () => {
 		assert.strictEqual(items[1].label, 'Plain');
 	});
 
-	test('marks the active (last-used) template with a check icon', async () => {
+	test('flags the active (last-used) template for the check-icon gutter', async () => {
 		const templates: Template[] = [
 			{ name: 'Freitext', prompt: 'Clean up.', icon: '✏️' },
 			{ name: 'Commit Message', prompt: 'Commit.', icon: '🔀' },
@@ -99,7 +99,9 @@ suite('selectTemplate', () => {
 
 		const items = showQuickPick.firstCall.args[0];
 		assert.strictEqual(items[0].label, '✏️ Freitext');
-		assert.strictEqual(items[1].label, '$(check) 🔀 Commit Message');
+		assert.strictEqual(items[0].active, false);
+		assert.strictEqual(items[1].label, '🔀 Commit Message');
+		assert.strictEqual(items[1].active, true);
 	});
 
 	test('preselects context-aware template by name despite decorations in label', async () => {

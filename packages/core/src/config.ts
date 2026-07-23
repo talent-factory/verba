@@ -3,7 +3,7 @@ import defaultTemplatesData from './config/defaultTemplates.json';
 import type { ConfigProvider } from './adapters';
 import type { Expansion } from './cleanupService';
 
-/** A post-processing template. Union of both hosts' fields: `icon` (macOS tray) + `fileTypes` (VS Code auto-select). */
+/** A post-processing template. Union of both hosts' fields: `icon` (macOS tray + VS Code picker) + `fileTypes` (VS Code auto-select). */
 export interface Template {
 	name: string;
 	prompt: string;

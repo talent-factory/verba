@@ -36,7 +36,7 @@ suite('selectTemplate', () => {
 
 		const options = showQuickPick.firstCall.args[1];
 		assert.ok(options?.activeItems, 'should set activeItems');
-		assert.strictEqual(options.activeItems[0].label, 'Commit Message');
+		assert.strictEqual(options.activeItems[0].template.name, 'Commit Message');
 	});
 
 	test('does not preselect when lastUsed does not match', async () => {
@@ -58,25 +58,55 @@ suite('selectTemplate', () => {
 		assert.ok(showQuickPick.notCalled);
 	});
 
-	test('context-aware templates show magnifying glass icon prefix', async () => {
+	test('context-aware templates show a search hint in the description', async () => {
 		const templates: Template[] = [
 			{ name: 'Freitext', prompt: 'Clean up.' },
 			{ name: 'Code Comment', prompt: 'Generate comment.', contextAware: true },
 		];
-		const showQuickPick = sinon.stub().resolves({ label: '$(search) Code Comment', template: templates[1] });
+		const showQuickPick = sinon.stub().resolves({ label: 'Code Comment', template: templates[1] });
 
 		await selectTemplate(templates, undefined, showQuickPick);
 
 		const items = showQuickPick.firstCall.args[0];
 		assert.strictEqual(items[0].label, 'Freitext');
-		assert.strictEqual(items[1].label, '$(search) Code Comment');
+		assert.strictEqual(items[0].description, undefined);
+		assert.strictEqual(items[1].label, 'Code Comment');
+		assert.strictEqual(items[1].description, '$(search) context-aware');
 	});
 
-	test('preselects context-aware template by name despite icon prefix in label', async () => {
+	test('renders the template emoji icon in the label (macOS-tray parity)', async () => {
+		const templates: Template[] = [
+			{ name: 'Agent Instruction', prompt: 'Do it.', icon: '🦾', contextAware: true },
+			{ name: 'Plain', prompt: 'Clean up.' },
+		];
+		const showQuickPick = sinon.stub().resolves(undefined);
+
+		await selectTemplate(templates, undefined, showQuickPick);
+
+		const items = showQuickPick.firstCall.args[0];
+		assert.strictEqual(items[0].label, '🦾 Agent Instruction');
+		assert.strictEqual(items[1].label, 'Plain');
+	});
+
+	test('marks the active (last-used) template with a check icon', async () => {
+		const templates: Template[] = [
+			{ name: 'Freitext', prompt: 'Clean up.', icon: '✏️' },
+			{ name: 'Commit Message', prompt: 'Commit.', icon: '🔀' },
+		];
+		const showQuickPick = sinon.stub().resolves(undefined);
+
+		await selectTemplate(templates, 'Commit Message', showQuickPick);
+
+		const items = showQuickPick.firstCall.args[0];
+		assert.strictEqual(items[0].label, '✏️ Freitext');
+		assert.strictEqual(items[1].label, '$(check) 🔀 Commit Message');
+	});
+
+	test('preselects context-aware template by name despite decorations in label', async () => {
 		const templates: Template[] = [
 			{ name: 'Code Comment', prompt: 'Generate comment.', contextAware: true },
 		];
-		const showQuickPick = sinon.stub().resolves({ label: '$(search) Code Comment', template: templates[0] });
+		const showQuickPick = sinon.stub().resolves({ label: '$(check) Code Comment', template: templates[0] });
 
 		await selectTemplate(templates, 'Code Comment', showQuickPick);
 

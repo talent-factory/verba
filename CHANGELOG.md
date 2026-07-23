@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 ### Changed
 
 - **VS Code Extension — Dictation shortcut moved to `Cmd+Alt+V` / `Ctrl+Alt+V`:** The start/stop dictation keybinding (`dictation.start` in the editor and `dictation.startFromTerminal` in the integrated terminal) moved off `Cmd+Shift+D` / `Ctrl+Shift+D`, which collides with VS Code's built-in **Run and Debug** view (`workbench.view.debug`). In the integrated terminal the built-in shortcut always won, so terminal dictation never triggered. `Cmd+Alt+V` avoids both that collision and the macOS **Dock hiding** system shortcut (`Cmd+Alt+D`). All VS Code docs and the quick-start shortcut table were updated; the continuous-dictation shortcut (`Cmd+Shift+Alt+D`) is unchanged.
+- **VS Code Extension — Template picker shows icons and marks the active template:** The `dictation.selectTemplate` Quick Pick (`Cmd+Alt+T`) now renders each template's emoji icon in the label (parity with the macOS tray) and marks the currently active (last-used) template with a check icon. Context-aware templates now show a search hint in the item description instead of a leading label icon. The `icon` template field, previously honored only by the macOS tray, is now rendered by the VS Code picker as well.
 
 ### Fixed
 

@@ -5,6 +5,7 @@ export { AGENT_INSTRUCTION_TEMPLATE_NAME };
 
 interface QuickPickItem {
 	label: string;
+	description?: string;
 	template: Template;
 }
 
@@ -15,7 +16,9 @@ type ShowQuickPickFn = (
 
 /**
  * Shows a Quick Pick menu for template selection.
- * The last-used template is pre-selected; context-aware templates are marked with a search icon.
+ * Each item shows the template's emoji icon (parity with the macOS tray); the active
+ * (last-used) template is marked with a check icon and pre-selected; context-aware
+ * templates carry a search hint in the description.
  * @returns The selected template, or `undefined` if the user dismissed the picker.
  */
 export async function selectTemplate(
@@ -27,10 +30,15 @@ export async function selectTemplate(
 		throw new Error('No templates configured. Add templates in settings under verba.templates.');
 	}
 
-	const items: QuickPickItem[] = templates.map((t) => ({
-		label: t.contextAware ? `$(search) ${t.name}` : t.name,
-		template: t,
-	}));
+	const items: QuickPickItem[] = templates.map((t) => {
+		const check = t.name === lastUsedName ? '$(check) ' : '';
+		const icon = t.icon ? `${t.icon} ` : '';
+		return {
+			label: `${check}${icon}${t.name}`,
+			description: t.contextAware ? '$(search) context-aware' : undefined,
+			template: t,
+		};
+	});
 
 	const lastUsedItem = lastUsedName
 		? items.find((item) => item.template.name === lastUsedName)

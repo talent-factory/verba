@@ -94,3 +94,19 @@ docs:
 [group('docs')]
 docs-serve:
 	mkdocs serve
+
+# ─── Clean ────────────────────────────────────────────────────────────────────
+
+# Remove all build artifacts (extension, core, macOS, docs) — keeps node_modules.
+# Note: also drops apps/macos/src-tauri/target, so the next macos-* triggers a
+# full Rust rebuild (slow). Dependencies stay; no re-install needed.
+[group('clean')]
+clean:
+	rm -rf out dist dist-test .vscode-test site *.vsix
+	rm -rf packages/core/dist
+	rm -rf apps/macos/dist apps/macos/src-tauri/target
+
+# Full reset — also remove every node_modules. Re-run `just install` afterwards.
+[group('clean')]
+clean-all: clean
+	rm -rf node_modules packages/core/node_modules apps/macos/node_modules

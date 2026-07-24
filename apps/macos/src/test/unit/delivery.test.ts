@@ -11,6 +11,7 @@ function ports(surface: DetectedSurface, overrides: Partial<DeliveryPorts> = {})
 		detectSurface: async () => surface,
 		herdrSend: async (paneId: string, _t: string, submit: boolean) => {
 			calls.push(`herdr:${paneId}:${submit}`);
+			return 'delivered';
 		},
 		paste: async (_t: string) => {
 			calls.push('paste');
@@ -38,7 +39,28 @@ suite('deliver', () => {
 		assert.strictEqual(outcome, 'herdr');
 	});
 
-	test('agent+paneId, herdr throws → paste fallback (+enter on submit)', async () => {
+	test('agent+paneId+submit, herdr resolves "delivered-not-submitted" → not-submitted, no paste, no pressEnter', async () => {
+		const calls: string[] = [];
+		const p: DeliveryPorts = {
+			detectSurface: async () => ({ class: 'agent', agent: 'claude', paneId: 'wQ:p2' }),
+			herdrSend: async (paneId: string, _t: string, submit: boolean) => {
+				calls.push(`herdr:${paneId}:${submit}`);
+				return 'delivered-not-submitted';
+			},
+			paste: async () => {
+				calls.push('paste');
+				return 'pasted';
+			},
+			pressEnter: async () => {
+				calls.push('enter');
+			},
+		};
+		const outcome = await deliver('run tests', 'submit', p);
+		assert.deepEqual(calls, ['herdr:wQ:p2:true']);
+		assert.strictEqual(outcome, 'not-submitted');
+	});
+
+	test('agent+paneId, herdr rejects (nothing landed) → paste fallback once (+enter on submit)', async () => {
 		const calls: string[] = [];
 		const p: DeliveryPorts = {
 			detectSurface: async () => ({ class: 'agent', agent: 'claude', paneId: 'wQ:p2' }),
@@ -55,7 +77,29 @@ suite('deliver', () => {
 		};
 		const outcome = await deliver('run tests', 'submit', p);
 		assert.deepEqual(calls, ['paste', 'enter']);
+		assert.strictEqual(calls.filter((c) => c === 'paste').length, 1, 'paste must be called exactly once — no double delivery');
 		assert.strictEqual(outcome, 'pasted');
+	});
+
+	test('paste path, submit+agent, pressEnter rejects → not-submitted (paste already landed, not re-thrown)', async () => {
+		const calls: string[] = [];
+		const p: DeliveryPorts = {
+			detectSurface: async () => ({ class: 'agent', agent: 'claude' }), // no paneId → paste path
+			herdrSend: async () => {
+				throw new Error('unused');
+			},
+			paste: async () => {
+				calls.push('paste');
+				return 'pasted';
+			},
+			pressEnter: async () => {
+				calls.push('enter');
+				throw new Error('Enter failed: could not create event source');
+			},
+		};
+		const outcome = await deliver('run tests', 'submit', p);
+		assert.deepEqual(calls, ['paste', 'enter']);
+		assert.strictEqual(outcome, 'not-submitted');
 	});
 
 	test('agent without paneId + submit → paste + enter', async () => {

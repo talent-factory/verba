@@ -30,7 +30,7 @@ export function createDeps() {
 		// is the delivery target, mirroring the old blind `paste_text` behavior.
 		delivery: {
 			detectSurface: sinon.stub().resolves({ class: 'generic' } as DetectedSurface),
-			herdrSend: sinon.stub().resolves(),
+			herdrSend: sinon.stub().resolves('delivered'),
 			paste: sinon.stub().resolves('pasted'),
 			pressEnter: sinon.stub().resolves(),
 		},
@@ -60,8 +60,9 @@ const tick = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0
 function fakeAgentPorts(onSend: (text: string, intent: Intent) => void): DeliveryPorts {
 	return {
 		detectSurface: async (): Promise<DetectedSurface> => ({ class: 'agent', paneId: 'pane-1' }),
-		herdrSend: async (_paneId: string, text: string, submit: boolean): Promise<void> => {
+		herdrSend: async (_paneId: string, text: string, submit: boolean): Promise<'delivered' | 'delivered-not-submitted'> => {
 			onSend(text, submit ? 'submit' : 'insert');
+			return 'delivered';
 		},
 		paste: async (): Promise<PasteOutcome> => 'pasted',
 		pressEnter: async (): Promise<void> => {},
@@ -590,6 +591,27 @@ suite('DictationController', () => {
 
 		assert.ok(deps.ui.showMessage.calledOnceWithExactly(HUD_MESSAGES.deliveryFailed), 'HUD shows the delivery-failed message');
 		assert.ok(deps.notifier.error.called, 'the error notification still fires');
+	});
+
+	test('not-submitted delivery warns the user but never treats it as a failure', async () => {
+		// The text landed (herdr send-text, or paste) but the Enter/submit step
+		// failed. This is NOT a delivery failure: no error notification, no
+		// transcript window, no deliveryFailed HUD message (the approved
+		// HUD_MESSAGES set has no 4th entry for this case — a plain warn suffices).
+		const deps = createDeps();
+		deps.delivery.herdrSend = sinon.stub().resolves('delivered-not-submitted');
+		deps.delivery.detectSurface = sinon.stub().resolves({ class: 'agent', paneId: 'pane-1' } as DetectedSurface);
+		const controller = new DictationController({
+			...deps,
+			schedule: (fn: () => void) => { void fn; return () => {}; },
+		} as unknown as ControllerDeps);
+
+		await dictate(controller);
+
+		assert.ok(deps.notifier.warn.calledWithMatch(/not submitted|press enter/i), 'the user is told to press Enter manually');
+		assert.strictEqual(deps.notifier.error.called, false, 'not-submitted is not an error');
+		assert.strictEqual(deps.ui.showTranscript.called, false, 'the text landed — no need to fall back to the window');
+		assert.ok(deps.ui.showMessage.notCalled, 'no HUD message is invented for not-submitted (fixed 3-message set)');
 	});
 
 	test('a normal paste surfaces NO HUD message and idles immediately', async () => {

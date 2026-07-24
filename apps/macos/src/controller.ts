@@ -273,6 +273,11 @@ export class DictationController {
 					// a normal paste that silently did nothing.
 					this.deps.notifier.warn('Verba: Terminal blocked the paste (Secure Input) — transcript left on the clipboard, press ⌘V to insert.');
 					this.pendingHudMessage = HUD_MESSAGES.secureInput;
+				} else if (outcome === 'not-submitted') {
+					// The text landed (herdr send-text, or paste) but the Enter/submit
+					// step failed. Not a delivery failure — the transcript is NOT
+					// re-delivered and NOT shown as failed, just a warn to press Enter.
+					this.deps.notifier.warn('Verba: inserted but not submitted — press Enter to send.');
 				} else {
 					this.deps.notifier.info(this.intent === 'submit' ? 'Verba: sent.' : 'Verba: pasted.');
 				}

@@ -59,7 +59,7 @@ const tick = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0
  */
 function fakeAgentPorts(onSend: (text: string, intent: Intent) => void): DeliveryPorts {
 	return {
-		detectSurface: async (): Promise<DetectedSurface> => ({ class: 'agent', paneId: 'pane-1' }),
+		detectSurface: async (): Promise<DetectedSurface> => ({ class: 'agent', agent: 'claude', paneId: 'pane-1' }),
 		herdrSend: async (_paneId: string, text: string, submit: boolean): Promise<'delivered' | 'delivered-not-submitted'> => {
 			onSend(text, submit ? 'submit' : 'insert');
 			return 'delivered';
@@ -625,7 +625,7 @@ suite('DictationController', () => {
 		// HUD_MESSAGES set has no 4th entry for this case — a plain warn suffices).
 		const deps = createDeps();
 		deps.delivery.herdrSend = sinon.stub().resolves('delivered-not-submitted');
-		deps.delivery.detectSurface = sinon.stub().resolves({ class: 'agent', paneId: 'pane-1' } as DetectedSurface);
+		deps.delivery.detectSurface = sinon.stub().resolves({ class: 'agent', agent: 'claude', paneId: 'pane-1' } as DetectedSurface);
 		const controller = new DictationController({
 			...deps,
 			schedule: (fn: () => void) => { void fn; return () => {}; },

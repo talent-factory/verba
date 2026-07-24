@@ -214,6 +214,26 @@ suite('activation config', () => {
 		const cfg = resolve({ activation: { mode: 'nonsense' } });
 		assert.strictEqual(cfg.activation.mode, 'push-to-talk');
 	});
+
+	test('an invalid-typed insertKey falls back per-field while a sibling override is kept', () => {
+		const cfg = resolve({ activation: { mode: 'toggle', insertKey: 123 } });
+		assert.strictEqual(cfg.activation.insertKey, 'right-command', 'wrong-typed insertKey falls back to the default');
+		assert.strictEqual(cfg.activation.mode, 'toggle', 'sibling override survives the insertKey fallback');
+	});
+
+	test('an empty submitKey falls back to the default while a sibling override is kept', () => {
+		const cfg = resolve({ activation: { mode: 'toggle', submitKey: '' } });
+		assert.strictEqual(cfg.activation.submitKey, 'right-option');
+		assert.strictEqual(cfg.activation.mode, 'toggle', 'sibling override survives the submitKey fallback');
+	});
+
+	test('an invalid-typed or out-of-range holdThresholdMs falls back per-field while a sibling override is kept', () => {
+		for (const bad of [-5, NaN, 'x']) {
+			const cfg = resolve({ activation: { mode: 'toggle', holdThresholdMs: bad } });
+			assert.strictEqual(cfg.activation.holdThresholdMs, 200, `holdThresholdMs ${String(bad)} falls back to the default`);
+			assert.strictEqual(cfg.activation.mode, 'toggle', 'sibling override survives the holdThresholdMs fallback');
+		}
+	});
 });
 
 suite('language code validation', () => {

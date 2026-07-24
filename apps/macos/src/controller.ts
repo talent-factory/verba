@@ -1,4 +1,4 @@
-import { NoSpeechError, type CleanupService } from '@verba/core';
+import { DEFAULT_ACTIVATION, NoSpeechError, type CleanupService } from '@verba/core';
 import { deliver, type DeliveryPorts, type Intent } from './delivery';
 import type { DictationState } from './visualization/statePresentation';
 import { HUD_MESSAGES, type HudMessage } from './visualization/messagePresentation';
@@ -109,7 +109,7 @@ export class DictationController {
 	constructor(private readonly deps: ControllerDeps) {
 		this.cleanupTimeoutMs = deps.cleanupTimeoutMs ?? DEFAULT_CLEANUP_TIMEOUT_MS;
 		this.stopCaptureTimeoutMs = deps.stopCaptureTimeoutMs ?? DEFAULT_STOP_CAPTURE_TIMEOUT_MS;
-		this.holdThresholdMs = deps.holdThresholdMs ?? 200;
+		this.holdThresholdMs = deps.holdThresholdMs ?? DEFAULT_ACTIVATION.holdThresholdMs;
 		this.schedule = deps.schedule ?? ((fn, ms) => { const t = setTimeout(fn, ms); return () => clearTimeout(t); });
 	}
 

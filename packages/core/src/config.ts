@@ -79,21 +79,30 @@ export interface ActivationConfig {
 	holdThresholdMs: number;
 }
 
-const DEFAULT_ACTIVATION: ActivationConfig = {
+/** The activation config default — the single source `resolveActivation` falls back to and hosts may import (e.g. `controller.ts`'s `holdThresholdMs` default). */
+export const DEFAULT_ACTIVATION: ActivationConfig = {
 	mode: 'push-to-talk',
 	insertKey: 'right-command',
 	submitKey: 'right-option',
 	holdThresholdMs: 200,
 };
 
-/** The `detect_surface` IPC payload — mirrors the Rust `Surface` enum's tagged shape. */
-export interface DetectedSurface {
-	class: SurfaceClass;
-	agent?: string;
-	status?: string;
-	/** herdr pane id of the focused agent (delivery target); absent unless class === 'agent' via herdr. */
-	paneId?: string;
-}
+/**
+ * The `detect_surface` IPC payload — mirrors the Rust `Surface` enum's tagged
+ * shape. Internally tagged on `class`: only the `'agent'` variant carries
+ * `agent`/`status`/`paneId`, so `{ class: 'agent' }` with no `agent` is no
+ * longer constructible.
+ */
+export type DetectedSurface =
+	| { class: 'generic' }
+	| { class: 'editor' }
+	| {
+		class: 'agent';
+		agent: string;
+		status?: string;
+		/** herdr pane id of the focused agent (delivery target); absent unless detected via herdr. */
+		paneId?: string;
+	};
 
 /** The 10 bundled default templates — the single canonical source for both hosts. */
 export const DEFAULT_TEMPLATES: Template[] = defaultTemplatesData as Template[];
@@ -193,9 +202,10 @@ export function resolveActiveTemplate(templates: Template[], name?: string): Tem
 }
 
 /**
- * Resolves the push-to-talk activation config. Falls back per-field to
- * {@link DEFAULT_ACTIVATION} — a partial/invalid `activation` block never
- * invalidates the whole block, only the offending field.
+ * Resolves the activation config (push-to-talk vs. toggle, keys, hold
+ * threshold). Falls back per-field to {@link DEFAULT_ACTIVATION} — a
+ * partial/invalid `activation` block never invalidates the whole block, only
+ * the offending field.
  */
 function resolveActivation(provider: ConfigProvider): ActivationConfig {
 	const rawMode = provider.get<unknown>('activation.mode', DEFAULT_ACTIVATION.mode);

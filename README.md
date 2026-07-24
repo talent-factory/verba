@@ -68,7 +68,7 @@ Full guide: [macOS Installation](docs/macos/installation.md)
 
 ### VS Code
 
-- **Editor & Terminal Insertion** -- `Cmd+Shift+D` (Mac) / `Ctrl+Shift+D` (Windows/Linux) starts and stops recording; text is inserted contextually in the editor or the integrated terminal.
+- **Editor & Terminal Insertion** -- `Cmd+Alt+V` (Mac) / `Ctrl+Alt+V` (Windows/Linux) starts and stops recording; text is inserted contextually in the editor or the integrated terminal.
 - **Multi-Cursor / Selection-Aware Dictation** -- dictated text replaces a selection, fills every cursor position, or is passed to Claude as context for the transformation.
 - **Dictation History & Full-Text Search** -- every dictation is saved locally and searchable across raw transcript and cleaned text; re-insert or copy past results.
 - **Continuous Dictation** -- longer sessions via Deepgram Nova-3 WebSocket streaming with automatic pause segmentation (`Cmd+Shift+Alt+D`).
@@ -133,7 +133,7 @@ On all platforms, you can select the microphone anytime with the command `Verba:
 
 ## Get started
 
-- **VS Code:** press `Cmd+Shift+D` / `Ctrl+Shift+D`, pick a template on first use, speak, then press the shortcut again -- the result appears at your cursor. Full walkthrough: [VS Code Quick Start](docs/vscode/quickstart.md).
+- **VS Code:** press `Cmd+Alt+V` / `Ctrl+Alt+V`, pick a template on first use, speak, then press the shortcut again -- the result appears at your cursor. Full walkthrough: [VS Code Quick Start](docs/vscode/quickstart.md).
 - **macOS (Beta):** build from source with `just macos-dev`, then press `Ctrl+Alt+D` anywhere to start dictating -- Verba pastes the cleaned text into the frontmost app. Full walkthrough: [macOS Installation](docs/macos/installation.md).
 
 ## Configuration

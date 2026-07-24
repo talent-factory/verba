@@ -2,11 +2,14 @@ import { invoke } from '@tauri-apps/api/core';
 import {
 	resolveConfig,
 	resolveActiveTemplate,
+	resolveTemplateOutputLanguage,
 	DEFAULT_TEMPLATES,
+	AGENT_INSTRUCTION_TEMPLATE_NAME,
 	type ConfigProvider,
 	type Expansion,
 	type PipelineContext,
 	type ResolvedConfig,
+	type SurfaceClass,
 	type Template,
 } from '@verba/core';
 
@@ -73,10 +76,27 @@ export function applyConfig(config: ResolvedConfig, targets: ApplyTargets): void
  * Builds the pipeline context for a dictation: injects the active template's
  * prompt, and pins the cleanup language when the user chose a fixed one.
  */
-export function cleanupContextFor(config: ResolvedConfig, context?: PipelineContext): PipelineContext {
-	const merged: PipelineContext = { ...context, templatePrompt: config.activeTemplate.prompt };
+/** Picks the template for a detected surface: an agent surface → the "Agent
+ *  Instruction" template (if present); otherwise the configured active template. */
+export function templateForSurface(config: ResolvedConfig, surfaceClass: SurfaceClass): Template {
+	if (surfaceClass === 'agent') {
+		const agent = config.templates.find(t => t.name === AGENT_INSTRUCTION_TEMPLATE_NAME);
+		if (agent) {
+			return agent;
+		}
+	}
+	return config.activeTemplate;
+}
+
+export function cleanupContextFor(config: ResolvedConfig, context?: PipelineContext, templateOverride?: Template): PipelineContext {
+	const template = templateOverride ?? config.activeTemplate;
+	const merged: PipelineContext = { ...context, templatePrompt: template.prompt };
 	if (config.language !== 'auto') {
 		merged.detectedLanguage = config.language;
+	}
+	const outputLanguage = resolveTemplateOutputLanguage(template.outputLanguage);
+	if (outputLanguage) {
+		merged.outputLanguage = outputLanguage;
 	}
 	return merged;
 }

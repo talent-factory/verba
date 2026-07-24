@@ -1,0 +1,22 @@
+{
+  "all": true,
+  "include": ["dist-test/**/*.js"],
+  "exclude": [
+    "dist-test/test/**",
+    "dist-test/**/*.test.js",
+    "dist-test/main.js",
+    "dist-test/ui.js",
+    "dist-test/wiring.js",
+    "dist-test/hud/**",
+    "dist-test/adapters/keyValueStore.js",
+    "dist-test/adapters/notifier.js",
+    "dist-test/adapters/secretStore.js"
+  ],
+  "reporter": ["text", "text-summary", "lcov"],
+  "reports-dir": "coverage",
+  "check-coverage": true,
+  "lines": 90,
+  "statements": 90,
+  "functions": 90,
+  "branches": 85
+}

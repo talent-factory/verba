@@ -4,6 +4,7 @@
 		"module": "commonjs",
 		"moduleResolution": "node",
 		"noEmit": false,
+		"sourceMap": true,
 		"outDir": "dist-test"
 	},
 	"include": ["src"]

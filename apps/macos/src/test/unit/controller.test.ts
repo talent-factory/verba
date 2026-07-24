@@ -70,6 +70,118 @@ suite('DictationController', () => {
 		assert.strictEqual(deps.ui.setPhase.calledWith('Idle.'), true);
 	});
 
+	test('stop_capture that stalls (never settles) recovers to idle within the timeout', async () => {
+		// Models the native capture thread hanging on cpal/CoreAudio stream teardown:
+		// `invoke('stop_capture')` neither resolves nor rejects. Without the timeout this
+		// froze the flow in "Transcribing…" forever with no error and no logs.
+		(deps.invoke as unknown as sinon.SinonStub)
+			.withArgs('stop_capture')
+			.returns(new Promise<string>(() => {}));
+		const stalled = new DictationController({
+			...(deps as unknown as ControllerDeps),
+			stopCaptureTimeoutMs: 10,
+		});
+
+		await dictate(stalled);
+
+		assert.strictEqual(deps.notifier.error.calledWithMatch(/timed out/), true);
+		assert.strictEqual(deps.ui.setPhase.calledWith('Idle.'), true);
+		// Transcription/cleanup/paste must never run when the recording can't be finalized.
+		assert.strictEqual(deps.deepgram.transcribe.called, false);
+		assert.strictEqual(
+			(deps.invoke as unknown as sinon.SinonStub).calledWith('paste_text', sinon.match.any),
+			false
+		);
+		// The flow must settle back to idle, never leaving the state stuck.
+		const states = (deps.ui.setState as sinon.SinonStub).getCalls().map((c) => c.args[0]);
+		assert.strictEqual(states[states.length - 1], 'idle');
+	});
+
+	test('stop_capture that RESOLVES after the timeout is consumed (no unhandledRejection)', async () => {
+		// The abandoned recording finalizes late — after we've already timed out and
+		// reset to idle. The late path must be swallowed: no transcription, no paste,
+		// no unhandledRejection.
+		const unhandled: unknown[] = [];
+		const onUnhandled = (reason: unknown) => unhandled.push(reason);
+		process.on('unhandledRejection', onUnhandled);
+		try {
+			(deps.invoke as unknown as sinon.SinonStub)
+				.withArgs('stop_capture')
+				.returns(new Promise<string>((resolve) => setTimeout(() => resolve('/tmp/late.wav'), 30)));
+			const stalled = new DictationController({
+				...(deps as unknown as ControllerDeps),
+				stopCaptureTimeoutMs: 10,
+			});
+
+			await dictate(stalled);
+			await new Promise((r) => setTimeout(r, 40));
+
+			assert.strictEqual(deps.deepgram.transcribe.called, false);
+			assert.strictEqual(
+				(deps.invoke as unknown as sinon.SinonStub).calledWith('paste_text', sinon.match.any),
+				false
+			);
+			assert.deepStrictEqual(unhandled, [], 'late stop_capture resolution must not escape');
+		} finally {
+			process.removeListener('unhandledRejection', onUnhandled);
+		}
+	});
+
+	test('stop_capture that REJECTS after the timeout is consumed (no unhandledRejection)', async () => {
+		const unhandled: unknown[] = [];
+		const onUnhandled = (reason: unknown) => unhandled.push(reason);
+		process.on('unhandledRejection', onUnhandled);
+		try {
+			(deps.invoke as unknown as sinon.SinonStub)
+				.withArgs('stop_capture')
+				.returns(new Promise<string>((_resolve, reject) => setTimeout(() => reject(new Error('late teardown error')), 30)));
+			const stalled = new DictationController({
+				...(deps as unknown as ControllerDeps),
+				stopCaptureTimeoutMs: 10,
+			});
+
+			await dictate(stalled);
+			await new Promise((r) => setTimeout(r, 40));
+
+			assert.strictEqual(deps.notifier.error.calledWithMatch(/timed out/), true);
+			assert.deepStrictEqual(unhandled, [], 'late stop_capture rejection must not escape');
+		} finally {
+			process.removeListener('unhandledRejection', onUnhandled);
+		}
+	});
+
+	test('cleanup that RESOLVES after the timeout is ignored (raw transcript already used)', async () => {
+		const unhandled: unknown[] = [];
+		const onUnhandled = (reason: unknown) => unhandled.push(reason);
+		process.on('unhandledRejection', onUnhandled);
+		try {
+			deps.cleanup.process = sinon.stub().returns(
+				new Promise<string>((resolve) => setTimeout(() => resolve('cleaned LATE'), 30)),
+			);
+			const stalled = new DictationController({
+				...(deps as unknown as ControllerDeps),
+				cleanupTimeoutMs: 10,
+			});
+
+			await dictate(stalled);
+			await new Promise((r) => setTimeout(r, 40));
+
+			// Fell back to the raw transcript on timeout; the late cleaned value must not
+			// be pasted, and must not surface as an unhandledRejection.
+			assert.strictEqual(
+				(deps.invoke as unknown as sinon.SinonStub).calledWith('paste_text', { text: 'raw transcript' }),
+				true
+			);
+			assert.strictEqual(
+				(deps.invoke as unknown as sinon.SinonStub).calledWith('paste_text', { text: 'cleaned LATE' }),
+				false
+			);
+			assert.deepStrictEqual(unhandled, [], 'late cleanup resolution must not escape');
+		} finally {
+			process.removeListener('unhandledRejection', onUnhandled);
+		}
+	});
+
 	test('init initializes the store', async () => {
 		await controller.init();
 

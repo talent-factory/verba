@@ -19,6 +19,9 @@ suite('applyConfig', () => {
 				expansions: [{ abbreviation: 'z', expansion: 'zum Beispiel' }],
 				templates: [{ name: 'Freitext', prompt: 'noop' }],
 				activeTemplate: { name: 'Freitext', prompt: 'noop' },
+				agentMarkers: [],
+				terminalApps: [],
+				editorApps: [],
 			},
 			targets,
 		);

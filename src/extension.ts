@@ -4,11 +4,11 @@ import * as path from 'path';
 import * as https from 'https';
 import { FfmpegRecorder } from './recorder';
 import { StatusBarManager } from './statusBarManager';
-import { PipelineContext, CleanupService, Expansion, Notifier } from '@verba/core';
+import { PipelineContext, CleanupService, Expansion, Notifier, resolveTemplateOutputLanguage } from '@verba/core';
 import { TranscriptionService, TranscriptionProvider, TranscriptionResult } from './transcriptionService';
 import { insertText, InsertionResult } from './insertText';
 import { recordDictation, clearLastDictation, computeInsertedRanges, executeUndo, UndoEditor, PreEditSelection } from './undoManager';
-import { selectTemplate, findTemplateForLanguage, Template } from './templatePicker';
+import { selectTemplate, chooseAutoTemplate, Template } from './templatePicker';
 import { ContextProvider } from './contextProvider';
 import { EmbeddingService } from './embeddingService';
 import { Indexer } from './indexer';
@@ -94,6 +94,19 @@ function resolveLanguage(autoDetected: string | undefined): string | undefined {
 }
 
 /** Activates the Verba extension: registers commands, wires up services, and initializes the status bar. */
+/**
+ * Quick Pick adapter for `selectTemplate`, kept as a single indirection so the picker
+ * logic in `templatePicker.ts` stays free of `vscode` for testability. The active-template
+ * marker is carried in each item's `description` (built in `selectTemplate`), so no
+ * vscode-specific decoration is needed here.
+ */
+function showTemplateQuickPick(
+	items: { label: string; description?: string; template: Template }[],
+	options?: { placeHolder?: string; activeItems?: unknown[] },
+): Thenable<any> {
+	return vscode.window.showQuickPick(items as any, options as any);
+}
+
 export function activate(context: vscode.ExtensionContext) {
 	const recorder = new FfmpegRecorder();
 	const statusBar = new StatusBarManager();
@@ -400,6 +413,7 @@ export function activate(context: vscode.ExtensionContext) {
 				// Step 3: Claude post-processing (pass captured selection as context only with a template)
 				const pipelineContext: PipelineContext = {
 					templatePrompt: selectedTemplate?.prompt,
+					outputLanguage: resolveTemplateOutputLanguage(selectedTemplate?.outputLanguage),
 					contextSnippets,
 					selectedText: capturedSelectedText,
 					detectedLanguage: resolveLanguage(transcriptionResult.detectedLanguage),
@@ -534,13 +548,11 @@ export function activate(context: vscode.ExtensionContext) {
 				// Auto-selected templates are transient — they do not update lastTemplateName,
 				// so the user's manual template choice remains the stable fallback.
 				const autoSelect = vscode.workspace.getConfiguration('verba').get<boolean>('autoSelectTemplate', true);
-				if (autoSelect && !forTerminal) {
-					const languageId = vscode.window.activeTextEditor?.document.languageId;
-					if (languageId) {
-						template = findTemplateForLanguage(templates, languageId);
-						if (template) {
-							console.log(`[Verba] Auto-selected template "${template.name}" for language "${languageId}"`);
-						}
+				if (autoSelect) {
+					const languageId = forTerminal ? undefined : vscode.window.activeTextEditor?.document.languageId;
+					template = chooseAutoTemplate(templates, { forTerminal, languageId });
+					if (template) {
+						console.log(`[Verba] Auto-selected template "${template.name}" (${forTerminal ? 'terminal→agent' : `file-type ${languageId}`})`);
 					}
 				}
 
@@ -554,7 +566,7 @@ export function activate(context: vscode.ExtensionContext) {
 					template = await selectTemplate(
 						templates,
 						undefined,
-						(items, options) => vscode.window.showQuickPick(items, options) as any,
+						showTemplateQuickPick,
 					);
 					if (!template) {
 						return;
@@ -798,7 +810,7 @@ export function activate(context: vscode.ExtensionContext) {
 		const template = await selectTemplate(
 			templates,
 			lastUsedName,
-			(items, options) => vscode.window.showQuickPick(items, options) as any,
+			showTemplateQuickPick,
 		);
 		if (!template) {
 			return;
@@ -1376,11 +1388,9 @@ export function activate(context: vscode.ExtensionContext) {
 			const autoSelect = vscode.workspace.getConfiguration('verba').get<boolean>('autoSelectTemplate', true);
 			if (autoSelect) {
 				const languageId = vscode.window.activeTextEditor?.document.languageId;
-				if (languageId) {
-					template = findTemplateForLanguage(templates, languageId);
-					if (template) {
-						console.log(`[Verba] Continuous: Auto-selected template "${template.name}" for language "${languageId}"`);
-					}
+				template = chooseAutoTemplate(templates, { forTerminal: false, languageId });
+				if (template) {
+					console.log(`[Verba] Continuous: Auto-selected template "${template.name}" for language "${languageId}"`);
 				}
 			}
 			if (!template && lastUsedName) {
@@ -1390,7 +1400,7 @@ export function activate(context: vscode.ExtensionContext) {
 				template = await selectTemplate(
 					templates,
 					undefined,
-					(items, options) => vscode.window.showQuickPick(items, options) as any,
+					showTemplateQuickPick,
 				);
 				if (!template) { return; }
 				await context.workspaceState.update('verba.lastTemplateName', template.name);
@@ -1442,6 +1452,7 @@ export function activate(context: vscode.ExtensionContext) {
 						// Claude cleanup
 						const pipelineContext: PipelineContext = {
 							templatePrompt: continuousTemplate?.prompt,
+							outputLanguage: resolveTemplateOutputLanguage(continuousTemplate?.outputLanguage),
 							selectedText: capturedText,
 							detectedLanguage: resolveLanguage(event.detectedLanguage),
 						};

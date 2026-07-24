@@ -1,7 +1,7 @@
 {
   "name": "@verba/macos",
   "version": "0.0.0",
-  "description": "Verba for macOS — system-wide dictation menu-bar app (Tauri)",
+  "description": "Verba for macOS \u2014 system-wide dictation menu-bar app (Tauri)",
   "private": true,
   "license": "MIT",
   "type": "module",
@@ -11,7 +11,8 @@
     "typecheck": "tsc --noEmit",
     "tauri": "tauri",
     "pretest:unit": "tsc -p tsconfig.test.json && node -e \"require('fs').writeFileSync('dist-test/package.json', JSON.stringify({ type: 'commonjs' }))\"",
-    "test:unit": "mocha"
+    "test:unit": "mocha",
+    "test:coverage": "npm run pretest:unit && c8 mocha"
   },
   "dependencies": {
     "@verba/core": "*",

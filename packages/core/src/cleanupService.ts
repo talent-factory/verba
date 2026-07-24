@@ -1,6 +1,7 @@
 import Anthropic, { type ClientOptions } from '@anthropic-ai/sdk';
 import { ProcessingStage, PipelineContext } from './pipeline';
 import { SecretStore, Notifier } from './adapters';
+import { isLanguageCode } from './config';
 
 export interface Expansion {
 	abbreviation: string;
@@ -11,6 +12,41 @@ export interface Expansion {
  *  formatting disruption when embedded in LLM system prompts. */
 function sanitize(s: string): string {
 	return s.replace(/[\r\n]+/g, ' ').replace(/"/g, "'");
+}
+
+/**
+ * Removes a single outer markdown code fence from model output. LLMs frequently wrap
+ * code-oriented answers (JavaDoc, code comments, transformed selections) in ```lang … ```
+ * fences that would otherwise be pasted literally into the editor. Stripped only when the
+ * output is exactly ONE fenced block — the first line is an opening fence, the output ends
+ * with ```, and nothing between them is itself a fence line. Anything else is returned
+ * unchanged: prose, a fenced block embedded in surrounding text, or output that is multiple
+ * top-level fenced blocks (where stripping the first opener and last closer would corrupt
+ * the content).
+ */
+export function stripOuterCodeFence(text: string): string {
+	const trimmed = text.trim();
+	const firstNewline = trimmed.indexOf('\n');
+	// Need at least an opening fence line and a closing ``` on separate lines.
+	if (firstNewline === -1 || !trimmed.endsWith('```')) {
+		return text;
+	}
+	const firstLine = trimmed.slice(0, firstNewline).trim();
+	// Opening fence: ``` optionally followed by a language identifier (e.g. ```java).
+	if (!/^```[a-zA-Z0-9+#.-]*$/.test(firstLine)) {
+		return text;
+	}
+	// Content between the opening fence line and the trailing ```.
+	const body = trimmed.slice(firstNewline + 1, trimmed.length - 3);
+	// Only unwrap a SINGLE fenced block: if the body itself contains a fence delimiter
+	// line, the trailing ``` closes a *different* block than the opener (multiple
+	// top-level blocks, e.g. a Markdown answer with two code blocks), and stripping the
+	// outer pair would leave unbalanced fences. Leave such output untouched.
+	if (/^\s*```/m.test(body)) {
+		return text;
+	}
+	// Drop the opening fence line and the trailing ```, plus the newline before it.
+	return body.replace(/\n?[ \t]*$/, '');
 }
 
 const API_KEY_STORAGE_KEY = 'anthropic-api-key';
@@ -156,7 +192,7 @@ export class CleanupService implements ProcessingStage {
 
 		console.log(`[Verba] Claude response (${(text || '').length} chars): ${(text || '').substring(0, 200)}`);
 
-		return this.fallbackIfEmpty(text, input, !!context?.selectedText);
+		return this.fallbackIfEmpty(stripOuterCodeFence(text), input, !!context?.selectedText);
 	}
 
 	/**
@@ -241,17 +277,23 @@ export class CleanupService implements ProcessingStage {
 
 		console.log(`[Verba] Claude streaming response (${accumulated.length} chars): ${accumulated.substring(0, 200)}`);
 
-		return this.fallbackIfEmpty(accumulated, input, !!context?.selectedText);
+		return this.fallbackIfEmpty(stripOuterCodeFence(accumulated), input, !!context?.selectedText);
 	}
 
 	private async prepareRequest(
 		context: PipelineContext | undefined,
 		input: string,
 	): Promise<{ client: Anthropic; systemPrompt: string; userMessage: string }> {
+		// Re-validate at the interpolation site (defense in depth): even though
+		// `outputLanguage` is branded upstream, this is the sink where the value
+		// enters the prompt, so the guard stays here regardless of the type.
+		const outputLang = context?.outputLanguage;
 		const langCode = context?.detectedLanguage;
-		const languageHint = langCode && /^[a-z]{2,3}(-[A-Za-z]{2,4})?$/.test(langCode)
-			? `\nThe transcript language is: ${langCode}. Respond in the same language.\n`
-			: '';
+		const languageHint = isLanguageCode(outputLang)
+			? `\nAlways write the output in the language identified by ISO code "${outputLang}", regardless of the transcript's language.\n`
+			: isLanguageCode(langCode)
+				? `\nThe transcript language is: ${langCode}. Respond in the same language.\n`
+				: '';
 		const glossaryInstruction = this.glossary.length > 0
 			? `\nBehalte folgende Begriffe exakt bei (nicht uebersetzen, nicht kuerzen, nicht aendern): ${this.glossary.join(', ')}.`
 			: '';

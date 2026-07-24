@@ -1,4 +1,4 @@
-import { CleanupService, type ApiKeyPrompt } from '@verba/core';
+import { CleanupService, type ApiKeyPrompt, type DetectedSurface, type SurfaceClass } from '@verba/core';
 import { invoke } from '@tauri-apps/api/core';
 import { TauriSecretStore } from './adapters/secretStore';
 import { EnvAwareSecretStore } from './adapters/envAwareSecretStore';
@@ -8,7 +8,7 @@ import { DeepgramTauriProvider } from './deepgramTauriProvider';
 import { createAnthropicTauriFetch } from './adapters/anthropicTauriFetch';
 import { promptForApiKey, setPhase, showAccessibilityOnboarding, showTranscript } from './ui';
 import { DictationController } from './controller';
-import { loadConfig, applyConfig, cleanupContextFor } from './config/verbaConfig';
+import { loadConfig, applyConfig, cleanupContextFor, templateForSurface } from './config/verbaConfig';
 import { createVisualization } from './visualization/visualization';
 
 /** CleanupService needs a host prompt for its API key; supply it via the window UI. */
@@ -83,8 +83,22 @@ export async function createDictationController(): Promise<{
 			// Rust fetch can't be cancelled mid-flight (see anthropicTauriFetch.ts),
 			// so a request already in flight runs to its 30s timeout — the
 			// controller's `withCleanupTimeout` bounds the user-visible wait.
-			process: (transcript, context, signal) =>
-				cleanup.process(transcript, cleanupContextFor(configState.current, context), signal),
+			process: async (transcript, context, signal) => {
+				const cfg = configState.current;
+				let surfaceClass: SurfaceClass = 'generic';
+				try {
+					const surface = await invoke<DetectedSurface>('detect_surface', {
+						agentMarkers: cfg.agentMarkers,
+						terminalApps: cfg.terminalApps,
+						editorApps: cfg.editorApps,
+					});
+					surfaceClass = surface.class;
+				} catch (err) {
+					console.warn('[Verba] surface detection failed, using active template:', err);
+				}
+				const template = templateForSurface(cfg, surfaceClass);
+				return cleanup.process(transcript, cleanupContextFor(cfg, context, template), signal);
+			},
 		},
 		notifier,
 		store: new TauriKeyValueStore(),

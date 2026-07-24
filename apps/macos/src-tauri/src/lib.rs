@@ -1,5 +1,6 @@
 mod audio;
 mod config;
+mod detect;
 mod env;
 mod http;
 mod hud;
@@ -13,6 +14,29 @@ mod tray;
 use tauri::tray::TrayIconBuilder;
 
 use audio::CaptureState;
+
+/// Disables macOS **App Nap** for the whole process lifetime.
+///
+/// Verba is an Accessory (menu-bar, no-Dock) app whose main WebView window stays
+/// hidden. Once recording stops, the app is neither visible nor playing audio,
+/// so macOS naps the process — throttling the hidden WebView's JS event loop and
+/// timer/IPC delivery. The dictation flow (transcribe → cleanup → paste) runs in
+/// that WebView, so a napped process stalls at "Transcribing…"/"Processing…":
+/// the native Rust command returns, but its IPC response isn't delivered to JS
+/// until some event (e.g. a hotkey press) wakes the run loop. Holding an
+/// `NSActivityBackground` activity token for the app lifetime keeps App Nap off
+/// without preventing normal system sleep. The token must stay retained, so it
+/// is intentionally leaked.
+#[cfg(target_os = "macos")]
+fn disable_app_nap() {
+    use objc2_foundation::{NSActivityOptions, NSProcessInfo, NSString};
+
+    let info = NSProcessInfo::processInfo();
+    let reason = NSString::from_str("Verba keeps the hidden dictation WebView responsive");
+    let token = info.beginActivityWithOptions_reason(NSActivityOptions::Background, &reason);
+    // Retain for the whole app lifetime — dropping the token re-enables App Nap.
+    std::mem::forget(token);
+}
 
 /// Builds and runs the Verba menu-bar app.
 ///
@@ -37,6 +61,7 @@ pub fn run() {
             paste::has_accessibility_permission,
             paste::open_accessibility_settings,
             paste::paste_text,
+            detect::detect_surface,
             secret::secret_get,
             secret::secret_set,
             secret::secret_delete,
@@ -49,6 +74,11 @@ pub fn run() {
             // Menu-bar-only app: no Dock icon (macOS "accessory" activation).
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+
+            // Keep App Nap from throttling the hidden WebView (see fn docs) — the
+            // dictation flow otherwise stalls at "Transcribing…"/"Processing…".
+            #[cfg(target_os = "macos")]
+            disable_app_nap();
 
             let menu = menu::build_settings_menu(app.handle())?;
 

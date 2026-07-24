@@ -1,7 +1,13 @@
 import * as assert from 'assert';
 import * as sinon from 'sinon';
 
-import { truncateKeyterms, resolveApiKey, API_KEY_STORAGE_KEY } from '../../deepgramProvider';
+import {
+	DeepgramProvider,
+	INVALID_DEEPGRAM_API_KEY_MESSAGE,
+	truncateKeyterms,
+	resolveApiKey,
+	API_KEY_STORAGE_KEY,
+} from '../../deepgramProvider';
 
 // Fake SecretStore matching the SecretStore interface in adapters.ts
 function createFakeSecretStorage(): {
@@ -101,5 +107,100 @@ suite('resolveApiKey', () => {
 
 		assert.strictEqual(secretStorage.get.firstCall.args[0], 'custom.storage.key');
 		assert.strictEqual(secretStorage.store.firstCall.args[0], 'custom.storage.key');
+	});
+});
+
+suite('DeepgramProvider.transcribe', () => {
+	function makeProvider(): {
+		provider: DeepgramProvider;
+		secretStorage: ReturnType<typeof createFakeSecretStorage>;
+		transcribeFile: sinon.SinonStub;
+	} {
+		const secretStorage = createFakeSecretStorage();
+		secretStorage.get.resolves('sk-deepgram');
+		const readAudioFile = sinon.stub().resolves(new Uint8Array([1, 2, 3]));
+		const provider = new DeepgramProvider(secretStorage as any, readAudioFile as any, sinon.stub());
+		const transcribeFile = sinon.stub();
+		// Inject the Deepgram SDK client so getClient() never touches @deepgram/sdk.
+		(provider as any)._client = { listen: { prerecorded: { transcribeFile } } };
+		return { provider, secretStorage, transcribeFile };
+	}
+
+	function okResponse(transcript: string, detectedLanguage?: string) {
+		return {
+			result: { results: { channels: [{ alternatives: [{ transcript }], detected_language: detectedLanguage }] } },
+		};
+	}
+
+	test('returns the transcript and detected language on success (auto → multi)', async () => {
+		const { provider, transcribeFile } = makeProvider();
+		transcribeFile.resolves(okResponse('hello world', 'en'));
+
+		const result = await provider.transcribe('audio.wav');
+
+		assert.deepStrictEqual(result, { text: 'hello world', detectedLanguage: 'en' });
+		const options = transcribeFile.firstCall.args[1];
+		assert.strictEqual(options.language, 'multi');
+		assert.strictEqual(options.detect_language, true);
+	});
+
+	test('uses a fixed language and omits detect_language when set', async () => {
+		const { provider, transcribeFile } = makeProvider();
+		provider.setLanguage('de');
+		transcribeFile.resolves(okResponse('hallo', undefined));
+
+		const result = await provider.transcribe('audio.wav');
+
+		assert.strictEqual(result.text, 'hallo');
+		const options = transcribeFile.firstCall.args[1];
+		assert.strictEqual(options.language, 'de');
+		assert.strictEqual(options.detect_language, undefined);
+	});
+
+	test('passes truncated glossary terms as keyterms', async () => {
+		const { provider, transcribeFile } = makeProvider();
+		transcribeFile.resolves(okResponse('hi', 'en'));
+
+		await provider.transcribe('audio.wav', ['foo', 'bar']);
+
+		assert.deepStrictEqual(transcribeFile.firstCall.args[1].keyterm, ['foo:2', 'bar:2']);
+	});
+
+	test('clears the key and throws a recovery message on 401', async () => {
+		const { provider, secretStorage, transcribeFile } = makeProvider();
+		const err: any = new Error('unauthorized');
+		err.status = 401;
+		transcribeFile.rejects(err);
+
+		await assert.rejects(() => provider.transcribe('audio.wav'), /Invalid Deepgram API key/);
+		assert.strictEqual(secretStorage.delete.calledOnceWith(API_KEY_STORAGE_KEY), true);
+	});
+
+	test('wraps a generic SDK error', async () => {
+		const { provider, transcribeFile } = makeProvider();
+		transcribeFile.rejects(new Error('network boom'));
+
+		await assert.rejects(() => provider.transcribe('audio.wav'), /Transcription failed: network boom/);
+	});
+
+	test('throws when the response carries an error union', async () => {
+		const { provider, transcribeFile } = makeProvider();
+		transcribeFile.resolves({ error: { message: 'bad request' } });
+
+		await assert.rejects(() => provider.transcribe('audio.wav'), /Transcription failed: bad request/);
+	});
+
+	test('throws when the response has no result', async () => {
+		const { provider, transcribeFile } = makeProvider();
+		transcribeFile.resolves({});
+
+		await assert.rejects(() => provider.transcribe('audio.wav'), /Deepgram returned no result/);
+	});
+
+	test('propagates the no-speech error for an empty transcript', async () => {
+		const { provider, transcribeFile } = makeProvider();
+		transcribeFile.resolves(okResponse('', 'en'));
+
+		await assert.rejects(() => provider.transcribe('audio.wav'), /No speech detected/);
 	});
 });

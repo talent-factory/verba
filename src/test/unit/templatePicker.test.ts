@@ -1,7 +1,7 @@
 import * as assert from 'assert';
 import * as sinon from 'sinon';
 
-import { selectTemplate, findTemplateForLanguage, Template } from '../../templatePicker';
+import { selectTemplate, findTemplateForLanguage, chooseAutoTemplate, AGENT_INSTRUCTION_TEMPLATE_NAME, Template } from '../../templatePicker';
 
 const DEFAULT_TEMPLATES: Template[] = [
 	{ name: 'Freitext', prompt: 'Clean up the transcript.' },
@@ -36,7 +36,7 @@ suite('selectTemplate', () => {
 
 		const options = showQuickPick.firstCall.args[1];
 		assert.ok(options?.activeItems, 'should set activeItems');
-		assert.strictEqual(options.activeItems[0].label, 'Commit Message');
+		assert.strictEqual(options.activeItems[0].template.name, 'Commit Message');
 	});
 
 	test('does not preselect when lastUsed does not match', async () => {
@@ -58,25 +58,75 @@ suite('selectTemplate', () => {
 		assert.ok(showQuickPick.notCalled);
 	});
 
-	test('context-aware templates show magnifying glass icon prefix', async () => {
+	test('context-aware templates show a search hint in the description', async () => {
 		const templates: Template[] = [
 			{ name: 'Freitext', prompt: 'Clean up.' },
 			{ name: 'Code Comment', prompt: 'Generate comment.', contextAware: true },
 		];
-		const showQuickPick = sinon.stub().resolves({ label: '$(search) Code Comment', template: templates[1] });
+		const showQuickPick = sinon.stub().resolves({ label: 'Code Comment', template: templates[1] });
 
 		await selectTemplate(templates, undefined, showQuickPick);
 
 		const items = showQuickPick.firstCall.args[0];
 		assert.strictEqual(items[0].label, 'Freitext');
-		assert.strictEqual(items[1].label, '$(search) Code Comment');
+		assert.strictEqual(items[0].description, undefined);
+		assert.strictEqual(items[1].label, 'Code Comment');
+		// Assert the behavior (a context-aware hint is shown), not the exact codicon
+		// decoration — the marker glyph/wording is presentation detail.
+		assert.ok(items[1].description?.includes('context-aware'), 'shows a context-aware hint');
 	});
 
-	test('preselects context-aware template by name despite icon prefix in label', async () => {
+	test('renders the template emoji icon in the label (macOS-tray parity)', async () => {
+		const templates: Template[] = [
+			{ name: 'Agent Instruction', prompt: 'Do it.', icon: '🦾', contextAware: true },
+			{ name: 'Plain', prompt: 'Clean up.' },
+		];
+		const showQuickPick = sinon.stub().resolves(undefined);
+
+		await selectTemplate(templates, undefined, showQuickPick);
+
+		const items = showQuickPick.firstCall.args[0];
+		assert.strictEqual(items[0].label, '🦾 Agent Instruction');
+		assert.strictEqual(items[1].label, 'Plain');
+	});
+
+	test('marks the active (last-used) template with an "aktiv" note in the description', async () => {
+		const templates: Template[] = [
+			{ name: 'Freitext', prompt: 'Clean up.', icon: '✏️' },
+			{ name: 'Commit Message', prompt: 'Commit.', icon: '🔀' },
+		];
+		const showQuickPick = sinon.stub().resolves(undefined);
+
+		await selectTemplate(templates, 'Commit Message', showQuickPick);
+
+		const items = showQuickPick.firstCall.args[0];
+		assert.strictEqual(items[0].label, '✏️ Freitext');
+		assert.strictEqual(items[0].description, undefined);
+		assert.strictEqual(items[1].label, '🔀 Commit Message');
+		assert.ok(items[1].description?.includes('aktiv'), 'marks the active template');
+	});
+
+	test('combines the active marker and the context hint in the description', async () => {
+		const templates: Template[] = [
+			{ name: 'Agent Instruction', prompt: 'Do it.', icon: '🦾', contextAware: true },
+		];
+		const showQuickPick = sinon.stub().resolves(undefined);
+
+		await selectTemplate(templates, 'Agent Instruction', showQuickPick);
+
+		const items = showQuickPick.firstCall.args[0];
+		assert.strictEqual(items[0].label, '🦾 Agent Instruction');
+		// Both notes present when the active template is also context-aware; order/glyphs
+		// are presentation detail, so assert presence rather than the exact string.
+		assert.ok(items[0].description?.includes('aktiv'), 'shows the active marker');
+		assert.ok(items[0].description?.includes('context-aware'), 'shows the context-aware hint');
+	});
+
+	test('preselects context-aware template by name despite decorations in label', async () => {
 		const templates: Template[] = [
 			{ name: 'Code Comment', prompt: 'Generate comment.', contextAware: true },
 		];
-		const showQuickPick = sinon.stub().resolves({ label: '$(search) Code Comment', template: templates[0] });
+		const showQuickPick = sinon.stub().resolves({ label: '$(check) Code Comment', template: templates[0] });
 
 		await selectTemplate(templates, 'Code Comment', showQuickPick);
 
@@ -150,5 +200,34 @@ suite('findTemplateForLanguage', () => {
 		];
 		const result = findTemplateForLanguage(templates, 'java');
 		assert.strictEqual(result, undefined);
+	});
+});
+
+suite('chooseAutoTemplate', () => {
+	const templates: Template[] = [
+		{ name: 'Freitext', prompt: 'f' },
+		{ name: 'JavaDoc', prompt: 'j', fileTypes: ['java'] },
+		{ name: 'Agent Instruction', prompt: 'a' },
+	];
+
+	test('terminal dictation selects the Agent Instruction template', () => {
+		const t = chooseAutoTemplate(templates, { forTerminal: true, languageId: 'java' });
+		assert.strictEqual(t?.name, AGENT_INSTRUCTION_TEMPLATE_NAME);
+	});
+
+	test('terminal dictation returns undefined when no Agent Instruction template exists', () => {
+		const without = templates.filter(t => t.name !== 'Agent Instruction');
+		const t = chooseAutoTemplate(without, { forTerminal: true });
+		assert.strictEqual(t, undefined);
+	});
+
+	test('non-terminal dictation with a matching languageId selects the file-type template', () => {
+		const t = chooseAutoTemplate(templates, { forTerminal: false, languageId: 'java' });
+		assert.strictEqual(t?.name, 'JavaDoc');
+	});
+
+	test('non-terminal dictation without a languageId returns undefined', () => {
+		const t = chooseAutoTemplate(templates, { forTerminal: false });
+		assert.strictEqual(t, undefined);
 	});
 });

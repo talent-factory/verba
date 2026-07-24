@@ -12,7 +12,8 @@
   ],
   "scripts": {
     "compile": "tsc -p ./ && node scripts/copy-assets.js",
-    "test:unit": "npm run compile && mocha"
+    "test:unit": "npm run compile && mocha",
+    "test:coverage": "npm run compile && c8 mocha"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",

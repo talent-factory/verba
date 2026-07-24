@@ -32,7 +32,7 @@ Verba ships with **9** default templates, defined once in `packages/core/src/con
 
 ## Selecting a Template
 
-- **VS Code** — on first dictation, Verba shows the Quick Pick menu for template selection. After that, your last template is automatically reused — press `Cmd+Shift+D` to start recording immediately. To switch templates, press `Cmd+Alt+T` (Mac) / `Ctrl+Alt+T` (Windows/Linux); the status bar always shows the currently active template.
+- **VS Code** — on first dictation, Verba shows the Quick Pick menu for template selection. After that, your last template is automatically reused — press `Cmd+Alt+V` to start recording immediately. To switch templates, press `Cmd+Alt+T` (Mac) / `Ctrl+Alt+T` (Windows/Linux); the status bar always shows the currently active template.
 - **macOS** — pick the active template from the tray's **Vorlage** submenu. The choice is written back to `activeTemplate` in `~/.config/verba/config.json` and stays active until changed again.
 
 ## Context-Aware Templates

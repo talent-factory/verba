@@ -59,16 +59,20 @@ use tauri::{AppHandle, Emitter};
 /// Installieren werden geloggt; die App bleibt über den Toggle-Alias nutzbar.
 pub(crate) fn start(app: AppHandle) {
     std::thread::spawn(move || {
+        // Der Handler braucht einen eigenen `AppHandle`-Klon, weil `app` unten in
+        // den Fehlerzweigen (Tap-/Runloop-Erstellung) noch für `config:error`
+        // gebraucht wird, nachdem der (Fn-fähige) Handler seine Kopie moved hat.
+        let handler_app = app.clone();
         let handler =
             move |_proxy: CGEventTapProxy, _etype: CGEventType, event: &CGEvent| -> CallbackResult {
                 let keycode = event.get_integer_value_field(EventField::KEYBOARD_EVENT_KEYCODE);
                 if let Some(ev) = classify_flags_changed(keycode, event.get_flags()) {
                     match ev {
                         PttEvent::Down(intent) => {
-                            let _ = app.emit("ptt:down", intent.as_str());
+                            let _ = handler_app.emit("ptt:down", intent.as_str());
                         }
                         PttEvent::Up => {
-                            let _ = app.emit("ptt:up", ());
+                            let _ = handler_app.emit("ptt:up", ());
                         }
                     }
                 }
@@ -83,9 +87,15 @@ pub(crate) fn start(app: AppHandle) {
             handler,
         ) {
             Ok(t) => t,
-            Err(_) => {
+            Err(e) => {
                 eprintln!(
-                    "[Verba] Konnte Push-to-Talk-Event-Tap nicht erstellen; nutze Toggle-Alias."
+                    "[Verba] Konnte Push-to-Talk-Event-Tap nicht erstellen ({e:?}); nutze Toggle-Alias."
+                );
+                let _ = app.emit(
+                    "config:error",
+                    format!(
+                        "Push-to-Talk konnte nicht aktiviert werden ({e:?}) — nutze Ctrl+Alt+D."
+                    ),
                 );
                 return;
             }
@@ -93,8 +103,14 @@ pub(crate) fn start(app: AppHandle) {
 
         let loop_source = match tap.mach_port().create_runloop_source(0) {
             Ok(s) => s,
-            Err(_) => {
-                eprintln!("[Verba] Konnte Runloop-Source für Event-Tap nicht erstellen.");
+            Err(e) => {
+                eprintln!("[Verba] Konnte Runloop-Source für Event-Tap nicht erstellen ({e:?}).");
+                let _ = app.emit(
+                    "config:error",
+                    format!(
+                        "Push-to-Talk konnte nicht aktiviert werden ({e:?}) — nutze Ctrl+Alt+D."
+                    ),
+                );
                 return;
             }
         };

@@ -61,9 +61,19 @@ export type ActivationMode = 'push-to-talk' | 'toggle';
 
 export interface ActivationConfig {
 	mode: ActivationMode;
-	/** Key held for insert-only dictation. */
+	/**
+	 * Key held for insert-only dictation. Reserved: resolved/defaulted here, but
+	 * NOT yet wired to the macOS event tap — `activation.rs` hardcodes right-Cmd
+	 * (keycode 0x36) regardless of this value. Custom key remapping is not yet
+	 * supported.
+	 */
 	insertKey: string;
-	/** Key held for insert-and-submit dictation. */
+	/**
+	 * Key held for insert-and-submit dictation. Reserved: resolved/defaulted here,
+	 * but NOT yet wired to the macOS event tap — `activation.rs` hardcodes
+	 * right-Option (keycode 0x3D) regardless of this value. Custom key remapping
+	 * is not yet supported.
+	 */
 	submitKey: string;
 	/** Minimum hold (ms) before a press starts recording; shorter presses are ignored. */
 	holdThresholdMs: number;

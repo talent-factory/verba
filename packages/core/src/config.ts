@@ -56,11 +56,33 @@ export const AGENT_INSTRUCTION_TEMPLATE_NAME = 'Agent Instruction';
 /** The surface class the macOS host detects for the frontmost app. */
 export type SurfaceClass = 'generic' | 'editor' | 'agent';
 
+/** Activation model for the macOS host (push-to-talk vs. legacy toggle). */
+export type ActivationMode = 'push-to-talk' | 'toggle';
+
+export interface ActivationConfig {
+	mode: ActivationMode;
+	/** Key held for insert-only dictation. */
+	insertKey: string;
+	/** Key held for insert-and-submit dictation. */
+	submitKey: string;
+	/** Minimum hold (ms) before a press starts recording; shorter presses are ignored. */
+	holdThresholdMs: number;
+}
+
+const DEFAULT_ACTIVATION: ActivationConfig = {
+	mode: 'push-to-talk',
+	insertKey: 'right-command',
+	submitKey: 'right-option',
+	holdThresholdMs: 200,
+};
+
 /** The `detect_surface` IPC payload — mirrors the Rust `Surface` enum's tagged shape. */
 export interface DetectedSurface {
 	class: SurfaceClass;
 	agent?: string;
 	status?: string;
+	/** herdr pane id of the focused agent (delivery target); absent unless class === 'agent' via herdr. */
+	paneId?: string;
 }
 
 /** The 10 bundled default templates — the single canonical source for both hosts. */
@@ -88,6 +110,12 @@ export interface VerbaConfig {
 	agentMarkers?: string[];
 	terminalApps?: string[];
 	editorApps?: string[];
+	activation?: {
+		mode?: string;
+		insertKey?: string;
+		submitKey?: string;
+		holdThresholdMs?: number;
+	};
 }
 
 /** Fully resolved, validated config — total for downstream consumers. */
@@ -104,6 +132,7 @@ export interface ResolvedConfig {
 	agentMarkers: string[];
 	terminalApps: string[];
 	editorApps: string[];
+	activation: ActivationConfig;
 }
 
 function nonEmptyString(v: unknown): v is string {
@@ -154,6 +183,26 @@ export function resolveActiveTemplate(templates: Template[], name?: string): Tem
 }
 
 /**
+ * Resolves the push-to-talk activation config. Falls back per-field to
+ * {@link DEFAULT_ACTIVATION} — a partial/invalid `activation` block never
+ * invalidates the whole block, only the offending field.
+ */
+function resolveActivation(provider: ConfigProvider): ActivationConfig {
+	const rawMode = provider.get<unknown>('activation.mode', DEFAULT_ACTIVATION.mode);
+	const rawInsertKey = provider.get<unknown>('activation.insertKey', DEFAULT_ACTIVATION.insertKey);
+	const rawSubmitKey = provider.get<unknown>('activation.submitKey', DEFAULT_ACTIVATION.submitKey);
+	const rawThreshold = provider.get<unknown>('activation.holdThresholdMs', DEFAULT_ACTIVATION.holdThresholdMs);
+	return {
+		mode: rawMode === 'toggle' ? 'toggle' : 'push-to-talk',
+		insertKey: nonEmptyString(rawInsertKey) ? rawInsertKey.trim() : DEFAULT_ACTIVATION.insertKey,
+		submitKey: nonEmptyString(rawSubmitKey) ? rawSubmitKey.trim() : DEFAULT_ACTIVATION.submitKey,
+		holdThresholdMs: typeof rawThreshold === 'number' && Number.isFinite(rawThreshold) && rawThreshold >= 0
+			? rawThreshold
+			: DEFAULT_ACTIVATION.holdThresholdMs,
+	};
+}
+
+/**
  * Resolves the shared config from a host's raw values. Never throws: every
  * wrong-typed or absent field falls back to its default. Templates are
  * all-or-nothing (one invalid entry → the 10 bundled defaults).
@@ -188,5 +237,6 @@ export function resolveConfig(provider: ConfigProvider): ResolvedConfig {
 		agentMarkers: agentMarkers.length ? agentMarkers : DEFAULT_AGENT_MARKERS,
 		terminalApps: terminalApps.length ? terminalApps : DEFAULT_TERMINAL_APPS,
 		editorApps: editorApps.length ? editorApps : DEFAULT_EDITOR_APPS,
+		activation: resolveActivation(provider),
 	};
 }

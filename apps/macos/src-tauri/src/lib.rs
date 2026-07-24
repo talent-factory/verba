@@ -1,5 +1,6 @@
 mod audio;
 mod config;
+mod deliver;
 mod detect;
 mod env;
 mod http;
@@ -55,12 +56,14 @@ pub fn run() {
             audio::start_capture,
             audio::stop_capture,
             config::read_config,
+            deliver::herdr_send,
             env::env_var,
             http::anthropic_fetch,
             hud::set_hud_state,
             paste::has_accessibility_permission,
             paste::open_accessibility_settings,
             paste::paste_text,
+            paste::press_enter,
             detect::detect_surface,
             secret::secret_get,
             secret::secret_set,

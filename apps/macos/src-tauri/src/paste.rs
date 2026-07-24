@@ -17,6 +17,9 @@ const ACCESSIBILITY_SETTINGS_URL: &str =
 /// Virtual keycode for the `V` key (kVK_ANSI_V in Carbon's Events.h).
 const KEY_V: CGKeyCode = 9;
 
+/// Virtual keycode `Return` (kVK_Return in Carbon's Events.h).
+const KEY_RETURN: CGKeyCode = 0x24;
+
 /// Wait after writing the pasteboard so the write has propagated before the
 /// synthetic ⌘V fires.
 const PASTEBOARD_PROPAGATION_DELAY: Duration = Duration::from_millis(50);
@@ -141,6 +144,25 @@ fn synthesize_cmd_v() -> Result<(), String> {
         event.post(CGEventTapLocation::HID);
     }
     Ok(())
+}
+
+/// Synthesizes a single Return keystroke into the frontmost app. Used as the
+/// submit step of the paste-fallback delivery path (the herdr path submits
+/// itself via `herdr pane send-keys`).
+#[tauri::command]
+pub async fn press_enter() -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        let source = CGEventSource::new(CGEventSourceStateID::CombinedSessionState)
+            .map_err(|_| "press_enter: could not create event source".to_string())?;
+        for key_down in [true, false] {
+            let event = CGEvent::new_keyboard_event(source.clone(), KEY_RETURN, key_down)
+                .map_err(|_| "press_enter: could not create Return event".to_string())?;
+            event.post(CGEventTapLocation::HID);
+        }
+        Ok::<(), String>(())
+    })
+    .await
+    .map_err(|e| format!("press_enter join failed: {e}"))?
 }
 
 #[cfg(test)]

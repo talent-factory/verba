@@ -132,31 +132,45 @@ Legende: ⬜ offen · ✅ Pass · ❌ Fail (mit Notiz)
 - **Vorbedingung:** `com.microsoft.VSCode` (oder Zed) im Vordergrund, **kein** herdr-Agent-Pane fokussiert.
 - **Schritte:** `Control+Alt+D`, einen rambling-Satz diktieren.
 - **Erwartung:** Output ist eine **normale Bereinigung** (Freitext-Stil), **keine** imperative Agent-Anweisung.
-- **Ergebnis:** ⬜
+- **Ergebnis:** ✅
 
 #### TC-D2 — Agent-Oberfläche via herdr → Agent Instruction
 - **Vorbedingung:** `herdr` installiert und laufend, mit einem **fokussierten** Agent-Pane (z. B. Claude Code); ein Terminal (iTerm2/Ghostty/…) im Vordergrund.
 - **Schritte:** `Control+Alt+D`, einen meta-lastigen, mehrteiligen Wunsch diktieren.
 - **Erwartung:** Output ist eine **knappe imperative Anweisung** (Agent-Instruction-Stil), **nicht** Freitext.
-- **Ergebnis:** ⬜
+- **Ergebnis:** ✅
 
 #### TC-D3 — Agent-Oberfläche via Fenstertitel-Marker (ohne herdr)
 - **Vorbedingung:** herdr **nicht** laufend; ein Terminal im Vordergrund, dessen **Fenstertitel** einen Marker enthält (z. B. Tab/Session „claude“). Accessibility-Berechtigung erteilt.
 - **Schritte:** `Control+Alt+D`, diktieren.
 - **Erwartung:** Agent-Instruction-Stil (Tier 3 / AX-Titel greift).
-- **Ergebnis:** ⬜
+- **Ergebnis:** ✅
 
 #### TC-D4 — Generic-Oberfläche → aktives Template
 - **Vorbedingung:** Eine Nicht-Terminal-, Nicht-Editor-App im Vordergrund (z. B. Notes, Mail, Slack).
 - **Schritte:** `Control+Alt+D`, diktieren.
 - **Erwartung:** Freitext-Bereinigung (generic), keine Agent-Anweisung.
-- **Ergebnis:** ⬜
+- **Ergebnis:** ✅
 
 #### TC-D5 — Konfigurierbare Detection-Listen
-- **Vorbedingung:** In `config.json` z. B. `"agentMarkers": ["myagent"]` und/oder eine eigene `"terminalApps"`-Liste setzen.
-- **Schritte:** Verhalten mit einem Terminal-Titel „myagent …“ prüfen (→ Agent) bzw. eine App aus der eigenen Terminal-Liste testen.
-- **Nebenprobe:** `"agentMarkers": []` (leer) oder ungültig → Verhalten fällt auf die **Defaults** zurück (Marker `claude/herdr/codex/aider/cursor` greifen wieder).
-- **Ergebnis:** ⬜
+- **Vorbedingung:**
+  - herdr **nicht** laufend (sonst gewinnt Tier 1 vor der Titel-Prüfung).
+  - `~/.config/verba/config.json`:
+    ```json
+    {
+      "activeTemplate": "Freitext",
+      "agentMarkers": ["myagent"]
+    }
+    ```
+    `terminalApps` bewusst **weglassen** → bleibt Default, `Terminal.app` zählt weiter als Terminal (eine eigene Liste **ersetzt** die Defaults komplett).
+  - Danach `just macos-dev` **neu starten** — manuelle `config.json`-Edits werden nur beim Start neu gelesen (Tray-Änderungen emittieren `config:changed`, ein Datei-Edit nicht).
+- **Schritte (positiv):**
+  1. `Terminal.app` in den Vordergrund; Fenstertitel auf den eigenen Marker setzen: `printf '\033]0;myagent\007'`.
+  2. `Control+Alt+D`, meta-lastig diktieren, z. B. *„Also was ich will ist, räum die Logs auf und starte den Dienst neu."*
+- **Erwartung (positiv):** knappe **imperative Agent-Anweisung** (nicht Freitext) — der eigene Marker `myagent` greift (case-insensitive Substring gegen den Fenstertitel).
+- **Gegenprobe (Custom-Liste ersetzt Defaults):** Titel auf `printf '\033]0;claude\007'` setzen, diktieren → Output ist **Freitext**, weil `claude` mit der Custom-Liste **kein** Marker mehr ist.
+- **Nebenprobe (leer → Defaults zurück):** `"agentMarkers": []` setzen, neu starten, Titel wieder `claude` → **Agent-Stil**, weil der Fallback die Defaults (`claude/herdr/codex/aider/cursor`) reaktiviert.
+- **Ergebnis:** ✅
 
 ---
 
@@ -169,7 +183,7 @@ Legende: ⬜ offen · ✅ Pass · ❌ Fail (mit Notiz)
 - **Vorbedingung:** `herdr` nicht im `PATH`.
 - **Schritte:** In einem Terminal diktieren.
 - **Erwartung:** Diktat funktioniert (fällt auf AX-Titel bzw. generic zurück). **Keine** `[Verba] herdr …`-Fehlermeldung (der „nicht installiert“-Fall bleibt bewusst still).
-- **Ergebnis:** ⬜
+- **Ergebnis:** ✅
 
 #### TC-E2 — herdr kaputt / Schema-Drift → geloggt
 - **Vorbedingung:** Ein Fake-`herdr` vorn im `PATH` des `just macos-dev`-Terminals. Zwei Varianten testen:
@@ -180,7 +194,7 @@ Legende: ⬜ offen · ✅ Pass · ❌ Fail (mit Notiz)
 - **Erwartung:**
   - Diktat läuft trotzdem durch (generic/AX-Fallback).
   - stderr enthält bei (a) `herdr api snapshot exited …` **oder** bei (b) `herdr snapshot parsed but no focused agent … (possible schema drift)`.
-- **Ergebnis:** ⬜
+- **Ergebnis:** ✅
 
 #### TC-E3 — herdr hängt → Timeout greift, kein Zombie
 - **Vorbedingung:** Fake-`herdr` mit `#!/bin/sh` + `sleep 5` vorn im `PATH`.
@@ -189,13 +203,13 @@ Legende: ⬜ offen · ✅ Pass · ❌ Fail (mit Notiz)
   - Diktat blockiert **nicht** (Timeout nach 500 ms).
   - stderr: `herdr api snapshot timed out after 500ms; killing it and treating as no agent`.
   - Der `sleep`-Prozess wird **beendet** (kein dauerhaft laufender/lingernder `herdr` je Diktat).
-- **Ergebnis:** ⬜
+- **Ergebnis:** ✅
 
 #### TC-E4 — Accessibility-Berechtigung entzogen → still degradiert
 - **Vorbedingung:** AX-Berechtigung für die App **entziehen** (Systemeinstellungen).
 - **Schritte:** In einem Terminal (ohne herdr) diktieren.
 - **Erwartung:** Diktat läuft (Tier 3 liefert nichts → generic). Kein Absturz, kein Hänger. (Hinweis: Paste selbst braucht AX — dieser Test isoliert nur die Erkennung; ggf. mit erteiltem Paste-Recht separat prüfen.)
-- **Ergebnis:** ⬜
+- **Ergebnis:** ✅
 
 ---
 
@@ -204,17 +218,17 @@ Legende: ⬜ offen · ✅ Pass · ❌ Fail (mit Notiz)
 #### TC-F1 — Standard-Diktat unverändert (VS Code)
 - **Schritte:** Normales Editor-Diktat (`Cmd+Alt+V`) in einer Textdatei ohne besondere Templates.
 - **Erwartung:** Verhalten exakt wie vor dem PR (Bereinigung, Einfügen, Undo, History).
-- **Ergebnis:** ⬜
+- **Ergebnis:** ✅
 
 #### TC-F2 — Continuous-Diktat unverändert (VS Code)
 - **Schritte:** `Cmd+Shift+Alt+D`, mehrere Utterances sprechen, stoppen.
 - **Erwartung:** Auto-Template greift wie gehabt (Datei-Typ); pro Utterance Cleanup + Einfügen + Undo.
-- **Ergebnis:** ⬜
+- **Ergebnis:** ✅
 
 #### TC-F3 — Standard-Diktat unverändert (macOS, generic)
 - **Schritte:** In einer neutralen App diktieren + einfügen.
 - **Erwartung:** Wie vor dem PR; HUD-Zustände idle→recording→transcribing→processing; Clipboard wird nach Paste wiederhergestellt.
-- **Ergebnis:** ⬜
+- **Ergebnis:** ✅
 
 ---
 
@@ -225,11 +239,11 @@ Legende: ⬜ offen · ✅ Pass · ❌ Fail (mit Notiz)
 | A — Template-Grundlage | TC-A1 | ✅ |
 | B — VS Code Terminal→Agent | TC-B1, B2, B3 | ✅ |
 | C — outputLanguage | TC-C1, C2, C3, C4 | ✅ |
-| D — macOS Oberflächen-Erkennung | TC-D1–D5 | ⬜ |
-| E — Degradation & Observability | TC-E1–E4 | ⬜ |
-| F — Regression | TC-F1, F2, F3 | ⬜ |
+| D — macOS Oberflächen-Erkennung | TC-D1–D5 | ✅ |
+| E — Degradation & Observability | TC-E1–E4 | ✅ |
+| F — Regression | TC-F1, F2, F3 | ✅ |
 
 **Freigabe-Kriterium:** Alle Testfälle ✅; keine offenen ❌ in Bereich C (Sicherheit)
 und Bereich E (Diktat darf nie abbrechen).
 
-**Getestet von:** ______________  **Datum:** ____________  **Build/Commit:** ____________
+**Getestet von:** Daniel Senften  **Datum:** 2026-07-24  **Build/Commit:** `feature/agent-instruction-cleanup` @ `caa954c`

@@ -1,6 +1,7 @@
-import type { CleanupService } from '@verba/core';
+import { NoSpeechError, type CleanupService } from '@verba/core';
 import { deliver, type DeliveryPorts, type Intent } from './delivery';
 import type { DictationState } from './visualization/statePresentation';
+import { HUD_MESSAGES, type HudMessage } from './visualization/messagePresentation';
 
 export type InvokeFn = <T>(cmd: string, args?: Record<string, unknown>) => Promise<T>;
 
@@ -8,6 +9,7 @@ export type InvokeFn = <T>(cmd: string, args?: Record<string, unknown>) => Promi
 export interface ControllerUi {
 	setPhase(text: string): void;
 	setState(state: DictationState): void;
+	showMessage(message: HudMessage): void;
 	showTranscript(text: string): Promise<void>;
 	showAccessibilityOnboarding(onOpenSettings: () => Promise<void>): Promise<void>;
 }
@@ -67,6 +69,9 @@ const DEFAULT_CLEANUP_TIMEOUT_MS = 30_000;
  */
 const DEFAULT_STOP_CAPTURE_TIMEOUT_MS = 10_000;
 
+/** How long an actionable HUD message stays before auto-hiding. */
+const HUD_MESSAGE_MS = 5000;
+
 /**
  * Owns the dictation flow on top of injected host adapters.
  *
@@ -98,6 +103,8 @@ export class DictationController {
 	// so a release that races the async start is deferred, not dropped.
 	private startInFlight = false;
 	private pendingStop = false;
+	private pendingHudMessage: HudMessage | null = null;
+	private hudMessageTimer: (() => void) | null = null;
 
 	constructor(private readonly deps: ControllerDeps) {
 		this.cleanupTimeoutMs = deps.cleanupTimeoutMs ?? DEFAULT_CLEANUP_TIMEOUT_MS;
@@ -108,8 +115,31 @@ export class DictationController {
 
 	/** Updates the flow state and mirrors it to the visualization surfaces. */
 	private setState(state: DictationState): void {
+		// A new non-idle state (e.g. a fresh recording) takes over the pill, so a
+		// still-pending HUD-message hide timer must be cancelled — otherwise it
+		// would fire mid-flow and hide the HUD.
+		if (state !== 'idle' && this.hudMessageTimer) {
+			this.hudMessageTimer();
+			this.hudMessageTimer = null;
+		}
 		this.state = state;
 		this.deps.ui.setState(state);
+	}
+
+	/**
+	 * Shows an actionable message on the HUD for HUD_MESSAGE_MS, then hides it.
+	 * Tray goes idle immediately (the flow is done); the logical state is idle so
+	 * a new hotkey press is accepted. Called from `finally` instead of the plain
+	 * idle so the message isn't stomped by the flow's end-of-run idle.
+	 */
+	private surfaceHudMessage(message: HudMessage): void {
+		this.state = 'idle';
+		this.deps.ui.showMessage(message);
+		this.hudMessageTimer?.();
+		this.hudMessageTimer = this.schedule(() => {
+			this.hudMessageTimer = null;
+			this.deps.ui.setState('idle');
+		}, HUD_MESSAGE_MS);
 	}
 
 	/** Requests permissions and loads persisted state. Call once at startup. */
@@ -242,6 +272,7 @@ export class DictationController {
 					// the user to paste manually. Warn distinctly so it doesn't look like
 					// a normal paste that silently did nothing.
 					this.deps.notifier.warn('Verba: Terminal blocked the paste (Secure Input) — transcript left on the clipboard, press ⌘V to insert.');
+					this.pendingHudMessage = HUD_MESSAGES.secureInput;
 				} else {
 					this.deps.notifier.info(this.intent === 'submit' ? 'Verba: sent.' : 'Verba: pasted.');
 				}
@@ -249,6 +280,7 @@ export class DictationController {
 			} catch (err) {
 				// The window is the fallback surface: the user must never lose text.
 				this.deps.notifier.error(`Verba: delivery failed — ${errText(err)}`);
+				this.pendingHudMessage = HUD_MESSAGES.deliveryFailed;
 				await this.deps.ui.showTranscript(text);
 			}
 		} catch (err) {
@@ -260,11 +292,20 @@ export class DictationController {
 					`Verba: recording could not be finalized (stop timed out after ${this.stopCaptureTimeoutMs}ms) — the audio device may be stuck; retry, and restart Verba if it persists.`
 				);
 			} else {
+				if (err instanceof NoSpeechError) {
+					this.pendingHudMessage = HUD_MESSAGES.noSpeech;
+				}
 				this.deps.notifier.error(`Verba: ${errText(err)}`);
 			}
 			this.deps.ui.setPhase('Idle.');
 		} finally {
-			this.setState('idle');
+			if (this.pendingHudMessage) {
+				const message = this.pendingHudMessage;
+				this.pendingHudMessage = null;
+				this.surfaceHudMessage(message);
+			} else {
+				this.setState('idle');
+			}
 		}
 	}
 

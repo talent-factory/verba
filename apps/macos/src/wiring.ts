@@ -123,7 +123,7 @@ export async function createDictationController(): Promise<{
 		invoke,
 		delivery,
 		holdThresholdMs: configState.current.activation.holdThresholdMs,
-		ui: { setPhase, showTranscript, showAccessibilityOnboarding, setState: visualization.setState },
+		ui: { setPhase, showTranscript, showAccessibilityOnboarding, setState: visualization.setState, showMessage: visualization.showMessage },
 	});
 
 	return { controller, reloadConfig, notifier, activationMode: () => configState.current.activation.mode };

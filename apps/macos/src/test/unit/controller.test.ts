@@ -2,9 +2,11 @@ import * as assert from 'assert';
 import * as sinon from 'sinon';
 
 import type { DetectedSurface } from '@verba/core';
+import { NoSpeechError } from '@verba/core';
 
 import { DictationController, type ControllerDeps } from '../../controller';
 import type { DeliveryPorts, Intent, PasteOutcome } from '../../delivery';
+import { HUD_MESSAGES } from '../../visualization/messagePresentation';
 
 /** All-stub dependency set; individual tests override behavior as needed. */
 export function createDeps() {
@@ -37,6 +39,7 @@ export function createDeps() {
 			showTranscript: sinon.stub().resolves(),
 			showAccessibilityOnboarding: sinon.stub().resolves(),
 			setState: sinon.stub(),
+			showMessage: sinon.stub(),
 		},
 	};
 }
@@ -521,5 +524,97 @@ suite('DictationController', () => {
 			'the deferred release must still trigger exactly one stop_capture — never lost, never doubled',
 		);
 		assert.strictEqual(delivered.length, 1, 'the deferred release must still complete delivery');
+	});
+
+	test('secure-input delivery mirrors the ⌘V message onto the HUD (in addition to the notification)', async () => {
+		let fire: (() => void) | null = null;
+		const deps = createDeps();
+		deps.delivery.paste = sinon.stub().resolves('secure-input');
+		const controller = new DictationController({
+			...deps,
+			schedule: (fn: () => void) => { fire = fn; return () => {}; },
+		} as unknown as ControllerDeps);
+
+		await dictate(controller);
+
+		assert.ok(deps.ui.showMessage.calledOnceWithExactly(HUD_MESSAGES.secureInput), 'HUD shows the ⌘V message');
+		assert.ok(deps.notifier.warn.called, 'the notification still fires (mirror, not replacement)');
+		// finally did NOT stomp the message with an immediate idle:
+		assert.ok(!deps.ui.setState.getCalls().some((c) => c.args[0] === 'idle'), 'no immediate idle while message pending');
+		// after HUD_MESSAGE_MS elapses, the HUD hides:
+		assert.ok(fire, 'a hide timer was scheduled');
+		// `fire!()` doesn't typecheck here: TS's control-flow narrowing for a `let`
+		// only ever assigned inside a nested closure (`schedule`'s callback) treats
+		// the post-assert type as `never` (a known TS CFA limitation), so `!`
+		// (NonNullable<never> = never) can't be called. A cast sidesteps the bug —
+		// `never` is a subtype of everything, so the assertion trivially holds —
+		// without weakening the runtime check (`assert.ok` above already did that).
+		(fire as () => void)();
+		assert.ok(deps.ui.setState.calledWith('idle'), 'HUD hides after the message timeout');
+	});
+
+	test('empty dictation (NoSpeechError) mirrors "Keine Sprache erkannt" onto the HUD', async () => {
+		const deps = createDeps();
+		deps.deepgram.transcribe = sinon.stub().rejects(new NoSpeechError('No speech detected in recording.'));
+		const controller = new DictationController({
+			...deps,
+			schedule: (fn: () => void) => { void fn; return () => {}; },
+		} as unknown as ControllerDeps);
+
+		await dictate(controller);
+
+		assert.ok(deps.ui.showMessage.calledOnceWithExactly(HUD_MESSAGES.noSpeech), 'HUD shows the no-speech message');
+		assert.ok(deps.notifier.error.called, 'the error notification still fires');
+	});
+
+	test('a non-NoSpeech error (e.g. transcription failure) does NOT surface a HUD message', async () => {
+		const deps = createDeps();
+		deps.deepgram.transcribe = sinon.stub().rejects(new Error('Transcription failed: 401'));
+		const controller = new DictationController(deps as unknown as ControllerDeps);
+
+		await dictate(controller);
+
+		assert.ok(deps.ui.showMessage.notCalled, 'no HUD message for a generic error');
+		assert.ok(deps.notifier.error.called, 'but the error notification fires');
+	});
+
+	test('delivery failure mirrors "Zustellung fehlgeschlagen" onto the HUD', async () => {
+		const deps = createDeps();
+		deps.delivery.paste = sinon.stub().rejects(new Error('paste boom'));
+		const controller = new DictationController({
+			...deps,
+			schedule: (fn: () => void) => { void fn; return () => {}; },
+		} as unknown as ControllerDeps);
+
+		await dictate(controller);
+
+		assert.ok(deps.ui.showMessage.calledOnceWithExactly(HUD_MESSAGES.deliveryFailed), 'HUD shows the delivery-failed message');
+		assert.ok(deps.notifier.error.called, 'the error notification still fires');
+	});
+
+	test('a normal paste surfaces NO HUD message and idles immediately', async () => {
+		const deps = createDeps(); // default: paste resolves 'pasted'
+		const controller = new DictationController(deps as unknown as ControllerDeps);
+
+		await dictate(controller);
+
+		assert.ok(deps.ui.showMessage.notCalled, 'no HUD message on the happy path');
+		assert.ok(deps.ui.setState.calledWith('idle'), 'idles immediately');
+	});
+
+	test('a new recording during the message window cancels the pending hide timer (supersession)', async () => {
+		let cancelled = false;
+		const deps = createDeps();
+		deps.delivery.paste = sinon.stub().resolves('secure-input');
+		const controller = new DictationController({
+			...deps,
+			schedule: (fn: () => void) => { void fn; return () => { cancelled = true; }; },
+		} as unknown as ControllerDeps);
+
+		await dictate(controller); // shows message, arms hide timer
+		await controller.handleHotkey(); // new recording → setState('recording') must cancel the timer
+
+		assert.strictEqual(cancelled, true, 'the pending HUD message hide timer was cancelled');
+		assert.ok(deps.ui.setState.calledWith('recording'), 'the new recording took over the pill');
 	});
 });

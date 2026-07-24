@@ -25,8 +25,13 @@ pub struct CaptureState(pub Mutex<Option<Running>>);
 
 pub struct Running {
     stop_tx: Sender<()>,
-    handle: JoinHandle<Result<(), String>>,
-    path: PathBuf,
+    /// The capture thread finalizes the WAV and reports its path here *before*
+    /// tearing down the (possibly blocking) cpal stream, so `stop_capture` can
+    /// return as soon as the audio is on disk.
+    done_rx: Receiver<Result<PathBuf, String>>,
+    /// Kept only to own the thread; intentionally never joined — the thread
+    /// drops the cpal stream on its own time after reporting back.
+    _handle: JoinHandle<()>,
 }
 
 #[tauri::command]
@@ -44,13 +49,22 @@ pub fn start_capture(app: AppHandle, state: tauri::State<CaptureState>) -> Resul
     let path = dir.join("verba-capture.wav");
 
     let (stop_tx, stop_rx) = mpsc::channel::<()>();
-    let thread_path = path.clone();
-    let handle = std::thread::spawn(move || record(thread_path, stop_rx));
+    let (done_tx, done_rx) = mpsc::channel::<Result<PathBuf, String>>();
+    let thread_path = path;
+    let handle = std::thread::spawn(move || {
+        // On a setup failure `record` returns Err without having reported; forward
+        // it so `stop_capture` (blocked on `done_rx`) never waits forever. On the
+        // success path `record` sends the finalized-WAV result itself, before the
+        // (possibly blocking) stream teardown, so there is nothing to forward here.
+        if let Err(e) = record(thread_path, stop_rx, &done_tx) {
+            let _ = done_tx.send(Err(e));
+        }
+    });
 
     *guard = Some(Running {
         stop_tx,
-        handle,
-        path,
+        done_rx,
+        _handle: handle,
     });
     Ok(())
 }
@@ -67,23 +81,34 @@ pub fn stop_capture(state: tauri::State<CaptureState>) -> Result<String, String>
             .ok_or_else(|| "No recording in progress.".to_string())?
     };
 
-    // Signal the capture thread to stop, then wait for it to finalize the WAV.
+    // Signal the capture thread to stop and wait for it to finalize the WAV —
+    // NOT for it to tear down the cpal/CoreAudio stream. The thread reports the
+    // finalized path over `done_rx` before dropping the stream, so we return as
+    // soon as the audio is on disk and never block on the stream teardown, which
+    // on macOS can take seconds or hang. The thread is intentionally not joined;
+    // it drops the stream on its own and exits.
     let _ = running.stop_tx.send(());
-    running
-        .handle
-        .join()
-        .map_err(|_| "capture thread panicked".to_string())??;
+    let path = running
+        .done_rx
+        .recv()
+        .map_err(|_| "capture thread ended before finalizing the recording".to_string())??;
 
-    running
-        .path
-        .to_str()
+    path.to_str()
         .map(|s| s.to_string())
         .ok_or_else(|| "capture path is not valid UTF-8".to_string())
 }
 
 /// Records from the default input device until a stop signal arrives, writing a
 /// 16-bit PCM WAV to `path`. Runs on its own thread (owns the `!Send` stream).
-fn record(path: PathBuf, stop_rx: Receiver<()>) -> Result<(), String> {
+///
+/// On success it reports the finalized WAV path over `done_tx` *before* dropping
+/// the cpal stream, so `stop_capture` never blocks on the CoreAudio teardown. A
+/// setup error is returned instead (and forwarded by the spawning closure).
+fn record(
+    path: PathBuf,
+    stop_rx: Receiver<()>,
+    done_tx: &Sender<Result<PathBuf, String>>,
+) -> Result<(), String> {
     let host = cpal::default_host();
     let device = host
         .default_input_device()
@@ -162,13 +187,30 @@ fn record(path: PathBuf, stop_rx: Receiver<()>) -> Result<(), String> {
     // Block until stop is requested (or the sender is dropped).
     let _ = stop_rx.recv();
 
-    drop(stream); // stop capturing before finalizing
-    if let Some(writer) = writer
-        .lock()
-        .map_err(|_| "writer poisoned".to_string())?
-        .take()
-    {
-        writer.finalize().map_err(|e| e.to_string())?;
-    }
+    // Finalize the WAV FIRST — before tearing down the stream. Taking the writer
+    // out of the `Option` makes the audio callback a no-op (it only writes while
+    // `Some`), so this can't race a late callback, and it means finalization no
+    // longer depends on the stream being dropped first.
+    let finalize_result = (|| -> Result<PathBuf, String> {
+        if let Some(writer) = writer
+            .lock()
+            .map_err(|_| "writer poisoned".to_string())?
+            .take()
+        {
+            writer.finalize().map_err(|e| e.to_string())?;
+        }
+        Ok(path)
+    })();
+
+    // Hand the finalized-WAV result back to `stop_capture` NOW, before the stream
+    // teardown. That is the whole point: the user-visible flow returns the moment
+    // the audio is on disk and never waits on the drop below.
+    let _ = done_tx.send(finalize_result);
+
+    // Stop and drop the stream LAST. On macOS this cpal/CoreAudio teardown can
+    // block for seconds (or, rarely, hang); doing it here — after we've reported
+    // the WAV path — keeps that latency entirely off the dictation flow.
+    let _ = stream.pause();
+    drop(stream);
     Ok(())
 }

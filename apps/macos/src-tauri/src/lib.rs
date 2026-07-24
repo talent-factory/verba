@@ -61,6 +61,7 @@ pub fn run() {
             env::env_var,
             http::anthropic_fetch,
             hud::set_hud_state,
+            hud::set_hud_message,
             paste::has_accessibility_permission,
             paste::open_accessibility_settings,
             paste::paste_text,

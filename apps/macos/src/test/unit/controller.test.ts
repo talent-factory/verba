@@ -1,7 +1,10 @@
 import * as assert from 'assert';
 import * as sinon from 'sinon';
 
+import type { DetectedSurface } from '@verba/core';
+
 import { DictationController, type ControllerDeps } from '../../controller';
+import type { DeliveryPorts, Intent } from '../../delivery';
 
 /** All-stub dependency set; individual tests override behavior as needed. */
 export function createDeps() {
@@ -9,7 +12,6 @@ export function createDeps() {
 	invoke.withArgs('start_capture').resolves(undefined);
 	invoke.withArgs('stop_capture').resolves('/tmp/rec.wav');
 	invoke.withArgs('has_accessibility_permission').resolves(true);
-	invoke.withArgs('paste_text', sinon.match.any).resolves(undefined);
 
 	return {
 		deepgram: { transcribe: sinon.stub().resolves({ text: 'raw transcript', detectedLanguage: 'en' }) },
@@ -22,12 +24,44 @@ export function createDeps() {
 		},
 		store: { init: sinon.stub().resolves() },
 		invoke: invoke as unknown as ControllerDeps['invoke'],
+		// Delivery routing (Task 5). Default surface is generic → the `paste` port
+		// is the delivery target, mirroring the old blind `paste_text` behavior.
+		delivery: {
+			detectSurface: sinon.stub().resolves({ class: 'generic' } as DetectedSurface),
+			herdrSend: sinon.stub().resolves(),
+			paste: sinon.stub().resolves(),
+			pressEnter: sinon.stub().resolves(),
+		},
 		ui: {
 			setPhase: sinon.stub(),
 			showTranscript: sinon.stub().resolves(),
 			showAccessibilityOnboarding: sinon.stub().resolves(),
 			setState: sinon.stub(),
 		},
+	};
+}
+
+/** Builds a controller from {@link createDeps}, applying per-test overrides. */
+function makeController(overrides: Partial<ControllerDeps> = {}): DictationController {
+	const deps = { ...createDeps(), ...overrides };
+	return new DictationController(deps as unknown as ControllerDeps);
+}
+
+/** A macrotask flush, so queued async work (e.g. a fired arm timer) settles. */
+const tick = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
+
+/**
+ * {@link DeliveryPorts} that report a focused agent pane, so `deliver()` routes
+ * through `herdrSend`; `onSend` observes the delivered text and resolved intent.
+ */
+function fakeAgentPorts(onSend: (text: string, intent: Intent) => void): DeliveryPorts {
+	return {
+		detectSurface: async (): Promise<DetectedSurface> => ({ class: 'agent', paneId: 'pane-1' }),
+		herdrSend: async (_paneId: string, text: string, submit: boolean): Promise<void> => {
+			onSend(text, submit ? 'submit' : 'insert');
+		},
+		paste: async (): Promise<void> => {},
+		pressEnter: async (): Promise<void> => {},
 	};
 }
 
@@ -86,12 +120,9 @@ suite('DictationController', () => {
 
 		assert.strictEqual(deps.notifier.error.calledWithMatch(/timed out/), true);
 		assert.strictEqual(deps.ui.setPhase.calledWith('Idle.'), true);
-		// Transcription/cleanup/paste must never run when the recording can't be finalized.
+		// Transcription/cleanup/delivery must never run when the recording can't be finalized.
 		assert.strictEqual(deps.deepgram.transcribe.called, false);
-		assert.strictEqual(
-			(deps.invoke as unknown as sinon.SinonStub).calledWith('paste_text', sinon.match.any),
-			false
-		);
+		assert.strictEqual(deps.delivery.paste.called, false);
 		// The flow must settle back to idle, never leaving the state stuck.
 		const states = (deps.ui.setState as sinon.SinonStub).getCalls().map((c) => c.args[0]);
 		assert.strictEqual(states[states.length - 1], 'idle');
@@ -117,10 +148,7 @@ suite('DictationController', () => {
 			await new Promise((r) => setTimeout(r, 40));
 
 			assert.strictEqual(deps.deepgram.transcribe.called, false);
-			assert.strictEqual(
-				(deps.invoke as unknown as sinon.SinonStub).calledWith('paste_text', sinon.match.any),
-				false
-			);
+			assert.strictEqual(deps.delivery.paste.called, false);
 			assert.deepStrictEqual(unhandled, [], 'late stop_capture resolution must not escape');
 		} finally {
 			process.removeListener('unhandledRejection', onUnhandled);
@@ -167,15 +195,9 @@ suite('DictationController', () => {
 			await new Promise((r) => setTimeout(r, 40));
 
 			// Fell back to the raw transcript on timeout; the late cleaned value must not
-			// be pasted, and must not surface as an unhandledRejection.
-			assert.strictEqual(
-				(deps.invoke as unknown as sinon.SinonStub).calledWith('paste_text', { text: 'raw transcript' }),
-				true
-			);
-			assert.strictEqual(
-				(deps.invoke as unknown as sinon.SinonStub).calledWith('paste_text', { text: 'cleaned LATE' }),
-				false
-			);
+			// be delivered, and must not surface as an unhandledRejection.
+			assert.strictEqual(deps.delivery.paste.calledWith('raw transcript'), true);
+			assert.strictEqual(deps.delivery.paste.calledWith('cleaned LATE'), false);
 			assert.deepStrictEqual(unhandled, [], 'late cleanup resolution must not escape');
 		} finally {
 			process.removeListener('unhandledRejection', onUnhandled);
@@ -194,10 +216,7 @@ suite('DictationController', () => {
 		assert.strictEqual(deps.cleanup.process.calledOnce, true);
 		assert.strictEqual(deps.cleanup.process.firstCall.args[0], 'raw transcript');
 		assert.deepStrictEqual(deps.cleanup.process.firstCall.args[1], { detectedLanguage: 'en' });
-		assert.strictEqual(
-			(deps.invoke as unknown as sinon.SinonStub).calledWith('paste_text', { text: 'cleaned text' }),
-			true
-		);
+		assert.strictEqual(deps.delivery.paste.calledWith('cleaned text'), true);
 		assert.strictEqual(deps.notifier.info.calledWithMatch(/pasted/i), true);
 		assert.strictEqual(deps.ui.showTranscript.called, false);
 		assert.strictEqual(deps.ui.setPhase.calledWith('Idle.'), true);
@@ -209,10 +228,7 @@ suite('DictationController', () => {
 		await dictate(controller);
 
 		assert.strictEqual(deps.notifier.warn.calledWithMatch(/raw transcript/), true);
-		assert.strictEqual(
-			(deps.invoke as unknown as sinon.SinonStub).calledWith('paste_text', { text: 'raw transcript' }),
-			true
-		);
+		assert.strictEqual(deps.delivery.paste.calledWith('raw transcript'), true);
 		assert.strictEqual(deps.notifier.error.called, false);
 	});
 
@@ -235,10 +251,7 @@ suite('DictationController', () => {
 		await dictate(stalled);
 
 		assert.strictEqual(deps.notifier.warn.calledWithMatch(/timed out/), true);
-		assert.strictEqual(
-			(deps.invoke as unknown as sinon.SinonStub).calledWith('paste_text', { text: 'raw transcript' }),
-			true
-		);
+		assert.strictEqual(deps.delivery.paste.calledWith('raw transcript'), true);
 		assert.strictEqual(deps.notifier.error.called, false);
 		// The timeout aborts the underlying request so no API cost is wasted on a
 		// result we've already discarded.
@@ -270,10 +283,7 @@ suite('DictationController', () => {
 			// Give the late rejection time to fire against the already-elapsed timeout.
 			await new Promise((resolve) => setTimeout(resolve, 40));
 
-			assert.strictEqual(
-				(deps.invoke as unknown as sinon.SinonStub).calledWith('paste_text', { text: 'raw transcript' }),
-				true
-			);
+			assert.strictEqual(deps.delivery.paste.calledWith('raw transcript'), true);
 			assert.deepStrictEqual(unhandled, [], 'no unhandledRejection may escape the timeout wrapper');
 		} finally {
 			process.removeListener('unhandledRejection', onUnhandled);
@@ -293,10 +303,7 @@ suite('DictationController', () => {
 
 		await dictate(slow);
 
-		assert.strictEqual(
-			(deps.invoke as unknown as sinon.SinonStub).calledWith('paste_text', { text: 'cleaned text' }),
-			true
-		);
+		assert.strictEqual(deps.delivery.paste.calledWith('cleaned text'), true);
 		assert.strictEqual(deps.notifier.warn.called, false);
 	});
 
@@ -307,19 +314,15 @@ suite('DictationController', () => {
 
 		assert.strictEqual(deps.ui.showAccessibilityOnboarding.calledOnce, true);
 		assert.strictEqual(deps.ui.showTranscript.calledWith('cleaned text'), true);
-		assert.strictEqual(
-			(deps.invoke as unknown as sinon.SinonStub).calledWith('paste_text', sinon.match.any),
-			false
-		);
+		assert.strictEqual(deps.delivery.paste.called, false);
 	});
 
-	test('paste failure falls back to showing the transcript in the window', async () => {
-		(deps.invoke as unknown as sinon.SinonStub).withArgs('paste_text', sinon.match.any)
-			.rejects(new Error('Paste failed: could not create event source'));
+	test('delivery failure falls back to showing the transcript in the window', async () => {
+		deps.delivery.paste.rejects(new Error('Paste failed: could not create event source'));
 
 		await dictate(controller);
 
-		assert.strictEqual(deps.notifier.error.calledWithMatch(/paste failed/i), true);
+		assert.strictEqual(deps.notifier.error.calledWithMatch(/delivery failed/i), true);
 		assert.strictEqual(deps.ui.showTranscript.calledWith('cleaned text'), true);
 	});
 
@@ -333,15 +336,14 @@ suite('DictationController', () => {
 		assert.strictEqual(deps.ui.showTranscript.calledWith('raw transcript'), true);
 	});
 
-	test('cleanup failure + paste failure still surfaces the RAW transcript in the window', async () => {
+	test('cleanup failure + delivery failure still surfaces the RAW transcript in the window', async () => {
 		deps.cleanup.process.rejects(new Error('overloaded'));
-		(deps.invoke as unknown as sinon.SinonStub).withArgs('paste_text', sinon.match.any)
-			.rejects(new Error('Paste failed'));
+		deps.delivery.paste.rejects(new Error('Paste failed'));
 
 		await dictate(controller);
 
 		assert.strictEqual(deps.ui.showTranscript.calledWith('raw transcript'), true);
-		assert.strictEqual(deps.notifier.error.calledWithMatch(/paste failed/i), true);
+		assert.strictEqual(deps.notifier.error.calledWithMatch(/delivery failed/i), true);
 	});
 
 	test('ignores a hotkey press while transcription is already in flight', async () => {
@@ -378,5 +380,49 @@ suite('DictationController', () => {
 
 		const states = (deps.ui.setState as sinon.SinonStub).getCalls().map((c) => c.args[0]);
 		assert.strictEqual(states[states.length - 1], 'idle');
+	});
+
+	test('short tap (release before threshold) never records', async () => {
+		let armed: (() => void) | null = null;
+		const started: string[] = [];
+		const invoke = (async (cmd: string) => {
+			started.push(cmd);
+			return undefined;
+		}) as unknown as ControllerDeps['invoke'];
+		const c = makeController({
+			schedule: (fn) => {
+				armed = fn;
+				return () => {
+					armed = null;
+				};
+			},
+			invoke,
+		});
+
+		await c.handlePttDown('insert');
+		await c.handlePttUp(); // released before the arm timer fired
+
+		assert.ok(armed === null, 'arm timer was cancelled');
+		assert.ok(!started.includes('start_capture'), 'no recording started');
+	});
+
+	test('hold past threshold records, release delivers with the held intent', async () => {
+		let armed: (() => void) | null = null;
+		const delivered: Array<{ text: string; intent: string }> = [];
+		const c = makeController({
+			schedule: (fn) => {
+				armed = fn;
+				return () => {};
+			},
+			delivery: fakeAgentPorts((text, intent) => delivered.push({ text, intent })),
+		});
+
+		await c.handlePttDown('submit');
+		armed!(); // threshold elapsed → begins recording
+		await tick();
+		await c.handlePttUp(); // stop → transcribe → cleanup → deliver
+		await tick();
+
+		assert.equal(delivered.at(-1)?.intent, 'submit');
 	});
 });

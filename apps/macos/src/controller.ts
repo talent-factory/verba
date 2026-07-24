@@ -1,4 +1,5 @@
 import type { CleanupService } from '@verba/core';
+import { deliver, type DeliveryPorts, type Intent } from './delivery';
 import type { DictationState } from './visualization/statePresentation';
 
 export type InvokeFn = <T>(cmd: string, args?: Record<string, unknown>) => Promise<T>;
@@ -42,6 +43,12 @@ export interface ControllerDeps {
 	 * Overridable so tests can drive the timeout path without waiting.
 	 */
 	stopCaptureTimeoutMs?: number;
+	/** Routing ports for delivering the finished transcript (agent pane / paste). */
+	delivery: DeliveryPorts;
+	/** Minimum hold before a press starts recording (default 200ms). */
+	holdThresholdMs?: number;
+	/** Schedules `fn` after `ms`; returns a canceller. Injectable for tests. */
+	schedule?: (fn: () => void, ms: number) => () => void;
 }
 
 /**
@@ -79,10 +86,24 @@ export class DictationController {
 	private state: DictationState = 'idle';
 	private readonly cleanupTimeoutMs: number;
 	private readonly stopCaptureTimeoutMs: number;
+	private readonly holdThresholdMs: number;
+	private readonly schedule: (fn: () => void, ms: number) => () => void;
+	// Intent for the *next* delivery. Set by the push-to-talk key that started the
+	// hold; the toggle hotkey always resets it to 'insert'.
+	private intent: Intent = 'insert';
+	// Non-null while a push is held but the threshold hasn't elapsed yet; its
+	// `cancel` disarms the pending start so a short tap never records.
+	private arming: { cancel: () => void } | null = null;
+	// Guards the window between "threshold elapsed" and "capture actually started",
+	// so a release that races the async start is deferred, not dropped.
+	private startInFlight = false;
+	private pendingStop = false;
 
 	constructor(private readonly deps: ControllerDeps) {
 		this.cleanupTimeoutMs = deps.cleanupTimeoutMs ?? DEFAULT_CLEANUP_TIMEOUT_MS;
 		this.stopCaptureTimeoutMs = deps.stopCaptureTimeoutMs ?? DEFAULT_STOP_CAPTURE_TIMEOUT_MS;
+		this.holdThresholdMs = deps.holdThresholdMs ?? 200;
+		this.schedule = deps.schedule ?? ((fn, ms) => { const t = setTimeout(fn, ms); return () => clearTimeout(t); });
 	}
 
 	/** Updates the flow state and mirrors it to the visualization surfaces. */
@@ -110,10 +131,38 @@ export class DictationController {
 		// Busy (transcribing/processing) → ignore. Idle → start. Recording → stop.
 		if (this.state === 'transcribing' || this.state === 'processing') { return; }
 		if (this.state === 'idle') {
+			// The toggle path has no held intent, so it always delivers as 'insert'.
+			this.intent = 'insert';
 			await this.startRecording();
 			return;
 		}
 		await this.stopAndTranscribe();
+	}
+
+	/** Push-to-talk key pressed. Arms a hold timer; only a hold past the threshold records. */
+	async handlePttDown(intent: Intent): Promise<void> {
+		if (this.state !== 'idle' || this.arming || this.startInFlight) { return; }
+		this.intent = intent;
+		const cancel = this.schedule(() => { this.arming = null; void this.beginRecording(); }, this.holdThresholdMs);
+		this.arming = { cancel };
+	}
+
+	/** Push-to-talk key released. Short tap → cancel; held → stop and deliver. */
+	async handlePttUp(): Promise<void> {
+		if (this.arming) { this.arming.cancel(); this.arming = null; return; }
+		if (this.startInFlight) { this.pendingStop = true; return; }
+		if (this.state === 'recording') { await this.stopAndTranscribe(); }
+	}
+
+	/** Starts capture once the hold threshold has elapsed; handles a release that races the start. */
+	private async beginRecording(): Promise<void> {
+		this.startInFlight = true;
+		await this.startRecording();
+		this.startInFlight = false;
+		if (this.pendingStop) {
+			this.pendingStop = false;
+			if (this.state === 'recording') { await this.stopAndTranscribe(); }
+		}
 	}
 
 	private async startRecording(): Promise<void> {
@@ -169,12 +218,12 @@ export class DictationController {
 			}
 
 			try {
-				await this.deps.invoke('paste_text', { text });
-				this.deps.notifier.info('Verba: pasted.');
+				await deliver(text, this.intent, this.deps.delivery);
+				this.deps.notifier.info(this.intent === 'submit' ? 'Verba: sent.' : 'Verba: pasted.');
 				this.deps.ui.setPhase('Idle.');
 			} catch (err) {
 				// The window is the fallback surface: the user must never lose text.
-				this.deps.notifier.error(`Verba: paste failed — ${errText(err)}`);
+				this.deps.notifier.error(`Verba: delivery failed — ${errText(err)}`);
 				await this.deps.ui.showTranscript(text);
 			}
 		} catch (err) {

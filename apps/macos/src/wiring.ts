@@ -8,6 +8,7 @@ import { DeepgramTauriProvider } from './deepgramTauriProvider';
 import { createAnthropicTauriFetch } from './adapters/anthropicTauriFetch';
 import { promptForApiKey, setPhase, showAccessibilityOnboarding, showTranscript } from './ui';
 import { DictationController } from './controller';
+import type { DeliveryPorts } from './delivery';
 import { loadConfig, applyConfig, cleanupContextFor, templateForSurface } from './config/verbaConfig';
 import { createVisualization } from './visualization/visualization';
 
@@ -75,6 +76,22 @@ export async function createDictationController(): Promise<{
 		}
 	}
 
+	// Delivery routing: a focused herdr agent pane receives text natively (and an
+	// Enter on `submit`); every other surface falls back to the ⌘V paste path.
+	const delivery: DeliveryPorts = {
+		detectSurface: () => {
+			const cfg = configState.current;
+			return invoke<DetectedSurface>('detect_surface', {
+				agentMarkers: cfg.agentMarkers,
+				terminalApps: cfg.terminalApps,
+				editorApps: cfg.editorApps,
+			});
+		},
+		herdrSend: (paneId, text, submit) => invoke<void>('herdr_send', { paneId, text, submit }),
+		paste: (text) => invoke<void>('paste_text', { text }),
+		pressEnter: () => invoke<void>('press_enter'),
+	};
+
 	const controller = new DictationController({
 		deepgram: { transcribe: (audioPath) => provider.transcribe(audioPath, configState.current.glossary) },
 		cleanup: {
@@ -103,6 +120,7 @@ export async function createDictationController(): Promise<{
 		notifier,
 		store: new TauriKeyValueStore(),
 		invoke,
+		delivery,
 		ui: { setPhase, showTranscript, showAccessibilityOnboarding, setState: visualization.setState },
 	});
 

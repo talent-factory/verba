@@ -130,6 +130,12 @@ export class DictationController {
 	async handleHotkey(): Promise<void> {
 		// Busy (transcribing/processing) → ignore. Idle → start. Recording → stop.
 		if (this.state === 'transcribing' || this.state === 'processing') { return; }
+		// Symmetric with the PTT guards: a start already in flight (from a PTT
+		// hold that just crossed the threshold) must not be raced by a second
+		// `start_capture`. A pending PTT arm that hasn't fired yet is cancelled
+		// so it can't fire later and start a second capture.
+		if (this.startInFlight) { return; }
+		if (this.arming) { this.arming.cancel(); this.arming = null; }
 		if (this.state === 'idle') {
 			// The toggle path has no held intent, so it always delivers as 'insert'.
 			this.intent = 'insert';

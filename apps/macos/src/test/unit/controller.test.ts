@@ -425,4 +425,77 @@ suite('DictationController', () => {
 
 		assert.equal(delivered.at(-1)?.intent, 'submit');
 	});
+
+	test('handleHotkey cancels a pending PTT arm instead of racing it into a second start', async () => {
+		// A PTT hold that hasn't crossed the threshold yet leaves `arming` set.
+		// `handleHotkey` must disarm it (cancel the scheduled timer) before doing
+		// its own idle→start, so the (now-cancelled) arm timer can never fire
+		// later and start a second, unwanted recording.
+		let cancelled = false;
+		const started: string[] = [];
+		const invoke = (async (cmd: string) => {
+			started.push(cmd);
+			if (cmd === 'has_accessibility_permission') { return true; }
+			if (cmd === 'stop_capture') { return '/tmp/rec.wav'; }
+			return undefined;
+		}) as unknown as ControllerDeps['invoke'];
+		const c = makeController({
+			invoke,
+			schedule: () => () => { cancelled = true; },
+		});
+
+		await c.handlePttDown('insert'); // arms; hold not yet elapsed
+		await c.handleHotkey(); // idle → start; must cancel the pending arm first
+
+		assert.strictEqual(cancelled, true, 'a pending PTT arm must be cancelled by handleHotkey');
+		// A real scheduler (setTimeout/clearTimeout) guarantees a cancelled timer's
+		// callback never runs, so with the arm properly cancelled here, only
+		// handleHotkey's own start ever reaches `start_capture` — never twice.
+		assert.strictEqual(
+			started.filter((cmd) => cmd === 'start_capture').length,
+			1,
+			'only handleHotkey\'s own start may call start_capture; the cancelled arm must never fire a second one',
+		);
+	});
+
+	test('a PTT release that races an in-flight start_capture is deferred, not dropped', async () => {
+		// Models the window `beginRecording` guards with `startInFlight`/`pendingStop`:
+		// the hold crosses the threshold (arm fires) and `start_capture` is still
+		// pending when the key is released. The release must be remembered and
+		// honored once the start settles — not lost.
+		let armFn: (() => void) | null = null;
+		let resolveStart: (() => void) | null = null;
+		const invoke = sinon.stub();
+		invoke.withArgs('start_capture').returns(new Promise<void>((resolve) => { resolveStart = resolve; }));
+		invoke.withArgs('stop_capture').resolves('/tmp/rec.wav');
+		invoke.withArgs('has_accessibility_permission').resolves(true);
+
+		const delivered: Array<{ text: string; intent: string }> = [];
+		const c = makeController({
+			invoke: invoke as unknown as ControllerDeps['invoke'],
+			schedule: (fn) => { armFn = fn; return () => { armFn = null; }; },
+			delivery: fakeAgentPorts((text, intent) => delivered.push({ text, intent })),
+		});
+
+		await c.handlePttDown('insert'); // arms; hold not yet elapsed
+		armFn!(); // threshold elapsed → beginRecording() starts; start_capture is now in flight
+		await c.handlePttUp(); // release races the in-flight start → deferred via pendingStop, not dropped
+
+		assert.strictEqual(
+			invoke.withArgs('stop_capture').called,
+			false,
+			'stop_capture must not fire until start_capture has resolved',
+		);
+
+		resolveStart!();
+		await tick();
+		await tick();
+
+		assert.strictEqual(
+			invoke.withArgs('stop_capture').callCount,
+			1,
+			'the deferred release must still trigger exactly one stop_capture — never lost, never doubled',
+		);
+		assert.strictEqual(delivered.length, 1, 'the deferred release must still complete delivery');
+	});
 });

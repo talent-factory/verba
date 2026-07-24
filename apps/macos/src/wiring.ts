@@ -28,6 +28,7 @@ export async function createDictationController(): Promise<{
 	controller: DictationController;
 	reloadConfig: () => Promise<void>;
 	notifier: TauriNotifier;
+	activationMode: () => 'push-to-talk' | 'toggle';
 }> {
 	const notifier = new TauriNotifier();
 	// A hand-edited config with a JSON syntax error silently resets every setting
@@ -121,8 +122,9 @@ export async function createDictationController(): Promise<{
 		store: new TauriKeyValueStore(),
 		invoke,
 		delivery,
+		holdThresholdMs: configState.current.activation.holdThresholdMs,
 		ui: { setPhase, showTranscript, showAccessibilityOnboarding, setState: visualization.setState },
 	});
 
-	return { controller, reloadConfig, notifier };
+	return { controller, reloadConfig, notifier, activationMode: () => configState.current.activation.mode };
 }

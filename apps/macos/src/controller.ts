@@ -172,6 +172,10 @@ export class DictationController {
 			await this.startRecording();
 			return;
 		}
+		// A toggle-driven stop never carries a PTT-held submit intent — a real key
+		// release (handlePttUp) is the only path allowed to honor `this.intent` as
+		// set by handlePttDown.
+		this.intent = 'insert';
 		await this.stopAndTranscribe();
 	}
 

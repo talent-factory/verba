@@ -444,6 +444,31 @@ suite('DictationController', () => {
 		assert.equal(delivered.at(-1)?.intent, 'submit');
 	});
 
+	test('toggle-driven stop after a PTT submit hold delivers as insert, not the stale held intent', async () => {
+		// A PTT right-Option (submit) hold that is stopped via the toggle hotkey
+		// (Ctrl+Alt+D) — instead of releasing the held key via handlePttUp — must
+		// not let stopAndTranscribe read the stale `this.intent === 'submit'` set
+		// by handlePttDown. That would fire an unintended Enter into the focused
+		// agent pane. A toggle-driven stop always delivers as 'insert'.
+		let armed: (() => void) | null = null;
+		const delivered: Array<{ text: string; intent: string }> = [];
+		const c = makeController({
+			schedule: (fn) => {
+				armed = fn;
+				return () => {};
+			},
+			delivery: fakeAgentPorts((text, intent) => delivered.push({ text, intent })),
+		});
+
+		await c.handlePttDown('submit');
+		armed!(); // threshold elapsed → begins recording
+		await tick();
+		await c.handleHotkey(); // toggle stop, NOT handlePttUp — must not honor held 'submit'
+		await tick();
+
+		assert.equal(delivered.at(-1)?.intent, 'insert');
+	});
+
 	test('handleHotkey cancels a pending PTT arm instead of racing it into a second start', async () => {
 		// A PTT hold that hasn't crossed the threshold yet leaves `arming` set.
 		// `handleHotkey` must disarm it (cancel the scheduled timer) before doing

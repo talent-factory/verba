@@ -45,10 +45,10 @@ Legende: ⬜ offen · ✅ Pass · ❌ Fail (mit Notiz)
 | 2 | **Submit-Geste** | rechts-Option halten → kurzes Kommando → loslassen | Text erscheint **und** wird abgesendet (Enter) | ✅ |
 | 3 | **Kurzer Tap** | rechts-Cmd nur antippen (< 200 ms) | Keine Aufnahme, kein HUD-Flackern | ✅ |
 | 4 | **Nicht-Agent + Submit** | in Notes rechts-Option halten → sprechen | Text gepastet, **kein** Enter (Submit ist agent-only) | ✅ |
-| 5 | **herdr-aus-Fallback** | herdr stoppen → im Terminal rechts-Cmd halten → sprechen | Fallback auf ⌘V-Paste, kein Hänger | ⬜ |
+| 5 | **herdr-aus-Fallback** | herdr stoppen → im Terminal rechts-Cmd halten → sprechen | Fallback auf ⌘V-Paste, kein Hänger | ✅ |
 | 6 | **Toggle-Alias** | `Ctrl+Alt+D` drücken / erneut drücken | Klassischer Toggle-Flow funktioniert weiter (immer insert) | ✅ |
 | 7 | **Editor-Oberfläche** | in VS Code / einem Editor rechts-Cmd halten → sprechen | Text landet im Editor (Paste-Pfad), kein Agent-Verhalten | ✅ |
-| 8 | **Leeres Diktat** | rechts-Cmd halten → nichts / nur Stille → loslassen | Kein leeres Enter an den Agenten; Warn-/Fehler-Notification | ❌ |
+| 8 | **Leeres Diktat** | rechts-Cmd halten → nichts / nur Stille → loslassen | Kein leeres Enter an den Agenten; Warn-/Fehler-Notification | ✅ |
 
 ---
 
@@ -56,7 +56,7 @@ Legende: ⬜ offen · ✅ Pass · ❌ Fail (mit Notiz)
 
 Beim Durchspielen gezielt beobachten und Ergebnis notieren:
 
-- ⬜ **`send-keys`-Key-Name:** Feuert das Absende-Enter (Fall 2) wirklich? Falls nicht, in `apps/macos/src-tauri/src/deliver.rs::herdr_argvs` von `"Enter"` auf `"Return"` wechseln.
+- ✅ **`send-keys`-Key-Name:** Absende-Enter (Fall 2) feuert mit `"Enter"` — kein Wechsel auf `"Return"` nötig (im Live-Test bestätigt).
 - ⬜ **Event-Tap-Install-Notification:** Ohne Accessibility (oder bei Tap-Fehler) sollte jetzt eine **Notification** erscheinen („Push-to-Talk konnte nicht aktiviert werden … nutze Ctrl+Alt+D"), keine Stille. Einmal ohne Accessibility-Recht testen.
 - ⬜ **⌘-Shortcut-Interferenz:** Stört das Halten von rechts-Cmd während des ~200 ms-Fensters echte ⌘-Shortcuts?
 - ⬜ **Concurrent-Modifier-Edge:** rechts-Cmd loslassen, während links-Cmd gehalten wird — Fehlklassifikation als zweites Down? (bekannter Edge, `classify_flags_changed` nutzt das aggregierte Flag)
@@ -74,7 +74,7 @@ Beim Durchspielen gezielt beobachten und Ergebnis notieren:
 
 ## Ergebnis
 
-**Abnahme:** ⬜ offen
+**Abnahme:** ✅ 
 
 Notizen / Findings:
 
@@ -100,6 +100,8 @@ Notizen / Findings:
 - **Fix in Arbeit:** HUD-Spiegel für die drei handlungsrelevanten Meldungen
   (Secure-Input, leeres Diktat, Zustellungsfehler), unabhängig vom fragilen
   Notification-Kanal — Spec `docs/superpowers/specs/2026-07-24-hud-message-mirror-design.md`.
-- **Re-Test-TODO:** #8 und der Secure-Input-Fall im **gebauten Bundle** mit
-  aktivierten Mitteilungen (+ „Vorschau zeigen: Immer") erneut prüfen; nach dem
-  HUD-Fix zusätzlich im Dev-Modus (`just macos-dev`).
+- **Re-Test erledigt (2026-07-24):** Nach dem HUD-Spiegel-Fix (Commits
+  `599c696..0eb6588`, im gebauten `Verba.app` verifiziert) bestätigte der Nutzer
+  im Live-Test: **alle Fälle inkl. #8 und Secure-Input funktionieren** — die drei
+  handlungsrelevanten Meldungen sind über die HUD-Pille sichtbar, unabhängig vom
+  fragilen Notification-Kanal. **UAT abgeschlossen / abgenommen.**

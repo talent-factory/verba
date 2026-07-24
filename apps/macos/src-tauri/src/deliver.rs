@@ -134,6 +134,7 @@ mod tests {
     fn submit_appends_send_keys_enter() {
         let cmds = herdr_argvs("wQ:p2", "run tests", true);
         assert_eq!(cmds.len(), 2);
+        assert_eq!(cmds[0], vec!["pane", "send-text", "wQ:p2", "run tests"]);
         assert_eq!(cmds[1], vec!["pane", "send-keys", "wQ:p2", "Enter"]);
     }
 

@@ -70,8 +70,8 @@ unsafe impl Send for TapHandle {}
 // `CGEventTapEnable` is not exposed as a public function by the `core-graphics`
 // crate (it's a private FFI declaration internal to `event.rs`), so it is
 // re-declared here to re-enable the tap from the callback. `CoreGraphics` is
-// already linked in transitively via the `core-graphics` crate.
-#[link(name = "CoreGraphics", kind = "framework")]
+// already linked in transitively via the `core-graphics` crate, so no explicit
+// `#[link(...)]` attribute is needed here.
 extern "C" {
     fn CGEventTapEnable(tap: CGEventTapRef, enable: bool);
 }
@@ -99,6 +99,9 @@ pub(crate) fn start(app: AppHandle) {
                     // macOS auto-disabled the tap (slow handler, or the user toggled
                     // the Accessibility/Input-Monitoring grant at runtime) — re-arm it
                     // so PTT doesn't go silently dead until app restart.
+                    // The `MutexGuard` from `.lock()` is held across the `CGEventTapEnable`
+                    // FFI call below; that's safe because the call doesn't synchronously
+                    // re-enter this callback, and `std::sync::Mutex` is non-reentrant.
                     if let Some(handle) = tap_handle_for_callback.lock().unwrap().as_ref() {
                         unsafe { CGEventTapEnable(handle.0, true) };
                     }
@@ -184,6 +187,12 @@ mod tests {
     fn right_option_press_is_submit_down() {
         let e = classify_flags_changed(0x3D, CGEventFlags::CGEventFlagAlternate);
         assert_eq!(e, Some(PttEvent::Down(Intent::Submit)));
+    }
+
+    #[test]
+    fn right_option_release_is_up() {
+        let e = classify_flags_changed(0x3D, CGEventFlags::empty());
+        assert_eq!(e, Some(PttEvent::Up));
     }
 
     #[test]

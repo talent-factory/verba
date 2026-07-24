@@ -134,6 +134,19 @@ function isTemplateArray(v: unknown): v is Template[] {
 	);
 }
 
+/**
+ * Ensures a resolved template's `outputLanguage` is a validated ISO-639 code or
+ * absent — never a raw, unvalidated string. Applied during {@link resolveConfig}
+ * so the resolved config is total at the config boundary: a consumer that reads
+ * `template.outputLanguage` directly (bypassing the prompt-sink guard) can no
+ * longer receive an injection payload. Invalid codes are dropped (and logged once
+ * by {@link resolveTemplateOutputLanguage}).
+ */
+function sanitizeTemplateOutputLanguage(t: Template): Template {
+	if (t.outputLanguage === undefined) { return t; }
+	return { ...t, outputLanguage: resolveTemplateOutputLanguage(t.outputLanguage) };
+}
+
 /** Returns the template named `name`, or the first template when unnamed/unknown. */
 export function resolveActiveTemplate(templates: Template[], name?: string): Template {
 	const found = name ? templates.find((t) => t.name === name) : undefined;
@@ -159,7 +172,8 @@ export function resolveConfig(provider: ConfigProvider): ResolvedConfig {
 	const terminalApps = resolveStringArray(provider.get<unknown>('terminalApps', DEFAULT_TERMINAL_APPS));
 	const editorApps = resolveStringArray(provider.get<unknown>('editorApps', DEFAULT_EDITOR_APPS));
 
-	const templates = isTemplateArray(rawTemplates) ? rawTemplates : DEFAULT_TEMPLATES;
+	const templates = (isTemplateArray(rawTemplates) ? rawTemplates : DEFAULT_TEMPLATES)
+		.map(sanitizeTemplateOutputLanguage);
 
 	return {
 		language: nonEmptyString(rawLanguage) ? rawLanguage : 'auto',

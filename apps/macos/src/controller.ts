@@ -33,11 +33,13 @@ export interface ControllerDeps {
 	cleanupTimeoutMs?: number;
 	/**
 	 * Upper bound on the recording-stop step (default {@link DEFAULT_STOP_CAPTURE_TIMEOUT_MS}).
-	 * Finalizing the WAV is normally instant, but the native capture thread can hang on
-	 * cpal/CoreAudio stream teardown, which — via `stop_capture`'s unbounded `join()` —
-	 * would otherwise freeze the flow in "Transcribing…" forever with no error. On
-	 * timeout we abandon the recording and reset to idle. Overridable so tests can
-	 * drive the timeout path without waiting.
+	 * `stop_capture` blocks on a channel until the native capture thread finalizes the
+	 * WAV and reports its path; the cpal/CoreAudio stream teardown deliberately runs
+	 * *after* that, on the (never-joined) capture thread, so a teardown hang can no
+	 * longer stall this step. The bound therefore guards the finalize handshake — a
+	 * stuck `hound` finalize / disk, or the thread dying before it reports — turning an
+	 * otherwise indefinite "Transcribing…" freeze into a recoverable idle+error.
+	 * Overridable so tests can drive the timeout path without waiting.
 	 */
 	stopCaptureTimeoutMs?: number;
 }
@@ -52,8 +54,9 @@ const DEFAULT_CLEANUP_TIMEOUT_MS = 30_000;
 
 /**
  * Default recording-stop timeout. Finalizing the WAV is normally instantaneous;
- * this only trips when the native capture thread's cpal/CoreAudio stream teardown
- * hangs, turning an indefinite "Transcribing…" freeze into a recoverable error.
+ * this only trips if that finalize handshake hangs (e.g. a stuck disk / `hound`
+ * finalize) or the capture thread dies before reporting — not on the cpal stream
+ * teardown, which now runs after `stop_capture` has already returned.
  */
 const DEFAULT_STOP_CAPTURE_TIMEOUT_MS = 10_000;
 
@@ -176,9 +179,9 @@ export class DictationController {
 			}
 		} catch (err) {
 			if (err instanceof StopCaptureTimeoutError) {
-				// The native capture thread hung while finalizing the WAV (a cpal/CoreAudio
-				// stream-teardown stall). Recover to idle instead of freezing forever in
-				// "Transcribing…" — the recording is lost, but the app stays usable.
+				// The native capture thread hung while finalizing the WAV (the finalize
+				// handshake never completed). Recover to idle instead of freezing forever
+				// in "Transcribing…" — the recording is lost, but the app stays usable.
 				this.deps.notifier.error(
 					`Verba: recording could not be finalized (stop timed out after ${this.stopCaptureTimeoutMs}ms) — the audio device may be stuck; retry, and restart Verba if it persists.`
 				);
@@ -242,13 +245,15 @@ export class DictationController {
 
 	/**
 	 * Invokes `stop_capture` with an upper time bound. The native capture thread
-	 * finalizes the WAV synchronously and `stop_capture` joins it; if cpal/CoreAudio
-	 * stream teardown hangs, that join blocks forever, so without this bound a stuck
-	 * recording would freeze the flow in "Transcribing…" with no error. On timeout we
-	 * reject with a {@link StopCaptureTimeoutError} and abandon the recording. Tauri's
-	 * `invoke` can't be cancelled, so the stuck native thread leaks until the app
-	 * restarts; a late settlement is logged (never lost) and consumed so it can't
-	 * surface as an unhandledRejection.
+	 * finalizes the WAV and reports its path over a channel, which `stop_capture`
+	 * awaits (`done_rx.recv()`) — it does *not* join the thread, and the cpal/CoreAudio
+	 * stream teardown runs afterward off that path, so a teardown hang can't block here.
+	 * Without this bound a stuck *finalize* (or a thread that dies before reporting)
+	 * would still freeze the flow in "Transcribing…"; on timeout we reject with a
+	 * {@link StopCaptureTimeoutError} and abandon the recording. Tauri's `invoke` can't
+	 * be cancelled, so a genuinely stuck native thread leaks until the app restarts; a
+	 * late settlement is logged (never lost) and consumed so it can't surface as an
+	 * unhandledRejection.
 	 */
 	private stopCaptureWithTimeout(): Promise<string> {
 		const op = this.deps.invoke<string>('stop_capture');

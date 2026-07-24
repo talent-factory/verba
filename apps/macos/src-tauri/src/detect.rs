@@ -124,9 +124,40 @@ pub(crate) fn focused_window_title(pid: i32) -> Option<String> {
     let app = AXUIElement::application(pid);
     // The crate has no typed `focused_window` accessor; build the attribute by name.
     let focused = AXAttribute::<CFType>::new(&CFString::from_static_string("AXFocusedWindow"));
-    let window = app.attribute(&focused).ok()?.downcast::<AXUIElement>()?;
-    let title = window.attribute(&AXAttribute::title()).ok()?;
-    Some(title.to_string())
+    let window = match app.attribute(&focused) {
+        Ok(w) => w.downcast::<AXUIElement>()?,
+        Err(e) => {
+            warn_ax_title_failure_once(&e);
+            return None;
+        }
+    };
+    match window.attribute(&AXAttribute::title()) {
+        Ok(title) => Some(title.to_string()),
+        Err(e) => {
+            warn_ax_title_failure_once(&e);
+            None
+        }
+    }
+}
+
+/// Logs the first Accessibility title-read failure per process, then stays quiet.
+///
+/// Unlike `query_herdr`, which distinguishes its failure modes, the AX crate
+/// surfaces the benign `-25204` ("cannot complete") even for a trusted app — so
+/// logging every miss would spam. But logging *nothing* (the previous behavior)
+/// left a genuine AX regression invisible: agent detection silently falls through
+/// to `Generic`. Logging once bounds the noise while keeping a real breakage
+/// diagnosable.
+fn warn_ax_title_failure_once<E: std::fmt::Debug>(err: &E) {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    static WARNED: AtomicBool = AtomicBool::new(false);
+    if !WARNED.swap(true, Ordering::Relaxed) {
+        eprintln!(
+            "[Verba] Accessibility window-title read failed ({err:?}); title-based agent \
+             detection is degraded. Benign if seen once (AX -25204 fires even when trusted); \
+             if agent templates stop applying, re-grant Accessibility permission."
+        );
+    }
 }
 
 // ---- Orchestration ----
@@ -295,5 +326,32 @@ mod tests {
     #[test]
     fn returns_none_on_garbage() {
         assert!(focused_herdr_agent_from_json("not json").is_none());
+    }
+
+    #[test]
+    fn herdr_agent_takes_precedence_over_a_title_marker() {
+        // Both a herdr agent and a marker-bearing title are present: herdr (tier 1)
+        // wins and the title marker (tier 2) is never consulted.
+        let herdr = Some(HerdrAgent { agent: "claude".into(), status: "working".into() });
+        let s = classify(front("com.apple.Terminal"), herdr, Some("session: codex".into()),
+            &["codex".into()], &["com.apple.Terminal".into()], &[]);
+        assert_eq!(s, Surface::Agent { agent: "claude".into(), status: Some("working".into()) });
+    }
+
+    #[test]
+    fn terminal_without_herdr_or_title_is_generic() {
+        // Terminal in front, but no herdr agent and no window title at all → generic.
+        let s = classify(front("com.apple.Terminal"), None, None,
+            &["claude".into()], &["com.apple.Terminal".into()], &[]);
+        assert_eq!(s, Surface::Generic);
+    }
+
+    #[test]
+    fn missing_agent_status_defaults_to_unknown() {
+        // A focused agent without an `agent_status` field falls back to "unknown".
+        let json = r#"{"result":{"snapshot":{"agents":[{"agent":"claude","focused":true}]}}}"#;
+        let a = focused_herdr_agent_from_json(json).expect("a focused agent");
+        assert_eq!(a.agent, "claude");
+        assert_eq!(a.status, "unknown");
     }
 }

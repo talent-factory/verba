@@ -2,13 +2,14 @@
 //!
 //! cpal `Stream`s are `!Send`, so the stream is created, played, and dropped
 //! entirely on a dedicated capture thread; `start_capture`/`stop_capture`
-//! coordinate with it over an mpsc channel and Tauri managed state.
+//! coordinate with it over mpsc channels and Tauri managed state.
 //!
-//! NOTE (verification): this file targets macOS (CoreAudio) and was authored in
-//! a headless Linux environment without the audio toolchain, so it has **not**
-//! been compiled or run. It follows the standard cpal + hound patterns but is
-//! the piece most likely to need iteration on a Mac (sample-format handling,
-//! crate-version API drift).
+//! The capture thread finalizes the WAV and reports its path back over `done_tx`
+//! *before* tearing down the cpal stream, so `stop_capture` returns as soon as the
+//! audio is on disk and never blocks on the CoreAudio stream teardown (which on
+//! macOS can be slow) — see `record` and `stop_capture` for the handshake. This
+//! decoupling, together with disabling App Nap (`lib.rs`), fixes the intermittent
+//! "Transcribing…" freeze; both were verified against the running macOS app.
 
 use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver, Sender};

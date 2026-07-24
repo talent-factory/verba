@@ -17,9 +17,12 @@ function sanitize(s: string): string {
 /**
  * Removes a single outer markdown code fence from model output. LLMs frequently wrap
  * code-oriented answers (JavaDoc, code comments, transformed selections) in ```lang … ```
- * fences that would otherwise be pasted literally into the editor. Only a fence spanning
- * the entire output is stripped; fenced blocks that are part of the content (e.g. a code
- * block inside a Markdown answer) are left intact.
+ * fences that would otherwise be pasted literally into the editor. Stripped only when the
+ * output is exactly ONE fenced block — the first line is an opening fence, the output ends
+ * with ```, and nothing between them is itself a fence line. Anything else is returned
+ * unchanged: prose, a fenced block embedded in surrounding text, or output that is multiple
+ * top-level fenced blocks (where stripping the first opener and last closer would corrupt
+ * the content).
  */
 export function stripOuterCodeFence(text: string): string {
 	const trimmed = text.trim();
@@ -33,8 +36,17 @@ export function stripOuterCodeFence(text: string): string {
 	if (!/^```[a-zA-Z0-9+#.-]*$/.test(firstLine)) {
 		return text;
 	}
+	// Content between the opening fence line and the trailing ```.
+	const body = trimmed.slice(firstNewline + 1, trimmed.length - 3);
+	// Only unwrap a SINGLE fenced block: if the body itself contains a fence delimiter
+	// line, the trailing ``` closes a *different* block than the opener (multiple
+	// top-level blocks, e.g. a Markdown answer with two code blocks), and stripping the
+	// outer pair would leave unbalanced fences. Leave such output untouched.
+	if (/^\s*```/m.test(body)) {
+		return text;
+	}
 	// Drop the opening fence line and the trailing ```, plus the newline before it.
-	return trimmed.slice(firstNewline + 1, trimmed.length - 3).replace(/\n?[ \t]*$/, '');
+	return body.replace(/\n?[ \t]*$/, '');
 }
 
 const API_KEY_STORAGE_KEY = 'anthropic-api-key';

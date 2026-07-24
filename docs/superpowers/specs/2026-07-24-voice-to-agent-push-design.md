@@ -1,7 +1,7 @@
 # Voice → Agent: Push (Keil #2, Sub-Projekt A)
 
 **Datum:** 2026-07-24
-**Projekt:** [Verba](https://linear.app/talent-factory/project/verba-the-developers-dictation-extension-8227f12a5e2c/) · Linear-Issue: noch anzulegen
+**Projekt:** [Verba](https://linear.app/talent-factory/project/verba-the-developers-dictation-extension-8227f12a5e2c/) · Linear-Issue: [TF-525](https://linear.app/talent-factory/issue/TF-525)
 **Strategie:** Keil #2 der Positionierung „Voice zum Kommandieren von KI-Agenten" (siehe Memory `project_verba_positioning_agent_voice`). Gegner ist **Spokenly** (MCP-Integration für Claude Code/Cursor), nicht Wispr.
 **Ziel:** Diktat auf einer macOS-Agent-Oberfläche wird **agent-nativ** aktiviert und zugestellt — Push-to-Talk auf einer merkbaren Taste, Text direkt in die fokussierte herdr-Pane, optional abgesendet. Ersetzt für den Agent-Fall den blinden ⌘V-Paste.
 

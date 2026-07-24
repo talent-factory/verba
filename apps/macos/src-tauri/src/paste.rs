@@ -34,6 +34,26 @@ extern "C" {
     fn AXIsProcessTrusted() -> bool;
 }
 
+#[link(name = "Carbon", kind = "framework")]
+extern "C" {
+    /// True when the frontmost app has **Secure Event Input** enabled (e.g. a
+    /// terminal with "Secure Keyboard Entry" on, or any password field). While
+    /// active, the OS silently swallows synthetic key events — so a synthetic ⌘V
+    /// never reaches the app. `HIToolbox`/Carbon's `IsSecureEventInputEnabled`.
+    fn IsSecureEventInputEnabled() -> bool;
+}
+
+/// The result of a paste attempt, so the frontend can distinguish the normal
+/// paste from the secure-input case where the transcript was left on the
+/// clipboard for the user to paste manually. Serializes to `"pasted"` /
+/// `"secure-input"`.
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum PasteOutcome {
+    Pasted,
+    SecureInput,
+}
+
 /// Whether this process is trusted for Accessibility (required to paste into
 /// other apps). This is a passive check — unlike
 /// `AXIsProcessTrustedWithOptions`, it never triggers the system's own
@@ -68,8 +88,13 @@ pub fn open_accessibility_settings() -> Result<(), String> {
 ///
 /// Async so the two sleeps (~350ms total) run on a blocking-pool thread and
 /// never stall Tauri's main thread.
+///
+/// Returns [`PasteOutcome::SecureInput`] (without pasting) when Secure Event
+/// Input is active: the synthetic ⌘V would be swallowed and the restore would
+/// then lose the transcript, so the text is left on the clipboard for the user
+/// to paste manually and the caller is told to surface that.
 #[tauri::command]
-pub async fn paste_text(text: String) -> Result<(), String> {
+pub async fn paste_text(text: String) -> Result<PasteOutcome, String> {
     tauri::async_runtime::spawn_blocking(move || paste_text_blocking(&text))
         .await
         .map_err(|e| format!("Paste failed: {e}"))?
@@ -93,22 +118,40 @@ impl TextClipboard for Clipboard {
     }
 }
 
-fn paste_text_blocking(text: &str) -> Result<(), String> {
+fn paste_text_blocking(text: &str) -> Result<PasteOutcome, String> {
     let mut clipboard =
         Clipboard::new().map_err(|e| format!("Paste failed: clipboard unavailable: {e}"))?;
-    paste_via_clipboard(&mut clipboard, text, synthesize_cmd_v)
+    let secure_input = unsafe { IsSecureEventInputEnabled() };
+    paste_via_clipboard(&mut clipboard, text, secure_input, synthesize_cmd_v)
 }
 
 /// Clipboard save → write `text` → run `keystroke` (the synthetic ⌘V) → restore
-/// the previous clipboard. The restore runs on **every** path, so a failed
-/// keystroke never leaves the transcript stranded on the clipboard with the
-/// user's previous content lost. `clipboard` and `keystroke` are injected so
-/// this sequencing is unit-testable without a real pasteboard or HID event.
+/// the previous clipboard. The restore runs on **every** normal path, so a
+/// failed keystroke never leaves the transcript stranded on the clipboard with
+/// the user's previous content lost. `clipboard`, `secure_input`, and
+/// `keystroke` are injected so this sequencing is unit-testable without a real
+/// pasteboard, HID event, or Secure Event Input state.
+///
+/// When `secure_input` is true the synthetic ⌘V would be silently swallowed by
+/// the OS. Firing it and then restoring the previous clipboard would lose the
+/// dictated text with no paste to show for it. Instead we leave the transcript
+/// on the clipboard, skip the keystroke, skip the restore, and return
+/// [`PasteOutcome::SecureInput`] so the caller can prompt the user to paste.
 fn paste_via_clipboard(
     clipboard: &mut impl TextClipboard,
     text: &str,
+    secure_input: bool,
     keystroke: impl FnOnce() -> Result<(), String>,
-) -> Result<(), String> {
+) -> Result<PasteOutcome, String> {
+    if secure_input {
+        // Leave the transcript on the clipboard; do NOT restore the previous
+        // content and do NOT fire the (would-be-swallowed) keystroke.
+        clipboard
+            .set_text(text)
+            .map_err(|e| format!("Paste failed: could not write clipboard: {e}"))?;
+        return Ok(PasteOutcome::SecureInput);
+    }
+
     let previous = clipboard.get_text();
 
     clipboard
@@ -129,7 +172,7 @@ fn paste_via_clipboard(
             eprintln!("[Verba] Could not restore previous clipboard content: {e}");
         }
     }
-    pasted
+    pasted.map(|()| PasteOutcome::Pasted)
 }
 
 /// Posts a synthetic ⌘V key-down/key-up pair to the HID event tap.
@@ -219,8 +262,9 @@ mod tests {
         let mut clipboard = FakeClipboard { text: Some("previous-value".to_string()) };
 
         // A no-op stands in for the synthetic ⌘V.
-        paste_via_clipboard(&mut clipboard, "dictated-text", || Ok(())).unwrap();
+        let outcome = paste_via_clipboard(&mut clipboard, "dictated-text", false, || Ok(())).unwrap();
 
+        assert!(matches!(outcome, PasteOutcome::Pasted));
         assert_eq!(clipboard.text.as_deref(), Some("previous-value"));
     }
 
@@ -230,7 +274,7 @@ mod tests {
 
         // The bug this guards: an early `?` return skipping the restore, leaving
         // "dictated-text" on the clipboard and the user's "previous-value" lost.
-        let result = paste_via_clipboard(&mut clipboard, "dictated-text", || Err("keystroke boom".to_string()));
+        let result = paste_via_clipboard(&mut clipboard, "dictated-text", false, || Err("keystroke boom".to_string()));
 
         assert!(result.is_err());
         assert_eq!(clipboard.text.as_deref(), Some("previous-value"));
@@ -242,9 +286,47 @@ mod tests {
         // restore, so the transcript stays on the pasteboard.
         let mut clipboard = FakeClipboard { text: None };
 
-        paste_via_clipboard(&mut clipboard, "dictated-text", || Ok(())).unwrap();
+        let outcome = paste_via_clipboard(&mut clipboard, "dictated-text", false, || Ok(())).unwrap();
 
+        assert!(matches!(outcome, PasteOutcome::Pasted));
         assert_eq!(clipboard.text.as_deref(), Some("dictated-text"));
+    }
+
+    #[test]
+    fn secure_input_leaves_transcript_and_never_restores_or_types() {
+        // Secure Event Input (e.g. a terminal with "Secure Keyboard Entry" on)
+        // silently swallows the synthetic ⌘V. Restoring the previous clipboard
+        // then loses the dictation entirely. Under secure input we must instead
+        // leave the transcript on the clipboard, NOT restore, and NOT fire the
+        // keystroke (it would be swallowed anyway).
+        let mut clipboard = FakeClipboard { text: Some("previous-value".to_string()) };
+        let mut keystroke_fired = false;
+
+        let outcome = paste_via_clipboard(&mut clipboard, "dictated-text", true, || {
+            keystroke_fired = true;
+            Ok(())
+        })
+        .unwrap();
+
+        assert!(!keystroke_fired, "the ⌘V keystroke must never fire under secure input");
+        assert_eq!(clipboard.text.as_deref(), Some("dictated-text"), "transcript stays on the clipboard");
+        assert!(matches!(outcome, PasteOutcome::SecureInput));
+    }
+
+    #[test]
+    fn non_secure_input_pastes_and_reports_pasted() {
+        let mut clipboard = FakeClipboard { text: Some("previous-value".to_string()) };
+        let mut keystroke_fired = false;
+
+        let outcome = paste_via_clipboard(&mut clipboard, "dictated-text", false, || {
+            keystroke_fired = true;
+            Ok(())
+        })
+        .unwrap();
+
+        assert!(keystroke_fired, "the ⌘V keystroke fires on the normal path");
+        assert_eq!(clipboard.text.as_deref(), Some("previous-value"), "previous clipboard is restored");
+        assert!(matches!(outcome, PasteOutcome::Pasted));
     }
 
     #[test]

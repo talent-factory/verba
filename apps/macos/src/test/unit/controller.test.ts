@@ -4,7 +4,7 @@ import * as sinon from 'sinon';
 import type { DetectedSurface } from '@verba/core';
 
 import { DictationController, type ControllerDeps } from '../../controller';
-import type { DeliveryPorts, Intent } from '../../delivery';
+import type { DeliveryPorts, Intent, PasteOutcome } from '../../delivery';
 
 /** All-stub dependency set; individual tests override behavior as needed. */
 export function createDeps() {
@@ -29,7 +29,7 @@ export function createDeps() {
 		delivery: {
 			detectSurface: sinon.stub().resolves({ class: 'generic' } as DetectedSurface),
 			herdrSend: sinon.stub().resolves(),
-			paste: sinon.stub().resolves(),
+			paste: sinon.stub().resolves('pasted'),
 			pressEnter: sinon.stub().resolves(),
 		},
 		ui: {
@@ -60,7 +60,7 @@ function fakeAgentPorts(onSend: (text: string, intent: Intent) => void): Deliver
 		herdrSend: async (_paneId: string, text: string, submit: boolean): Promise<void> => {
 			onSend(text, submit ? 'submit' : 'insert');
 		},
-		paste: async (): Promise<void> => {},
+		paste: async (): Promise<PasteOutcome> => 'pasted',
 		pressEnter: async (): Promise<void> => {},
 	};
 }
@@ -218,6 +218,20 @@ suite('DictationController', () => {
 		assert.deepStrictEqual(deps.cleanup.process.firstCall.args[1], { detectedLanguage: 'en' });
 		assert.strictEqual(deps.delivery.paste.calledWith('cleaned text'), true);
 		assert.strictEqual(deps.notifier.info.calledWithMatch(/pasted/i), true);
+		assert.strictEqual(deps.ui.showTranscript.called, false);
+		assert.strictEqual(deps.ui.setPhase.calledWith('Idle.'), true);
+	});
+
+	test('secure input → warns to paste manually, keeps text on clipboard, no "pasted" info', async () => {
+		// Secure Event Input swallowed the ⌘V; deliver left the transcript on the
+		// clipboard and reported 'secure-input'. The user must be told to paste
+		// manually rather than see a misleading "pasted" confirmation.
+		deps.delivery.paste.resolves('secure-input');
+
+		await dictate(controller);
+
+		assert.strictEqual(deps.notifier.warn.calledWithMatch(/Secure Input/), true);
+		assert.strictEqual(deps.notifier.info.calledWithMatch(/pasted/i), false);
 		assert.strictEqual(deps.ui.showTranscript.called, false);
 		assert.strictEqual(deps.ui.setPhase.calledWith('Idle.'), true);
 	});

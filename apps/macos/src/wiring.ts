@@ -89,7 +89,7 @@ export async function createDictationController(): Promise<{
 			});
 		},
 		herdrSend: (paneId, text, submit) => invoke<void>('herdr_send', { paneId, text, submit }),
-		paste: (text) => invoke<void>('paste_text', { text }),
+		paste: (text) => invoke<'pasted' | 'secure-input'>('paste_text', { text }),
 		pressEnter: () => invoke<void>('press_enter'),
 	};
 

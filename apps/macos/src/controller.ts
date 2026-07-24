@@ -235,8 +235,16 @@ export class DictationController {
 			}
 
 			try {
-				await deliver(text, this.intent, this.deps.delivery);
-				this.deps.notifier.info(this.intent === 'submit' ? 'Verba: sent.' : 'Verba: pasted.');
+				const outcome = await deliver(text, this.intent, this.deps.delivery);
+				if (outcome === 'secure-input') {
+					// Secure Event Input (e.g. a terminal with "Secure Keyboard Entry")
+					// swallowed the synthetic ⌘V; the transcript is on the clipboard for
+					// the user to paste manually. Warn distinctly so it doesn't look like
+					// a normal paste that silently did nothing.
+					this.deps.notifier.warn('Verba: Terminal blocked the paste (Secure Input) — transcript left on the clipboard, press ⌘V to insert.');
+				} else {
+					this.deps.notifier.info(this.intent === 'submit' ? 'Verba: sent.' : 'Verba: pasted.');
+				}
 				this.deps.ui.setPhase('Idle.');
 			} catch (err) {
 				// The window is the fallback surface: the user must never lose text.

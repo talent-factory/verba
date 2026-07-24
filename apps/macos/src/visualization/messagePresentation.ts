@@ -5,6 +5,9 @@ export type Severity = 'warn' | 'error';
 export interface HudMessage {
 	label: string;
 	severity: Severity;
+	/** Intentionally an unconstrained string, not a union: `HUD_MESSAGES` below is the
+	 * sole producer and already locks its literals via `as const satisfies` — narrowing
+	 * the type here would just re-derive that constraint and over-model it. */
 	icon: string;
 }
 
@@ -21,5 +24,16 @@ export const HUD_MESSAGES = {
 
 /** Accent color for a severity: warn = amber, error = red. */
 export function accentForSeverity(severity: Severity): string {
-	return severity === 'warn' ? '#f5a623' : '#e5484d';
+	switch (severity) {
+		case 'warn':
+			return '#f5a623';
+		case 'error':
+			return '#e5484d';
+		default: {
+			// Exhaustiveness check: a future 3rd Severity fails to compile here
+			// instead of silently falling through to the error color.
+			const _exhaustive: never = severity;
+			throw new Error(`accentForSeverity: unhandled severity ${String(_exhaustive)}`);
+		}
+	}
 }

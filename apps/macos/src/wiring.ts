@@ -1,4 +1,4 @@
-import { CleanupService, type ApiKeyPrompt, type DetectedSurface, type SurfaceClass } from '@verba/core';
+import { CleanupService, DEFAULT_ACTIVATION, type ApiKeyPrompt, type DetectedSurface, type SurfaceClass } from '@verba/core';
 import { invoke } from '@tauri-apps/api/core';
 import { TauriSecretStore } from './adapters/secretStore';
 import { EnvAwareSecretStore } from './adapters/envAwareSecretStore';
@@ -38,6 +38,16 @@ export async function createDictationController(): Promise<{
 		notifier.warn('Verba: config.json has a syntax error and was ignored — using defaults. Fix it via the tray menu.');
 
 	const configState = { current: await loadConfig(undefined, notifyMalformedConfig) };
+
+	// `activation.insertKey`/`submitKey` are resolved and validated here, but
+	// `activation.rs` still hardcodes right-Command/right-Option regardless of
+	// their value — remapping isn't wired to the event tap yet. Without this a
+	// user who sets a custom key gets a silent no-op; warn once at startup so
+	// it's visible instead. Gated on non-default so the common case stays quiet.
+	const { insertKey, submitKey } = configState.current.activation;
+	if (insertKey !== DEFAULT_ACTIVATION.insertKey || submitKey !== DEFAULT_ACTIVATION.submitKey) {
+		notifier.warn('Verba: custom Push-to-Talk keys are not supported yet — using right-Command / right-Option.');
+	}
 
 	const secrets = new EnvAwareSecretStore(new TauriSecretStore());
 	const deepgramPrompt: ApiKeyPrompt = () => promptForApiKey('Deepgram API key (dg-…)');

@@ -80,8 +80,12 @@ const HUD_MESSAGE_MS = 5000;
  *
  * **M3 (this milestone):** the transcript runs through `CleanupService`
  * (raw-transcript fallback when the key prompt is cancelled or the API
- * fails) and is pasted into the frontmost app via `paste_text`. The window
- * only appears for the Accessibility onboarding or when pasting fails.
+ * fails) and is delivered via `deliver()`: a focused herdr agent pane gets
+ * the text typed in directly (with an optional submit Enter), everything
+ * else falls back to a clipboard + `paste_text` paste, including the
+ * secure-input handling for terminals that block the synthetic ⌘V. The
+ * window only appears for the Accessibility onboarding or when delivery
+ * fails.
  */
 export class DictationController {
 	// Single source of truth for the flow. The visualization state and the
@@ -135,7 +139,6 @@ export class DictationController {
 	private surfaceHudMessage(message: HudMessage): void {
 		this.state = 'idle';
 		this.deps.ui.showMessage(message);
-		this.hudMessageTimer?.();
 		this.hudMessageTimer = this.schedule(() => {
 			this.hudMessageTimer = null;
 			this.deps.ui.setState('idle');

@@ -1,3 +1,4 @@
+mod activation;
 mod audio;
 mod config;
 mod deliver;
@@ -82,6 +83,11 @@ pub fn run() {
             // dictation flow otherwise stalls at "Transcribing…"/"Processing…".
             #[cfg(target_os = "macos")]
             disable_app_nap();
+
+            // Push-to-Talk-Event-Tap (rechts-Cmd → insert, rechts-Option → submit)
+            // auf eigenem CFRunLoop-Thread; UAT-verifiziert (Task 8).
+            #[cfg(target_os = "macos")]
+            activation::start(app.handle().clone());
 
             let menu = menu::build_settings_menu(app.handle())?;
 

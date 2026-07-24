@@ -4742,6 +4742,7 @@ version = "0.0.0"
 dependencies = [
  "accessibility",
  "arboard",
+ "core-foundation 0.10.1",
  "core-foundation 0.9.4",
  "core-graphics",
  "cpal",

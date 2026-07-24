@@ -22,6 +22,7 @@ suite('cleanupContextFor outputLanguage', () => {
 			expansions: [],
 			templates: [activeTemplate],
 			activeTemplate,
+			activation: { mode: 'push-to-talk', insertKey: 'right-command', submitKey: 'right-option', holdThresholdMs: 200 },
 			agentMarkers: [],
 			terminalApps: [],
 			editorApps: [],
@@ -68,6 +69,7 @@ suite('templateForSurface + override', () => {
 		return {
 			language: 'auto', transcriptionLanguage: 'multi', provider: 'deepgram', localModel: 'base',
 			glossary: [], expansions: [], templates: [active, agent], activeTemplate: active,
+			activation: { mode: 'push-to-talk', insertKey: 'right-command', submitKey: 'right-option', holdThresholdMs: 200 },
 			agentMarkers: [], terminalApps: [], editorApps: [],
 		};
 	}

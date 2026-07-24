@@ -41,14 +41,14 @@ Legende: ⬜ offen · ✅ Pass · ❌ Fail (mit Notiz)
 
 | # | Fall | Schritte | Erwartung | Status |
 |---|------|----------|-----------|--------|
-| 1 | **Insert-Geste** | rechts-Cmd halten → sprechen → loslassen (fokussierte herdr-Pane) | Text erscheint in der Pane, **kein** Enter. HUD: recording ▸ transcribing ▸ processing ▸ idle | ⬜ |
-| 2 | **Submit-Geste** | rechts-Option halten → kurzes Kommando → loslassen | Text erscheint **und** wird abgesendet (Enter) | ⬜ |
-| 3 | **Kurzer Tap** | rechts-Cmd nur antippen (< 200 ms) | Keine Aufnahme, kein HUD-Flackern | ⬜ |
-| 4 | **Nicht-Agent + Submit** | in Notes rechts-Option halten → sprechen | Text gepastet, **kein** Enter (Submit ist agent-only) | ⬜ |
+| 1 | **Insert-Geste** | rechts-Cmd halten → sprechen → loslassen (fokussierte herdr-Pane) | Text erscheint in der Pane, **kein** Enter. HUD: recording ▸ transcribing ▸ processing ▸ idle | ✅ |
+| 2 | **Submit-Geste** | rechts-Option halten → kurzes Kommando → loslassen | Text erscheint **und** wird abgesendet (Enter) | ✅ |
+| 3 | **Kurzer Tap** | rechts-Cmd nur antippen (< 200 ms) | Keine Aufnahme, kein HUD-Flackern | ✅ |
+| 4 | **Nicht-Agent + Submit** | in Notes rechts-Option halten → sprechen | Text gepastet, **kein** Enter (Submit ist agent-only) | ✅ |
 | 5 | **herdr-aus-Fallback** | herdr stoppen → im Terminal rechts-Cmd halten → sprechen | Fallback auf ⌘V-Paste, kein Hänger | ⬜ |
-| 6 | **Toggle-Alias** | `Ctrl+Alt+D` drücken / erneut drücken | Klassischer Toggle-Flow funktioniert weiter (immer insert) | ⬜ |
-| 7 | **Editor-Oberfläche** | in VS Code / einem Editor rechts-Cmd halten → sprechen | Text landet im Editor (Paste-Pfad), kein Agent-Verhalten | ⬜ |
-| 8 | **Leeres Diktat** | rechts-Cmd halten → nichts / nur Stille → loslassen | Kein leeres Enter an den Agenten; Warn-/Fehler-Notification | ⬜ |
+| 6 | **Toggle-Alias** | `Ctrl+Alt+D` drücken / erneut drücken | Klassischer Toggle-Flow funktioniert weiter (immer insert) | ✅ |
+| 7 | **Editor-Oberfläche** | in VS Code / einem Editor rechts-Cmd halten → sprechen | Text landet im Editor (Paste-Pfad), kein Agent-Verhalten | ✅ |
+| 8 | **Leeres Diktat** | rechts-Cmd halten → nichts / nur Stille → loslassen | Kein leeres Enter an den Agenten; Warn-/Fehler-Notification | ❌ |
 
 ---
 
@@ -78,4 +78,28 @@ Beim Durchspielen gezielt beobachten und Ergebnis notieren:
 
 Notizen / Findings:
 
--
+- **#8 war zunächst fälschlich ✅** — der „no-empty-Enter"-Teil hielt (leerer
+  Transkript wirft vor der Zustellung, kein Enter an den Agenten), aber die
+  erwartete Warn-Notification erschien nie. Ursache diagnostiziert: der
+  macOS-Notification-Kanal fiel auf **drei gestapelten Achsen** still aus, keine
+  davon ein Code-Bug:
+  1. **Zustellung:** `just macos-dev` startet das unbundled Dev-Binary
+     (`target/debug/verba-macos`); macOS liefert `UNUserNotificationCenter`-
+     Notifications aus einem Prozess ohne echten `.app`-Bundle-Kontext nicht aus.
+     Im gebauten Bundle (`just macos-build` → `Verba.app`) kamen sie sofort.
+  2. **Berechtigung:** „Mitteilungen" für Verba war in den Systemeinstellungen
+     aus → `sendNotification` = stiller No-op; nach „Nicht erlauben" re-promptet
+     macOS nicht wieder.
+  3. **Vorschau-Maskierung:** „Vorschau zeigen" ≠ „Immer" → Body wird durch den
+     Platzhalter „Mitteilung" ersetzt, der konkrete Hinweis erreicht den Nutzer
+     nicht.
+- **Live-Fund (Secure-Input, iTerm2):** In einem Terminal mit „Secure Keyboard
+  Entry" bleibt der Transkript korrekt auf der Zwischenablage (Commit `7e0eb23`),
+  aber der Hinweis „⌘V zum Einfügen" erreichte den Nutzer im Dev-Modus nie —
+  dieselbe Achse 1.
+- **Fix in Arbeit:** HUD-Spiegel für die drei handlungsrelevanten Meldungen
+  (Secure-Input, leeres Diktat, Zustellungsfehler), unabhängig vom fragilen
+  Notification-Kanal — Spec `docs/superpowers/specs/2026-07-24-hud-message-mirror-design.md`.
+- **Re-Test-TODO:** #8 und der Secure-Input-Fall im **gebauten Bundle** mit
+  aktivierten Mitteilungen (+ „Vorschau zeigen: Immer") erneut prüfen; nach dem
+  HUD-Fix zusätzlich im Dev-Modus (`just macos-dev`).

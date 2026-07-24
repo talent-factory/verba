@@ -83,6 +83,40 @@ macos-build: compile-core
 macos-typecheck: compile-core
 	cd apps/macos && npm run typecheck
 
+# ─── Coverage ─────────────────────────────────────────────────────────────────
+
+# Coverage for @verba/core (c8; gate ≥90% lines/functions/statements, ≥85% branches).
+[group('coverage')]
+coverage-core:
+	npm --workspace @verba/core run test:coverage
+
+# Coverage for the VS Code extension logic (c8; gate ≥90% lines/functions/statements,
+# ≥85% branches). Excludes the entry point, WebView panels and ffmpeg/status-bar
+# glue — those are exercised by the integration suite and manual UAT, not unit tests.
+[group('coverage')]
+coverage-vscode: compile-core
+	npm run test:coverage
+
+# Coverage for the macOS TS host logic (c8; same gate). Excludes Tauri/DOM glue
+# (main, wiring, ui, hud and the thin IPC-wrapper adapters).
+[group('coverage')]
+coverage-macos: compile-core
+	npm --workspace @verba/macos run test:coverage
+
+# Coverage for the macOS Rust backend (cargo-llvm-cov). Pure-FFI files
+# (cpal / Tauri window·menu·tray·store / keyring) are ignored — they are verified
+# by UAT, not unit tests. Reports decision-logic coverage; no hard gate, because
+# Rust interleaves logic with FFI in the same files (a 90% line gate would need a
+# logic/FFI split first). The pure logic (classify, herdr/config parsing, query
+# params, URL allow-list, clipboard sequencing) is unit-tested.
+[group('coverage')]
+coverage-rust:
+	cd apps/macos/src-tauri && cargo llvm-cov --ignore-filename-regex '(audio|hud|lib|main|secret|store|menu|tray)\.rs$'
+
+# Run every coverage suite (TS gates enforced; Rust is report-only).
+[group('coverage')]
+coverage: coverage-core coverage-vscode coverage-macos coverage-rust
+
 # ─── Docs ───────────────────────────────────────────────────────────────────────
 
 # Build documentation (mkdocs, strict mode)

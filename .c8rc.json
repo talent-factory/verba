@@ -1,0 +1,19 @@
+{
+  "all": true,
+  "include": ["out/**/*.js"],
+  "exclude": [
+    "out/test/**",
+    "out/**/*.test.js",
+    "out/extension.js",
+    "out/recorder.js",
+    "out/statusBarManager.js",
+    "out/costOverviewPanel.js"
+  ],
+  "reporter": ["text", "text-summary", "lcov"],
+  "reports-dir": "coverage",
+  "check-coverage": true,
+  "lines": 90,
+  "statements": 90,
+  "functions": 90,
+  "branches": 85
+}

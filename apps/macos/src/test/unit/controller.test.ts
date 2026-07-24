@@ -430,7 +430,12 @@ suite('DictationController', () => {
 		// A PTT hold that hasn't crossed the threshold yet leaves `arming` set.
 		// `handleHotkey` must disarm it (cancel the scheduled timer) before doing
 		// its own idle→start, so the (now-cancelled) arm timer can never fire
-		// later and start a second, unwanted recording.
+		// later and start a second, unwanted recording. Unlike a real scheduler
+		// (setTimeout/clearTimeout), this mock keeps a live reference to the armed
+		// callback so the test can invoke it *after* cancellation — proving the
+		// cancel-guard itself (not just the scheduler's own semantics) is what
+		// stops a late fire from starting a second recording.
+		let armFn: (() => void) | null = null;
 		let cancelled = false;
 		const started: string[] = [];
 		const invoke = (async (cmd: string) => {
@@ -441,20 +446,25 @@ suite('DictationController', () => {
 		}) as unknown as ControllerDeps['invoke'];
 		const c = makeController({
 			invoke,
-			schedule: () => () => { cancelled = true; },
+			schedule: (fn) => { armFn = fn; return () => { cancelled = true; }; },
 		});
 
 		await c.handlePttDown('insert'); // arms; hold not yet elapsed
 		await c.handleHotkey(); // idle → start; must cancel the pending arm first
 
 		assert.strictEqual(cancelled, true, 'a pending PTT arm must be cancelled by handleHotkey');
-		// A real scheduler (setTimeout/clearTimeout) guarantees a cancelled timer's
-		// callback never runs, so with the arm properly cancelled here, only
-		// handleHotkey's own start ever reaches `start_capture` — never twice.
+
+		// Simulate the timer firing anyway (the one thing a real scheduler would
+		// never let happen once cancelled). If `handleHotkey`'s cancel-guard is
+		// removed, this late fire calls `beginRecording()` again and doubles
+		// `start_capture` — so this assertion only holds while the guard exists.
+		armFn!();
+		await tick();
+
 		assert.strictEqual(
 			started.filter((cmd) => cmd === 'start_capture').length,
 			1,
-			'only handleHotkey\'s own start may call start_capture; the cancelled arm must never fire a second one',
+			'only handleHotkey\'s own start may call start_capture; a late fire of the cancelled arm must never start a second one',
 		);
 	});
 

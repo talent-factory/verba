@@ -149,8 +149,19 @@ export class DictationController {
 	async handlePttDown(intent: Intent): Promise<void> {
 		if (this.state !== 'idle' || this.arming || this.startInFlight) { return; }
 		this.intent = intent;
-		const cancel = this.schedule(() => { this.arming = null; void this.beginRecording(); }, this.holdThresholdMs);
-		this.arming = { cancel };
+		// `arm` is this hold's own identity token. A real scheduler's cancel()
+		// (clearTimeout) already guarantees a cancelled timer never fires, but the
+		// identity check below makes that guarantee explicit rather than assumed:
+		// even if this closure somehow ran after `this.arming` was cleared or
+		// replaced (cancelled by `handleHotkey`/`handlePttUp`, or superseded by a
+		// newer arm), it must be a no-op instead of starting a second recording.
+		const arm: { cancel: () => void } = { cancel: () => {} };
+		arm.cancel = this.schedule(() => {
+			if (this.arming !== arm) { return; }
+			this.arming = null;
+			void this.beginRecording();
+		}, this.holdThresholdMs);
+		this.arming = arm;
 	}
 
 	/** Push-to-talk key released. Short tap → cancel; held → stop and deliver. */

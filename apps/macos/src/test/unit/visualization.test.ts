@@ -2,6 +2,7 @@ import * as assert from 'assert';
 import * as sinon from 'sinon';
 
 import { createVisualization } from '../../visualization/visualization';
+import { HUD_MESSAGES } from '../../visualization/messagePresentation';
 
 suite('createVisualization', () => {
 	test('setState invokes both tray and hud commands with mapped values', () => {
@@ -36,5 +37,24 @@ suite('createVisualization', () => {
 		} finally {
 			warn.restore();
 		}
+	});
+
+	test('showMessage sets the tray to idle and pushes the HUD message with mapped accent', () => {
+		const invoke = sinon.stub().resolves(undefined);
+		createVisualization(invoke).showMessage(HUD_MESSAGES.secureInput);
+
+		const tray = invoke.getCalls().find((c) => c.args[0] === 'set_tray_state');
+		const msg = invoke.getCalls().find((c) => c.args[0] === 'set_hud_message');
+		assert.ok(tray, 'set_tray_state called');
+		assert.strictEqual(tray!.args[1].state, 'idle');
+		assert.ok(msg, 'set_hud_message called');
+		assert.deepStrictEqual(msg!.args[1], { label: '⌘V zum Einfügen', icon: '⚠', accent: '#f5a623' });
+	});
+
+	test('showMessage maps an error-severity message to the red accent', () => {
+		const invoke = sinon.stub().resolves(undefined);
+		createVisualization(invoke).showMessage(HUD_MESSAGES.noSpeech);
+		const msg = invoke.getCalls().find((c) => c.args[0] === 'set_hud_message');
+		assert.deepStrictEqual(msg!.args[1], { label: 'Keine Sprache erkannt', icon: '🔇', accent: '#e5484d' });
 	});
 });

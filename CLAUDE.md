@@ -87,12 +87,32 @@ Releases are fully automated via [release-please](https://github.com/googleapis/
 
 1. **Feature branches → `develop`**: Use emoji-prefixed conventional commits via `/commit` (e.g. `✨ feat:`, `🐛 fix:`) — as usual
 2. **`develop` → `main`**: **Squash-merge** with a **clean conventional commit message** (no emoji prefix). Example: `feat: API Key Management, Cost Tracking, Security Fixes`
-3. release-please detects the merge and creates/updates a **Release PR** (bumps `package.json`, updates `CHANGELOG.md`)
-4. Merge the Release PR → tag, GitHub Release, and VSIX artifact are created automatically
+3. release-please detects the merge and opens a **Release PR** (`chore(main): release verba X.Y.Z`) that bumps `package.json` / `.release-please-manifest.json` and prepends a `## [X.Y.Z]` section to `CHANGELOG.md`
+4. **Enrich the Release PR's CHANGELOG** (mandatory — see below), then merge it → tag, GitHub Release, and VSIX artifact are created automatically
+5. **Back-merge `main` → `develop`** (mandatory — see below) to reconverge the histories
 
 ### Why squash-merge without emoji?
 
 release-please cannot parse emoji-prefixed conventional commits (`✨ feat:` → not recognized). The squash-merge onto `main` produces a single clean commit that release-please understands. All granular emoji commits remain in the `develop` history.
+
+### Post-release back-merge (mandatory)
+
+The squash-merge in step 2 (and the Release-PR merge in step 4) puts a commit on `main` that is **not a descendant** of `develop`'s granular commits, so afterwards `develop` and `main` share only the pre-release merge-base. Skip the back-merge and the **next** `develop → main` PR surfaces dozens of `add/add` conflicts — pure history artifacts, not real content conflicts. After **every** release, reconverge:
+
+```bash
+git checkout develop
+git merge -X theirs origin/main   # post-release: main = develop's code + release bumps → main wins
+git diff origin/main              # MUST be empty — develop's tree now equals main's; only history changed
+git push origin develop
+```
+
+Use `-X theirs` for the *post-release* sync so `develop` adopts the version bump, manifest, and the finalized CHANGELOG (empty `[Unreleased]` + the new `[X.Y.Z]` section); resolve any residual rename/delete conflict toward `main`. `develop` must end up a descendant of `main` again (`git merge-base --is-ancestor origin/main develop`).
+
+**Recovery (only if a past release skipped the back-merge and `develop → main` already conflicts):** back-merge the *other* direction first — `git checkout develop && git merge -X ours origin/main` (here `develop` is the newer superset, so **develop wins**), verify `git diff origin/develop` is empty (no content change, history only), push, then proceed with the release.
+
+### CHANGELOG detail (mandatory before merging the Release PR)
+
+release-please generates only a **one-line** `## [X.Y.Z]` entry from the squash-commit subject — not sufficient (see the CHANGELOG convention below). The Keep-a-Changelog detail lives in the hand-written `## [Unreleased]` section on `develop`. Before merging the Release PR, edit **its** branch (`release-please--branches--main--components--verba`): delete the generated one-liner and lift the `[Unreleased]` entries into the `[X.Y.Z]` section (keep release-please's compare link + date), leaving `[Unreleased]` empty. **Do not push anything else to `main` before merging the Release PR** — release-please force-pushes its branch on every `main` push and would overwrite the edit.
 
 ### Configuration files
 

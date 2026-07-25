@@ -13,7 +13,9 @@ export function createDeps() {
 	const invoke = sinon.stub();
 	invoke.withArgs('start_capture').resolves(undefined);
 	invoke.withArgs('stop_capture').resolves('/tmp/rec.wav');
-	invoke.withArgs('has_accessibility_permission').resolves(true);
+	// NOTE: 'has_accessibility_permission' is no longer invoked by the controller
+	// directly — the check now lives in delivery.hasAccessibility() (only
+	// consulted in deliver()'s paste branch). See the `delivery` fake below.
 
 	return {
 		deepgram: { transcribe: sinon.stub().resolves({ text: 'raw transcript', detectedLanguage: 'en' }) },
@@ -33,6 +35,7 @@ export function createDeps() {
 			herdrSend: sinon.stub().resolves('delivered'),
 			paste: sinon.stub().resolves('pasted'),
 			pressEnter: sinon.stub().resolves(),
+			hasAccessibility: sinon.stub().resolves(true),
 		},
 		ui: {
 			setPhase: sinon.stub(),
@@ -66,6 +69,7 @@ function fakeAgentPorts(onSend: (text: string, intent: Intent) => void): Deliver
 		},
 		paste: async (): Promise<PasteOutcome> => 'pasted',
 		pressEnter: async (): Promise<void> => {},
+		hasAccessibility: async (): Promise<boolean> => false,
 	};
 }
 
@@ -325,14 +329,43 @@ suite('DictationController', () => {
 		assert.strictEqual(deps.notifier.warn.called, false);
 	});
 
-	test('missing Accessibility permission shows onboarding + transcript window, never pastes', async () => {
-		(deps.invoke as unknown as sinon.SinonStub).withArgs('has_accessibility_permission').resolves(false);
+	test('missing Accessibility permission (paste path) shows onboarding + transcript window, never pastes', async () => {
+		// Accessibility is now gated inside deliver()'s paste branch (via
+		// delivery.hasAccessibility), not an upfront controller check — this
+		// default surface is 'generic', so it goes through the paste branch.
+		deps.delivery.hasAccessibility = sinon.stub().resolves(false);
 
 		await dictate(controller);
 
 		assert.strictEqual(deps.ui.showAccessibilityOnboarding.calledOnce, true);
 		assert.strictEqual(deps.ui.showTranscript.calledWith('cleaned text'), true);
 		assert.strictEqual(deps.delivery.paste.called, false);
+	});
+
+	test('missing Accessibility permission does NOT block herdr delivery — agent+paneId delivers with no onboarding', async () => {
+		// This is the G1 fix: an agent pane is delivered to natively via the
+		// herdr CLI and needs no Accessibility permission — only the paste
+		// fallback does. A fresh install without Accessibility must still be
+		// able to use the agent-native path.
+		deps.delivery.detectSurface = sinon.stub().resolves({ class: 'agent', agent: 'claude', paneId: 'pane-1' } as DetectedSurface);
+		deps.delivery.herdrSend = sinon.stub().resolves('delivered');
+		deps.delivery.hasAccessibility = sinon.stub().resolves(false);
+
+		await dictate(controller);
+
+		assert.strictEqual(deps.delivery.herdrSend.called, true, 'herdr delivery happened');
+		assert.strictEqual(deps.ui.showAccessibilityOnboarding.called, false, 'no onboarding on the herdr path');
+		assert.strictEqual(deps.delivery.paste.called, false, 'paste must not run for a herdr delivery');
+		assert.strictEqual(deps.notifier.info.calledWithMatch(/^Verba: inserted\.$/), true, 'a success notification fired (insert intent)');
+	});
+
+	test('needs-accessibility is not treated as a delivery failure — no error, no deliveryFailed HUD message', async () => {
+		deps.delivery.hasAccessibility = sinon.stub().resolves(false);
+
+		await dictate(controller);
+
+		assert.strictEqual(deps.notifier.error.called, false, 'needs-accessibility is onboarding, not a failure');
+		assert.ok(deps.ui.showMessage.notCalled, 'no deliveryFailed HUD message for needs-accessibility');
 	});
 
 	test('delivery failure falls back to showing the transcript in the window', async () => {
@@ -346,7 +379,7 @@ suite('DictationController', () => {
 
 	test('cleanup failure + missing Accessibility still surfaces the RAW transcript in the window', async () => {
 		deps.cleanup.process.rejects(new Error('Anthropic API key required for post-processing.'));
-		(deps.invoke as unknown as sinon.SinonStub).withArgs('has_accessibility_permission').resolves(false);
+		deps.delivery.hasAccessibility = sinon.stub().resolves(false);
 
 		await dictate(controller);
 
@@ -467,6 +500,58 @@ suite('DictationController', () => {
 		await tick();
 
 		assert.equal(delivered.at(-1)?.intent, 'insert');
+	});
+
+	test('herdr delivery + submit intent → "Verba: sent." (G2: herdr truly fires the submit Enter)', async () => {
+		const deps = createDeps();
+		deps.delivery.detectSurface = sinon.stub().resolves({ class: 'agent', agent: 'claude', paneId: 'pane-1' } as DetectedSurface);
+		deps.delivery.herdrSend = sinon.stub().resolves('delivered');
+		let armed: (() => void) | null = null;
+		const controller = new DictationController({
+			...deps,
+			schedule: (fn: () => void) => { armed = fn; return () => {}; },
+		} as unknown as ControllerDeps);
+
+		await controller.handlePttDown('submit');
+		armed!(); // threshold elapsed → begins recording
+		await tick();
+		await controller.handlePttUp(); // stop → transcribe → cleanup → deliver as 'submit'
+		await tick();
+
+		assert.strictEqual(deps.notifier.info.calledWithMatch(/^Verba: sent\.$/), true);
+	});
+
+	test('herdr delivery + insert intent → "Verba: inserted." (not "sent")', async () => {
+		const deps = createDeps();
+		deps.delivery.detectSurface = sinon.stub().resolves({ class: 'agent', agent: 'claude', paneId: 'pane-1' } as DetectedSurface);
+		deps.delivery.herdrSend = sinon.stub().resolves('delivered');
+		const controller = new DictationController(deps as unknown as ControllerDeps);
+
+		await dictate(controller); // handleHotkey always delivers as 'insert'
+
+		assert.strictEqual(deps.notifier.info.calledWithMatch(/^Verba: inserted\.$/), true);
+		assert.strictEqual(deps.notifier.info.calledWithMatch(/sent/i), false);
+	});
+
+	test('non-agent (paste) delivery + submit intent → "Verba: pasted." NEVER "Verba: sent." (G2)', async () => {
+		// deliver() skips the Enter on a non-agent surface even for a submit
+		// intent, so nothing was actually submitted — the controller must not
+		// over-claim "sent" just because the intent was 'submit'.
+		const deps = createDeps(); // default surface: 'generic' → paste path
+		let armed: (() => void) | null = null;
+		const controller = new DictationController({
+			...deps,
+			schedule: (fn: () => void) => { armed = fn; return () => {}; },
+		} as unknown as ControllerDeps);
+
+		await controller.handlePttDown('submit');
+		armed!(); // threshold elapsed → begins recording
+		await tick();
+		await controller.handlePttUp(); // stop → transcribe → cleanup → deliver as 'submit'
+		await tick();
+
+		assert.strictEqual(deps.notifier.info.calledWithMatch(/^Verba: pasted\.$/), true, 'must say pasted');
+		assert.strictEqual(deps.notifier.info.calledWithMatch(/sent/i), false, 'never claim sent when nothing was submitted');
 	});
 
 	test('handleHotkey cancels a pending PTT arm instead of racing it into a second start', async () => {

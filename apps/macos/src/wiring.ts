@@ -101,6 +101,7 @@ export async function createDictationController(): Promise<{
 		herdrSend: (paneId, text, submit) => invoke<'delivered' | 'delivered-not-submitted'>('herdr_send', { paneId, text, submit }),
 		paste: (text) => invoke<'pasted' | 'secure-input'>('paste_text', { text }),
 		pressEnter: () => invoke<void>('press_enter'),
+		hasAccessibility: () => invoke<boolean>('has_accessibility_permission'),
 	};
 
 	const controller = new DictationController({

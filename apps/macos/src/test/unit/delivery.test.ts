@@ -20,6 +20,7 @@ function ports(surface: DetectedSurface, overrides: Partial<DeliveryPorts> = {})
 		pressEnter: async () => {
 			calls.push('enter');
 		},
+		hasAccessibility: async () => true,
 		...overrides,
 	};
 }
@@ -54,6 +55,7 @@ suite('deliver', () => {
 			pressEnter: async () => {
 				calls.push('enter');
 			},
+			hasAccessibility: async () => true,
 		};
 		const outcome = await deliver('run tests', 'submit', p);
 		assert.deepEqual(calls, ['herdr:wQ:p2:true']);
@@ -74,6 +76,7 @@ suite('deliver', () => {
 			pressEnter: async () => {
 				calls.push('enter');
 			},
+			hasAccessibility: async () => true,
 		};
 		const outcome = await deliver('run tests', 'submit', p);
 		assert.deepEqual(calls, ['paste', 'enter']);
@@ -96,6 +99,7 @@ suite('deliver', () => {
 				calls.push('enter');
 				throw new Error('Enter failed: could not create event source');
 			},
+			hasAccessibility: async () => true,
 		};
 		const outcome = await deliver('run tests', 'submit', p);
 		assert.deepEqual(calls, ['paste', 'enter']);
@@ -116,6 +120,7 @@ suite('deliver', () => {
 			pressEnter: async () => {
 				calls.push('enter');
 			},
+			hasAccessibility: async () => true,
 		});
 		assert.deepEqual(calls, ['paste', 'enter']);
 		assert.strictEqual(outcome, 'pasted');
@@ -135,6 +140,7 @@ suite('deliver', () => {
 			pressEnter: async () => {
 				calls.push('enter');
 			},
+			hasAccessibility: async () => true,
 		});
 		assert.deepEqual(calls, ['paste']);
 		assert.strictEqual(outcome, 'pasted');
@@ -156,6 +162,7 @@ suite('deliver', () => {
 			pressEnter: async () => {
 				calls.push('enter');
 			},
+			hasAccessibility: async () => true,
 		});
 		assert.deepEqual(calls, ['paste']);
 		assert.strictEqual(outcome, 'pasted');
@@ -179,8 +186,91 @@ suite('deliver', () => {
 			pressEnter: async () => {
 				calls.push('enter');
 			},
+			hasAccessibility: async () => true,
 		});
 		assert.deepEqual(calls, ['paste']);
 		assert.strictEqual(outcome, 'secure-input');
+	});
+
+	test('herdr path is unaffected by hasAccessibility: false — still delivers via herdr, paste is NOT called', async () => {
+		const calls: string[] = [];
+		const outcome = await deliver('run tests', 'submit', {
+			detectSurface: async () => ({ class: 'agent', agent: 'claude', paneId: 'wQ:p2' }),
+			herdrSend: async (paneId: string, _t: string, submit: boolean) => {
+				calls.push(`herdr:${paneId}:${submit}`);
+				return 'delivered';
+			},
+			paste: async () => {
+				calls.push('paste');
+				return 'pasted';
+			},
+			pressEnter: async () => {
+				calls.push('enter');
+			},
+			hasAccessibility: async () => false,
+		});
+		assert.deepEqual(calls, ['herdr:wQ:p2:true'], 'paste must never be called on the herdr path');
+		assert.strictEqual(outcome, 'herdr');
+	});
+
+	test('herdr path with "delivered-not-submitted" is also unaffected by hasAccessibility: false', async () => {
+		const calls: string[] = [];
+		const outcome = await deliver('run tests', 'submit', {
+			detectSurface: async () => ({ class: 'agent', agent: 'claude', paneId: 'wQ:p2' }),
+			herdrSend: async (paneId: string, _t: string, submit: boolean) => {
+				calls.push(`herdr:${paneId}:${submit}`);
+				return 'delivered-not-submitted';
+			},
+			paste: async () => {
+				calls.push('paste');
+				return 'pasted';
+			},
+			pressEnter: async () => {
+				calls.push('enter');
+			},
+			hasAccessibility: async () => false,
+		});
+		assert.deepEqual(calls, ['herdr:wQ:p2:true'], 'paste must never be called on the herdr path');
+		assert.strictEqual(outcome, 'not-submitted');
+	});
+
+	test('paste path (generic surface) with hasAccessibility: false → needs-accessibility, paste NOT called', async () => {
+		const calls: string[] = [];
+		const outcome = await deliver('note text', 'insert', {
+			detectSurface: async () => ({ class: 'generic' }),
+			herdrSend: async () => {
+				throw new Error('unused');
+			},
+			paste: async () => {
+				calls.push('paste');
+				return 'pasted';
+			},
+			pressEnter: async () => {
+				calls.push('enter');
+			},
+			hasAccessibility: async () => false,
+		});
+		assert.deepEqual(calls, [], 'paste must not be called when Accessibility is missing');
+		assert.strictEqual(outcome, 'needs-accessibility');
+	});
+
+	test('paste path (generic surface) with hasAccessibility: true → pastes as before', async () => {
+		const calls: string[] = [];
+		const outcome = await deliver('note text', 'insert', {
+			detectSurface: async () => ({ class: 'generic' }),
+			herdrSend: async () => {
+				throw new Error('unused');
+			},
+			paste: async () => {
+				calls.push('paste');
+				return 'pasted';
+			},
+			pressEnter: async () => {
+				calls.push('enter');
+			},
+			hasAccessibility: async () => true,
+		});
+		assert.deepEqual(calls, ['paste']);
+		assert.strictEqual(outcome, 'pasted');
 	});
 });

@@ -13,12 +13,14 @@ export type PasteOutcome = 'pasted' | 'secure-input';
 
 /**
  * How a transcript was delivered. Derived from {@link PasteOutcome} plus the
- * two outcomes that only exist on the router's own decisions: `'herdr'` (sent
- * to an agent pane and, on submit, submitted there) and `'not-submitted'` (the
+ * outcomes that only exist on the router's own decisions: `'herdr'` (sent
+ * to an agent pane and, on submit, submitted there), `'not-submitted'` (the
  * text landed — via herdr or paste — but the submit/Enter step failed, so the
- * user must press Enter manually).
+ * user must press Enter manually), and `'needs-accessibility'` (the paste
+ * path was about to run but Accessibility permission is missing; nothing was
+ * delivered — the caller should show the Accessibility onboarding instead).
  */
-export type DeliveryOutcome = PasteOutcome | 'herdr' | 'not-submitted';
+export type DeliveryOutcome = PasteOutcome | 'herdr' | 'not-submitted' | 'needs-accessibility';
 
 /** Injected primitives the router drives; wiring.ts supplies the Tauri-backed set. */
 export interface DeliveryPorts {
@@ -43,6 +45,13 @@ export interface DeliveryPorts {
 	paste(text: string): Promise<PasteOutcome>;
 	/** Synthetic Return into the frontmost app. */
 	pressEnter(): Promise<void>;
+	/**
+	 * Whether the app currently holds macOS Accessibility permission. Only
+	 * consulted by the paste path — herdr delivery shells out to the `herdr`
+	 * CLI and needs no Accessibility permission at all, so this must never be
+	 * checked before the herdr branch has had its chance.
+	 */
+	hasAccessibility(): Promise<boolean>;
 }
 
 /**
@@ -53,12 +62,22 @@ export interface DeliveryPorts {
  * is frontmost now (same semantics the blind paste had).
  *
  * Returns how the text was delivered so the caller can notify appropriately:
- * - `'herdr'` / `'pasted'` — delivered and (if requested) submitted.
+ * - `'herdr'` — delivered via the herdr CLI and (if requested) submitted there;
+ *   `'pasted'` — delivered via clipboard + ⌘V. Submit's Enter is an
+ *   agent-only affordance: it fires on `'herdr'` (herdr sends it itself) and,
+ *   on the paste path, only when the surface is also `'agent'` (e.g. a paste
+ *   fallback after herdr had no pane id) — it is intentionally SKIPPED for
+ *   `'pasted'` on any non-agent surface, even when submit was requested, so a
+ *   `'pasted'` outcome must never be reported to the user as "sent".
  * - `'not-submitted'` — the text landed (herdr send-text, or paste) but the
  *   Enter/submit step failed; the caller should tell the user to press Enter
  *   manually. The transcript is NOT re-delivered.
  * - `'secure-input'` — the paste was blocked and the transcript was left on
  *   the clipboard for the user to paste manually.
+ * - `'needs-accessibility'` — the paste path was about to run but Accessibility
+ *   permission is missing; nothing was delivered. This can NEVER happen on the
+ *   herdr path (herdr needs no Accessibility at all) — only the paste branch
+ *   checks it. The caller should show the Accessibility onboarding.
  *
  * The paste fallback runs ONLY when nothing was delivered to the pane: herdr's
  * `herdrSend` rejects exclusively when send-text itself failed, so a rejection
@@ -86,6 +105,13 @@ export async function deliver(text: string, intent: Intent, ports: DeliveryPorts
 			// send-text failed → nothing landed in the pane → safe to fall through to paste.
 			console.warn('[Verba] herdr delivery failed, falling back to paste:', err);
 		}
+	}
+
+	// Accessibility is required only for the paste path (the synthetic ⌘V and
+	// Enter are Accessibility-gated APIs); herdr, above, already returned and
+	// never reaches here, so it is never blocked by a missing permission.
+	if (!(await ports.hasAccessibility())) {
+		return 'needs-accessibility';
 	}
 
 	const outcome = await ports.paste(text); // may throw → genuine failure, propagates

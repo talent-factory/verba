@@ -264,16 +264,17 @@ export class DictationController {
 				}
 			}
 
-			const hasAccessibility = await this.deps.invoke<boolean>('has_accessibility_permission');
-			if (!hasAccessibility) {
-				await this.deps.ui.showAccessibilityOnboarding(() => this.deps.invoke('open_accessibility_settings'));
-				await this.deps.ui.showTranscript(text);
-				return;
-			}
-
 			try {
 				const outcome = await deliver(text, this.intent, this.deps.delivery);
-				if (outcome === 'secure-input') {
+				if (outcome === 'needs-accessibility') {
+					// Only the paste path needs Accessibility — deliver() already
+					// returned via herdr above if that path applied, so reaching this
+					// outcome means nothing was delivered yet. Not a delivery failure:
+					// no deliveryFailed HUD, no error notifier, same onboarding UX the
+					// old upfront gate used to show.
+					await this.deps.ui.showAccessibilityOnboarding(() => this.deps.invoke('open_accessibility_settings'));
+					await this.deps.ui.showTranscript(text);
+				} else if (outcome === 'secure-input') {
 					// Secure Event Input (e.g. a terminal with "Secure Keyboard Entry")
 					// swallowed the synthetic ⌘V; the transcript is on the clipboard for
 					// the user to paste manually. Warn distinctly so it doesn't look like
@@ -285,8 +286,15 @@ export class DictationController {
 					// step failed. Not a delivery failure — the transcript is NOT
 					// re-delivered and NOT shown as failed, just a warn to press Enter.
 					this.deps.notifier.warn('Verba: inserted but not submitted — press Enter to send.');
+				} else if (outcome === 'herdr') {
+					// herdr fires the submit Enter itself, so a submit intent really was sent.
+					this.deps.notifier.info(this.intent === 'submit' ? 'Verba: sent.' : 'Verba: inserted.');
 				} else {
-					this.deps.notifier.info(this.intent === 'submit' ? 'Verba: sent.' : 'Verba: pasted.');
+					// 'pasted': submit's Enter is agent-only and is skipped on non-agent
+					// surfaces even when submit was requested — never claim "sent" here,
+					// even for a submit intent. The rare agent-paste-fallback-with-Enter
+					// case is acceptably under-claimed as "pasted".
+					this.deps.notifier.info('Verba: pasted.');
 				}
 				this.deps.ui.setPhase('Idle.');
 			} catch (err) {

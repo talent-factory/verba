@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [0.7.0](https://github.com/talent-factory/verba/compare/verba-v0.6.0...verba-v0.7.0) (2026-07-25)
+
 ### Added
 
 - **macOS — Push-to-Talk activation (TF-525):** Alongside the `Ctrl+Alt+D` toggle, Verba now supports hold-to-talk via a native CGEvent tap: hold **right-Command** to dictate and **insert** the cleaned text, or **right-Option** to dictate and **submit** it (text plus an Enter into the target). Release delivers; a short tap never records. The event tap self-recovers if macOS disables it (timeout / user input).

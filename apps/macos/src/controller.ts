@@ -21,7 +21,7 @@ export interface ControllerUi {
  * (same pattern as `DeepgramTauriProvider`). `wiring.ts` builds the real set.
  */
 export interface ControllerDeps {
-	deepgram: { transcribe(audioPath: string): Promise<{ text: string; detectedLanguage?: string }> };
+	deepgram: { transcribe(audioPath: string, signal?: AbortSignal): Promise<{ text: string; detectedLanguage?: string }> };
 	cleanup: Pick<CleanupService, 'process'>;
 	notifier: { init(): Promise<void>; info(msg: string): void; warn(msg: string): void; error(msg: string): void };
 	store: { init(): Promise<void> };
@@ -34,6 +34,15 @@ export interface ControllerDeps {
 	 * so tests can drive the timeout path without waiting.
 	 */
 	cleanupTimeoutMs?: number;
+	/**
+	 * Upper bound on the transcription step (default {@link DEFAULT_TRANSCRIBE_TIMEOUT_MS}).
+	 * A stalled Deepgram call must never hang the flow. Unlike cleanup there is no
+	 * transcript to fall back to, so on timeout we abort the request (via
+	 * `cancel_request`, so no API cost is wasted) and fail the dictation cleanly to
+	 * idle+error rather than freezing in "Transcribing…". Overridable so tests can
+	 * drive the timeout path without waiting.
+	 */
+	transcribeTimeoutMs?: number;
 	/**
 	 * Upper bound on the recording-stop step (default {@link DEFAULT_STOP_CAPTURE_TIMEOUT_MS}).
 	 * `stop_capture` blocks on a channel until the native capture thread finalizes the
@@ -60,6 +69,14 @@ export interface ControllerDeps {
  * fallback.
  */
 const DEFAULT_CLEANUP_TIMEOUT_MS = 30_000;
+
+/**
+ * Default transcription timeout. A Deepgram call is normally a few seconds; this
+ * safety ceiling matches the native `deepgram_transcribe` reqwest timeout so a
+ * genuine network / Deepgram stall turns an indefinite "Transcribing…" freeze
+ * into a recoverable idle+error instead.
+ */
+const DEFAULT_TRANSCRIBE_TIMEOUT_MS = 30_000;
 
 /**
  * Default recording-stop timeout. Finalizing the WAV is normally instantaneous;
@@ -94,6 +111,7 @@ export class DictationController {
 	// booleans would admit) is unrepresentable. Mutate only via `setState`.
 	private state: DictationState = 'idle';
 	private readonly cleanupTimeoutMs: number;
+	private readonly transcribeTimeoutMs: number;
 	private readonly stopCaptureTimeoutMs: number;
 	private readonly holdThresholdMs: number;
 	private readonly schedule: (fn: () => void, ms: number) => () => void;
@@ -112,6 +130,7 @@ export class DictationController {
 
 	constructor(private readonly deps: ControllerDeps) {
 		this.cleanupTimeoutMs = deps.cleanupTimeoutMs ?? DEFAULT_CLEANUP_TIMEOUT_MS;
+		this.transcribeTimeoutMs = deps.transcribeTimeoutMs ?? DEFAULT_TRANSCRIBE_TIMEOUT_MS;
 		this.stopCaptureTimeoutMs = deps.stopCaptureTimeoutMs ?? DEFAULT_STOP_CAPTURE_TIMEOUT_MS;
 		this.holdThresholdMs = deps.holdThresholdMs ?? DEFAULT_ACTIVATION.holdThresholdMs;
 		this.schedule = deps.schedule ?? ((fn, ms) => { const t = setTimeout(fn, ms); return () => clearTimeout(t); });
@@ -238,7 +257,9 @@ export class DictationController {
 		this.setState('transcribing');
 		try {
 			const wavPath = await this.stopCaptureWithTimeout();
-			const { text: transcript, detectedLanguage } = await this.deps.deepgram.transcribe(wavPath);
+			const { text: transcript, detectedLanguage } = await this.withTranscribeTimeout((signal) =>
+				this.deps.deepgram.transcribe(wavPath, signal)
+			);
 
 			this.deps.ui.setPhase('Processing…');
 			this.setState('processing');
@@ -311,6 +332,13 @@ export class DictationController {
 				this.deps.notifier.error(
 					`Verba: recording could not be finalized (stop timed out after ${this.stopCaptureTimeoutMs}ms) — the audio device may be stuck; retry, and restart Verba if it persists.`
 				);
+			} else if (err instanceof TranscribeTimeoutError) {
+				// A stalled Deepgram request. Unlike cleanup there's no transcript to
+				// fall back to, so this is a hard failure — the request was already
+				// aborted (via cancel_request) so no API cost is wasted; recover to idle.
+				this.deps.notifier.error(
+					`Verba: transcription timed out after ${this.transcribeTimeoutMs}ms — Deepgram may be unreachable; check your connection and try again.`
+				);
 			} else {
 				if (err instanceof NoSpeechError) {
 					this.pendingHudMessage = HUD_MESSAGES.noSpeech;
@@ -334,15 +362,15 @@ export class DictationController {
 	 * on timeout we abort it and reject with a {@link CleanupTimeoutError} so the
 	 * caller falls back to the raw transcript.
 	 *
-	 * The abort is best-effort and transport-dependent: it stops the SDK from
-	 * starting a *new* retry, but the macOS transport (a Tauri `invoke`, see
-	 * `anthropicTauriFetch.ts`) can't cancel a request already in flight, so that
-	 * request runs to its own timeout and its Anthropic cost is still incurred.
-	 * The user-visible flow never stalls regardless, because the timeout rejects
-	 * on its own timer even if `run` never settles (a hang outside the request,
-	 * e.g. a key prompt, is bounded too). A settle that arrives *after* the
-	 * timeout can no longer change the outcome; its late result/rejection is
-	 * logged (never lost) and kept from surfacing as an unhandledRejection.
+	 * The abort now cancels the in-flight request end-to-end: the macOS transport
+	 * (a Tauri `invoke`, see `anthropicTauriFetch.ts`) bridges the abort to the
+	 * native `cancel_request` command (TF-521), so a timeout stops the reqwest
+	 * rather than letting it run to its own timeout and still bill Anthropic. The
+	 * user-visible flow never stalls regardless, because the timeout rejects on
+	 * its own timer even if `run` never settles (a hang outside the request, e.g.
+	 * a key prompt, is bounded too). A settle that arrives *after* the timeout can
+	 * no longer change the outcome; its late result/rejection is logged (never
+	 * lost) and kept from surfacing as an unhandledRejection.
 	 */
 	private withCleanupTimeout(run: (signal: AbortSignal) => Promise<string>): Promise<string> {
 		const controller = new AbortController();
@@ -370,6 +398,47 @@ export class DictationController {
 						// root cause isn't lost, and consume it here so it can't
 						// surface as an unhandledRejection.
 						console.warn(`[Verba] cleanup rejected after timeout: ${errText(err)}`);
+						return;
+					}
+					reject(err);
+				}
+			);
+		});
+	}
+
+	/**
+	 * Runs the transcription with an upper time bound. `run` receives an
+	 * AbortSignal; on timeout we abort it — which the provider bridges to the
+	 * native `cancel_request` command so the in-flight Deepgram reqwest is
+	 * stopped, not left to run to its own timeout (TF-521) — and reject with a
+	 * {@link TranscribeTimeoutError}. Unlike cleanup there is no fallback text, so
+	 * the caller fails the dictation to idle+error. The timeout rejects on its own
+	 * timer even if `run` never settles, so a stall can't freeze the flow; a settle
+	 * that arrives after the timeout is logged and consumed so it can't surface as
+	 * an unhandledRejection.
+	 */
+	private withTranscribeTimeout<T>(run: (signal: AbortSignal) => Promise<T>): Promise<T> {
+		const controller = new AbortController();
+		return new Promise<T>((resolve, reject) => {
+			let timedOut = false;
+			const timer = setTimeout(() => {
+				timedOut = true;
+				controller.abort();
+				reject(new TranscribeTimeoutError(this.transcribeTimeoutMs));
+			}, this.transcribeTimeoutMs);
+			run(controller.signal).then(
+				(value) => {
+					clearTimeout(timer);
+					if (timedOut) {
+						console.warn('[Verba] transcription completed after timeout; recording already abandoned');
+						return;
+					}
+					resolve(value);
+				},
+				(err) => {
+					clearTimeout(timer);
+					if (timedOut) {
+						console.warn(`[Verba] transcription rejected after timeout: ${errText(err)}`);
 						return;
 					}
 					reject(err);
@@ -425,6 +494,14 @@ class CleanupTimeoutError extends Error {
 	constructor(timeoutMs: number) {
 		super(`cleanup timed out after ${timeoutMs}ms`);
 		this.name = 'CleanupTimeoutError';
+	}
+}
+
+/** Raised by {@link DictationController} when transcription exceeds its time budget. */
+class TranscribeTimeoutError extends Error {
+	constructor(timeoutMs: number) {
+		super(`transcription timed out after ${timeoutMs}ms`);
+		this.name = 'TranscribeTimeoutError';
 	}
 }
 

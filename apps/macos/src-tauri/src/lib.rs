@@ -1,5 +1,6 @@
 mod activation;
 mod audio;
+mod cancel;
 mod config;
 mod deliver;
 mod detect;
@@ -53,9 +54,14 @@ pub fn run() {
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_notification::init())
         .manage(CaptureState::default())
+        // Registry of in-flight cancellable native HTTP requests (TF-521):
+        // `anthropic_fetch`/`deepgram_transcribe` register a token here and
+        // `cancel_request` cancels it when the frontend aborts. See cancel.rs.
+        .manage(cancel::CancelRegistry::default())
         .invoke_handler(tauri::generate_handler![
             audio::start_capture,
             audio::stop_capture,
+            cancel::cancel_request,
             config::read_config,
             deliver::herdr_send,
             env::env_var,

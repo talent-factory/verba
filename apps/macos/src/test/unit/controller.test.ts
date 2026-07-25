@@ -212,6 +212,74 @@ suite('DictationController', () => {
 		}
 	});
 
+	test('transcription that stalls (never settles) recovers to idle+error within the timeout', async () => {
+		// Models a hung Deepgram request: the promise neither resolves nor rejects.
+		// Unlike cleanup there is no transcript to fall back to, so a transcription
+		// timeout is a hard failure — recover to idle with an error, never freeze in
+		// "Transcribing…". The abort must reach the provider so no API cost is wasted.
+		let captured: AbortSignal | undefined;
+		deps.deepgram.transcribe = sinon.stub().callsFake((_audioPath: string, signal?: AbortSignal) => {
+			captured = signal;
+			return new Promise<{ text: string; detectedLanguage?: string }>(() => {});
+		});
+		const stalled = new DictationController({
+			...(deps as unknown as ControllerDeps),
+			transcribeTimeoutMs: 10,
+		});
+
+		await dictate(stalled);
+
+		assert.strictEqual(deps.notifier.error.calledWithMatch(/timed out/), true);
+		assert.strictEqual(deps.ui.setPhase.calledWith('Idle.'), true);
+		// A stalled transcription must never reach cleanup or delivery.
+		assert.strictEqual(deps.cleanup.process.called, false);
+		assert.strictEqual(deps.delivery.paste.called, false);
+		assert.strictEqual(captured?.aborted, true, 'transcribe signal must be aborted on timeout');
+		const states = (deps.ui.setState as sinon.SinonStub).getCalls().map((c) => c.args[0]);
+		assert.strictEqual(states[states.length - 1], 'idle');
+	});
+
+	test('transcription that RESOLVES after the timeout is consumed (no unhandledRejection)', async () => {
+		const unhandled: unknown[] = [];
+		const onUnhandled = (reason: unknown) => unhandled.push(reason);
+		process.on('unhandledRejection', onUnhandled);
+		try {
+			deps.deepgram.transcribe = sinon.stub().returns(
+				new Promise<{ text: string }>((resolve) => setTimeout(() => resolve({ text: 'late transcript' }), 30)),
+			);
+			const stalled = new DictationController({
+				...(deps as unknown as ControllerDeps),
+				transcribeTimeoutMs: 10,
+			});
+
+			await dictate(stalled);
+			await new Promise((r) => setTimeout(r, 40));
+
+			// Timed out and abandoned; the late transcript must not drive cleanup/delivery.
+			assert.strictEqual(deps.cleanup.process.called, false);
+			assert.strictEqual(deps.delivery.paste.called, false);
+			assert.deepStrictEqual(unhandled, [], 'late transcription resolution must not escape');
+		} finally {
+			process.removeListener('unhandledRejection', onUnhandled);
+		}
+	});
+
+	test('transcription that resolves just under the timeout still proceeds to cleanup and delivery', async () => {
+		deps.deepgram.transcribe = sinon.stub().returns(
+			new Promise<{ text: string; detectedLanguage?: string }>((resolve) => setTimeout(() => resolve({ text: 'raw transcript', detectedLanguage: 'en' }), 5)),
+		);
+		const slow = new DictationController({
+			...(deps as unknown as ControllerDeps),
+			transcribeTimeoutMs: 50,
+		});
+
+		await dictate(slow);
+
+		assert.strictEqual(deps.cleanup.process.calledOnce, true);
+		assert.strictEqual(deps.delivery.paste.calledWith('cleaned text'), true);
+		assert.strictEqual(deps.notifier.error.called, false);
+	});
+
 	test('init initializes the store', async () => {
 		await controller.init();
 

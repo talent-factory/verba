@@ -7,7 +7,8 @@ use std::time::Duration;
 
 pub(crate) struct HerdrAgent {
     pub agent: String,
-    pub status: String,
+    pub status: Option<String>,
+    pub pane_id: Option<String>,
 }
 
 /// Parses `herdr api snapshot` output; returns the agent whose pane is focused.
@@ -20,9 +21,9 @@ pub(crate) fn focused_herdr_agent_from_json(snapshot: &str) -> Option<HerdrAgent
             let status = a
                 .get("agent_status")
                 .and_then(|s| s.as_str())
-                .unwrap_or("unknown")
-                .to_string();
-            return Some(HerdrAgent { agent, status });
+                .map(|s| s.to_string());
+            let pane_id = a.get("pane_id").and_then(|p| p.as_str()).map(|s| s.to_string());
+            return Some(HerdrAgent { agent, status, pane_id });
         }
     }
     None
@@ -176,6 +177,8 @@ pub enum Surface {
         agent: String,
         #[serde(skip_serializing_if = "Option::is_none")]
         status: Option<String>,
+        #[serde(rename = "paneId", skip_serializing_if = "Option::is_none")]
+        pane_id: Option<String>,
     },
 }
 
@@ -201,12 +204,12 @@ pub(crate) fn classify(
     }
     if terminals.iter().any(|t| t == &front.bundle_id) {
         if let Some(h) = herdr {
-            return Surface::Agent { agent: h.agent, status: Some(h.status) };
+            return Surface::Agent { agent: h.agent, status: h.status, pane_id: h.pane_id };
         }
         if let Some(t) = title {
             let lc = t.to_lowercase();
             if let Some(m) = markers.iter().find(|m| lc.contains(&m.to_lowercase())) {
-                return Surface::Agent { agent: m.clone(), status: None };
+                return Surface::Agent { agent: m.clone(), status: None, pane_id: None };
             }
         }
         return generic();
@@ -264,17 +267,17 @@ mod tests {
 
     #[test]
     fn terminal_with_herdr_agent_is_agent() {
-        let herdr = Some(HerdrAgent { agent: "claude".into(), status: "working".into() });
+        let herdr = Some(HerdrAgent { agent: "claude".into(), status: Some("working".into()), pane_id: None });
         let s = classify(front("com.apple.Terminal"), herdr, None,
             &["claude".into()], &["com.apple.Terminal".into()], &[]);
-        assert_eq!(s, Surface::Agent { agent: "claude".into(), status: Some("working".into()) });
+        assert_eq!(s, Surface::Agent { agent: "claude".into(), status: Some("working".into()), pane_id: None });
     }
 
     #[test]
     fn terminal_with_marker_in_title_is_agent() {
         let s = classify(front("com.apple.Terminal"), None, Some("~ — codex — 80x24".into()),
             &["codex".into()], &["com.apple.Terminal".into()], &[]);
-        assert_eq!(s, Surface::Agent { agent: "codex".into(), status: None });
+        assert_eq!(s, Surface::Agent { agent: "codex".into(), status: None, pane_id: None });
     }
 
     #[test]
@@ -282,7 +285,7 @@ mod tests {
         // Mixed-case marker vs. upper-case title: exercises the double `to_lowercase`.
         let s = classify(front("com.apple.Terminal"), None, Some("session: CLAUDE".into()),
             &["Claude".into()], &["com.apple.Terminal".into()], &[]);
-        assert_eq!(s, Surface::Agent { agent: "Claude".into(), status: None });
+        assert_eq!(s, Surface::Agent { agent: "Claude".into(), status: None, pane_id: None });
     }
 
     #[test]
@@ -314,7 +317,7 @@ mod tests {
     fn returns_the_focused_agent() {
         let a = focused_herdr_agent_from_json(SNAPSHOT).expect("a focused agent");
         assert_eq!(a.agent, "codex");
-        assert_eq!(a.status, "working");
+        assert_eq!(a.status, Some("working".into()));
     }
 
     #[test]
@@ -332,10 +335,10 @@ mod tests {
     fn herdr_agent_takes_precedence_over_a_title_marker() {
         // Both a herdr agent and a marker-bearing title are present: herdr (tier 1)
         // wins and the title marker (tier 2) is never consulted.
-        let herdr = Some(HerdrAgent { agent: "claude".into(), status: "working".into() });
+        let herdr = Some(HerdrAgent { agent: "claude".into(), status: Some("working".into()), pane_id: None });
         let s = classify(front("com.apple.Terminal"), herdr, Some("session: codex".into()),
             &["codex".into()], &["com.apple.Terminal".into()], &[]);
-        assert_eq!(s, Surface::Agent { agent: "claude".into(), status: Some("working".into()) });
+        assert_eq!(s, Surface::Agent { agent: "claude".into(), status: Some("working".into()), pane_id: None });
     }
 
     #[test]
@@ -347,11 +350,30 @@ mod tests {
     }
 
     #[test]
-    fn missing_agent_status_defaults_to_unknown() {
-        // A focused agent without an `agent_status` field falls back to "unknown".
+    fn missing_agent_status_is_none() {
+        // A focused agent without an `agent_status` field is `None`, not the
+        // literal string "unknown" — "field absent" and "status unknown" are
+        // distinct facts.
         let json = r#"{"result":{"snapshot":{"agents":[{"agent":"claude","focused":true}]}}}"#;
         let a = focused_herdr_agent_from_json(json).expect("a focused agent");
         assert_eq!(a.agent, "claude");
-        assert_eq!(a.status, "unknown");
+        assert_eq!(a.status, None);
+    }
+
+    #[test]
+    fn parses_pane_id_of_focused_agent() {
+        let json = r#"{"result":{"snapshot":{"agents":[
+            {"agent":"claude","focused":true,"agent_status":"working","pane_id":"wQ:p2"}
+        ]}}}"#;
+        let a = focused_herdr_agent_from_json(json).expect("a focused agent");
+        assert_eq!(a.pane_id.as_deref(), Some("wQ:p2"));
+    }
+
+    #[test]
+    fn agent_surface_carries_pane_id() {
+        let herdr = Some(HerdrAgent { agent: "claude".into(), status: Some("working".into()), pane_id: Some("wQ:p2".into()) });
+        let s = classify(front("com.apple.Terminal"), herdr, None,
+            &["claude".into()], &["com.apple.Terminal".into()], &[]);
+        assert_eq!(s, Surface::Agent { agent: "claude".into(), status: Some("working".into()), pane_id: Some("wQ:p2".into()) });
     }
 }

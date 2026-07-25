@@ -6,12 +6,25 @@ import { createDictationController } from './wiring';
 const HOTKEY = 'Control+Alt+D';
 
 async function main(): Promise<void> {
-	const { controller, reloadConfig, notifier } = await createDictationController();
+	const { controller, reloadConfig, notifier, activationMode } = await createDictationController();
 	void listen('config:changed', () => { void reloadConfig(); });
 	// The tray (Rust) emits this when it can't persist a settings change; on an
 	// Accessory app stderr/console are invisible, so relay it to a notification.
 	void listen<string>('config:error', (event) => { notifier.error(`Verba: ${event.payload}`); });
 	await controller.init();
+
+	// Push-to-Talk (primary path when configured). This listens on a Rust
+	// CGEventTap unrelated to the `@tauri-apps/plugin-global-shortcut`
+	// registration below, so it's wired unconditionally here — a toggle-hotkey
+	// conflict (caught below) must not also take PTT down with it.
+	void listen<string>('ptt:down', (event) => {
+		if (activationMode() !== 'push-to-talk') { return; }
+		void controller.handlePttDown(event.payload === 'submit' ? 'submit' : 'insert');
+	});
+	void listen('ptt:up', () => {
+		if (activationMode() !== 'push-to-talk') { return; }
+		void controller.handlePttUp();
+	});
 
 	try {
 		await register(HOTKEY, (event) => {

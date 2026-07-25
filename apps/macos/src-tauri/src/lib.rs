@@ -1,5 +1,7 @@
+mod activation;
 mod audio;
 mod config;
+mod deliver;
 mod detect;
 mod env;
 mod http;
@@ -55,12 +57,15 @@ pub fn run() {
             audio::start_capture,
             audio::stop_capture,
             config::read_config,
+            deliver::herdr_send,
             env::env_var,
             http::anthropic_fetch,
             hud::set_hud_state,
+            hud::set_hud_message,
             paste::has_accessibility_permission,
             paste::open_accessibility_settings,
             paste::paste_text,
+            paste::press_enter,
             detect::detect_surface,
             secret::secret_get,
             secret::secret_set,
@@ -79,6 +84,11 @@ pub fn run() {
             // dictation flow otherwise stalls at "Transcribing…"/"Processing…".
             #[cfg(target_os = "macos")]
             disable_app_nap();
+
+            // Push-to-Talk-Event-Tap (rechts-Cmd → insert, rechts-Option → submit)
+            // auf eigenem CFRunLoop-Thread; UAT-verifiziert (Task 8).
+            #[cfg(target_os = "macos")]
+            activation::start(app.handle().clone());
 
             let menu = menu::build_settings_menu(app.handle())?;
 

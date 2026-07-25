@@ -1,3 +1,5 @@
+import type { LanguageCode } from './config';
+
 /** Metadata passed through the pipeline to each processing stage. */
 export interface PipelineContext {
 	/** The system prompt text from the user's selected template, sent to Claude for post-processing. */
@@ -8,6 +10,11 @@ export interface PipelineContext {
 	selectedText?: string;
 	/** ISO 639-1 language code detected by the transcription provider (e.g. "de", "en"). */
 	detectedLanguage?: string;
+	/** Validated ISO 639 code (e.g. "en"). When set, the cleanup writes its output in
+	 *  this language regardless of the transcript language, overriding the same-language
+	 *  hint. Branded as {@link LanguageCode} so only a value that passed
+	 *  {@link toLanguageCode} can be assigned — an unvalidated string cannot reach the prompt. */
+	outputLanguage?: LanguageCode;
 }
 
 /** A single step in the dictation processing pipeline. */

@@ -67,9 +67,27 @@ export class DeepgramTauriProvider implements TranscriptionBackend {
 		this.language = language;
 	}
 
-	async transcribe(source: string, glossary?: string[]): Promise<TranscriptionResult> {
+	/**
+	 * @param signal Optional AbortSignal. An abort *before* dispatch rejects with
+	 *   an `AbortError` without invoking the command; a mid-flight abort fires the
+	 *   `cancel_request` command so the native `deepgram_transcribe` reqwest is
+	 *   stopped instead of running to its 30s timeout and still billing Deepgram
+	 *   (TF-521, mirroring `anthropicTauriFetch`).
+	 */
+	async transcribe(source: string, glossary?: string[], signal?: AbortSignal): Promise<TranscriptionResult> {
+		if (signal?.aborted) {
+			throw new DOMException('The operation was aborted.', 'AbortError');
+		}
+
 		const apiKey = await resolveApiKey(this.secretStorage, this.promptForApiKey, API_KEY_STORAGE_KEY);
 		const keyterms = glossary?.length ? truncateKeyterms(glossary) : [];
+
+		const requestId = crypto.randomUUID();
+		// A dispatched Tauri `invoke` can't be cancelled, so on abort fire
+		// `cancel_request(requestId)` to stop the native reqwest. Fire-and-forget;
+		// the abandoned transcription may reject, which the caller tolerates.
+		const onAbort = (): void => { void this.invoke('cancel_request', { requestId }).catch(() => {}); };
+		signal?.addEventListener('abort', onAbort, { once: true });
 
 		let result: TranscriptionResult;
 		try {
@@ -78,6 +96,7 @@ export class DeepgramTauriProvider implements TranscriptionBackend {
 				audioPath: source,
 				keyterms,
 				language: this.language,
+				requestId,
 			});
 		} catch (err: unknown) {
 			if (err === UNAUTHORIZED_SENTINEL || (err instanceof Error && err.message === UNAUTHORIZED_SENTINEL)) {
@@ -86,6 +105,8 @@ export class DeepgramTauriProvider implements TranscriptionBackend {
 			}
 			const detail = err instanceof Error ? err.message : String(err);
 			throw new Error(detail.startsWith('Transcription failed:') ? detail : `Transcription failed: ${detail}`);
+		} finally {
+			signal?.removeEventListener('abort', onAbort);
 		}
 
 		return { text: validateTranscript(result.text), detectedLanguage: result.detectedLanguage };

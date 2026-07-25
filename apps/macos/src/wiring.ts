@@ -1,4 +1,4 @@
-import { CleanupService, type ApiKeyPrompt } from '@verba/core';
+import { CleanupService, DEFAULT_ACTIVATION, type ApiKeyPrompt, type DetectedSurface, type SurfaceClass } from '@verba/core';
 import { invoke } from '@tauri-apps/api/core';
 import { TauriSecretStore } from './adapters/secretStore';
 import { EnvAwareSecretStore } from './adapters/envAwareSecretStore';
@@ -8,7 +8,8 @@ import { DeepgramTauriProvider } from './deepgramTauriProvider';
 import { createAnthropicTauriFetch } from './adapters/anthropicTauriFetch';
 import { promptForApiKey, setPhase, showAccessibilityOnboarding, showTranscript } from './ui';
 import { DictationController } from './controller';
-import { loadConfig, applyConfig, cleanupContextFor } from './config/verbaConfig';
+import type { DeliveryPorts } from './delivery';
+import { loadConfig, applyConfig, cleanupContextFor, templateForSurface } from './config/verbaConfig';
 import { createVisualization } from './visualization/visualization';
 
 /** CleanupService needs a host prompt for its API key; supply it via the window UI. */
@@ -27,6 +28,7 @@ export async function createDictationController(): Promise<{
 	controller: DictationController;
 	reloadConfig: () => Promise<void>;
 	notifier: TauriNotifier;
+	activationMode: () => 'push-to-talk' | 'toggle';
 }> {
 	const notifier = new TauriNotifier();
 	// A hand-edited config with a JSON syntax error silently resets every setting
@@ -36,6 +38,16 @@ export async function createDictationController(): Promise<{
 		notifier.warn('Verba: config.json has a syntax error and was ignored — using defaults. Fix it via the tray menu.');
 
 	const configState = { current: await loadConfig(undefined, notifyMalformedConfig) };
+
+	// `activation.insertKey`/`submitKey` are resolved and validated here, but
+	// `activation.rs` still hardcodes right-Command/right-Option regardless of
+	// their value — remapping isn't wired to the event tap yet. Without this a
+	// user who sets a custom key gets a silent no-op; warn once at startup so
+	// it's visible instead. Gated on non-default so the common case stays quiet.
+	const { insertKey, submitKey } = configState.current.activation;
+	if (insertKey !== DEFAULT_ACTIVATION.insertKey || submitKey !== DEFAULT_ACTIVATION.submitKey) {
+		notifier.warn('Verba: custom Push-to-Talk keys are not supported yet — using right-Command / right-Option.');
+	}
 
 	const secrets = new EnvAwareSecretStore(new TauriSecretStore());
 	const deepgramPrompt: ApiKeyPrompt = () => promptForApiKey('Deepgram API key (dg-…)');
@@ -49,7 +61,8 @@ export async function createDictationController(): Promise<{
 	// instead of the WebView's `fetch`: from the production build's `tauri://`
 	// origin a `fetch` to api.anthropic.com never completes and freezes cleanup
 	// (it works under `macos-dev` on http://localhost). The native path has no
-	// origin and its own timeout — see anthropicTauriFetch.ts for details.
+	// origin, its own timeout, and a mid-flight cancellation bridge — see
+	// anthropicTauriFetch.ts for details.
 	const cleanup = new TauriCleanupService(secrets, notifier, {
 		dangerouslyAllowBrowser: true,
 		fetch: createAnthropicTauriFetch(invoke),
@@ -75,22 +88,55 @@ export async function createDictationController(): Promise<{
 		}
 	}
 
+	// Delivery routing: a focused herdr agent pane receives text natively (and an
+	// Enter on `submit`); every other surface falls back to the ⌘V paste path.
+	const delivery: DeliveryPorts = {
+		detectSurface: () => {
+			const cfg = configState.current;
+			return invoke<DetectedSurface>('detect_surface', {
+				agentMarkers: cfg.agentMarkers,
+				terminalApps: cfg.terminalApps,
+				editorApps: cfg.editorApps,
+			});
+		},
+		herdrSend: (paneId, text, submit) => invoke<'delivered' | 'delivered-not-submitted'>('herdr_send', { paneId, text, submit }),
+		paste: (text) => invoke<'pasted' | 'secure-input'>('paste_text', { text }),
+		pressEnter: () => invoke<void>('press_enter'),
+		hasAccessibility: () => invoke<boolean>('has_accessibility_permission'),
+	};
+
 	const controller = new DictationController({
-		deepgram: { transcribe: (audioPath) => provider.transcribe(audioPath, configState.current.glossary) },
+		deepgram: { transcribe: (audioPath, signal) => provider.transcribe(audioPath, configState.current.glossary, signal) },
 		cleanup: {
-			// Forward the AbortSignal to core so an abort *before* the request is
-			// dispatched is honored and the SDK won't start a retry. The native
-			// Rust fetch can't be cancelled mid-flight (see anthropicTauriFetch.ts),
-			// so a request already in flight runs to its 30s timeout — the
-			// controller's `withCleanupTimeout` bounds the user-visible wait.
-			process: (transcript, context, signal) =>
-				cleanup.process(transcript, cleanupContextFor(configState.current, context), signal),
+			// Forward the AbortSignal to core. An abort *before* dispatch is honored
+			// (the SDK won't start a retry); a mid-flight abort is bridged by the
+			// native Rust fetch to the `cancel_request` command, which stops the
+			// in-flight reqwest (TF-521, see anthropicTauriFetch.ts). The
+			// controller's `withCleanupTimeout` still bounds the user-visible wait.
+			process: async (transcript, context, signal) => {
+				const cfg = configState.current;
+				let surfaceClass: SurfaceClass = 'generic';
+				try {
+					const surface = await invoke<DetectedSurface>('detect_surface', {
+						agentMarkers: cfg.agentMarkers,
+						terminalApps: cfg.terminalApps,
+						editorApps: cfg.editorApps,
+					});
+					surfaceClass = surface.class;
+				} catch (err) {
+					console.warn('[Verba] surface detection failed, using active template:', err);
+				}
+				const template = templateForSurface(cfg, surfaceClass);
+				return cleanup.process(transcript, cleanupContextFor(cfg, context, template), signal);
+			},
 		},
 		notifier,
 		store: new TauriKeyValueStore(),
 		invoke,
-		ui: { setPhase, showTranscript, showAccessibilityOnboarding, setState: visualization.setState },
+		delivery,
+		holdThresholdMs: configState.current.activation.holdThresholdMs,
+		ui: { setPhase, showTranscript, showAccessibilityOnboarding, setState: visualization.setState, showMessage: visualization.showMessage },
 	});
 
-	return { controller, reloadConfig, notifier };
+	return { controller, reloadConfig, notifier, activationMode: () => configState.current.activation.mode };
 }

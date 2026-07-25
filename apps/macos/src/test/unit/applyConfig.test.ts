@@ -19,6 +19,10 @@ suite('applyConfig', () => {
 				expansions: [{ abbreviation: 'z', expansion: 'zum Beispiel' }],
 				templates: [{ name: 'Freitext', prompt: 'noop' }],
 				activeTemplate: { name: 'Freitext', prompt: 'noop' },
+				activation: { mode: 'push-to-talk', insertKey: 'right-command', submitKey: 'right-option', holdThresholdMs: 200 },
+				agentMarkers: [],
+				terminalApps: [],
+				editorApps: [],
 			},
 			targets,
 		);

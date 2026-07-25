@@ -1,7 +1,7 @@
 {
   "name": "verba",
   "displayName": "Verba",
-  "description": "Developer-grade voice dictation with AI post-processing — dictate into your editor and terminal, powered by Deepgram Nova-3 and Claude. Bring your own keys.",
+  "description": "Developer-grade voice dictation with AI post-processing \u2014 dictate into your editor and terminal, powered by Deepgram Nova-3 and Claude. Bring your own keys.",
   "version": "0.6.0",
   "publisher": "talent-factory",
   "repository": {
@@ -109,14 +109,14 @@
     "keybindings": [
       {
         "command": "dictation.startFromTerminal",
-        "key": "ctrl+shift+d",
-        "mac": "cmd+shift+d",
+        "key": "ctrl+alt+v",
+        "mac": "cmd+alt+v",
         "when": "terminalFocus"
       },
       {
         "command": "dictation.start",
-        "key": "ctrl+shift+d",
-        "mac": "cmd+shift+d",
+        "key": "ctrl+alt+v",
+        "mac": "cmd+alt+v",
         "when": "!terminalFocus"
       },
       {
@@ -187,17 +187,17 @@
           "default": [
             {
               "name": "Freitext",
-              "icon": "✏️",
+              "icon": "\u270f\ufe0f",
               "prompt": "Clean up the transcript: remove filler words (um, uh, like, you know, halt, eigentlich, sozusagen, quasi), smooth broken or repeated sentence starts, fix obvious transcription errors. Keep the original language and meaning exactly. Return only the cleaned text without explanation."
             },
             {
               "name": "Commit Message",
-              "icon": "🔀",
+              "icon": "\ud83d\udd00",
               "prompt": "Convert this transcript into a Git commit message following Conventional Commits format. First line: type(scope): short description. Optional body after blank line for details. Keep the original language. Return only the commit message without explanation."
             },
             {
               "name": "JavaDoc",
-              "icon": "☕",
+              "icon": "\u2615",
               "prompt": "Convert this transcript into a JavaDoc comment block (/** ... */). Structure with @param, @return, @throws tags as appropriate based on the described function. Keep the original language. Return only the JavaDoc block without explanation.",
               "fileTypes": [
                 "java",
@@ -206,7 +206,7 @@
             },
             {
               "name": "Markdown",
-              "icon": "📖",
+              "icon": "\ud83d\udcd6",
               "prompt": "Convert this transcript into well-structured Markdown text. Use headings, bullet lists, numbered lists, and emphasis as appropriate. Keep the original language. Return only the Markdown without explanation.",
               "fileTypes": [
                 "markdown"
@@ -214,31 +214,37 @@
             },
             {
               "name": "E-Mail",
-              "icon": "📧",
+              "icon": "\ud83d\udce7",
               "prompt": "Convert this transcript into a professional email with appropriate greeting and closing. Maintain the original language and intended tone (formal or informal). Return only the email text without explanation."
             },
             {
               "name": "Code Comment",
-              "icon": "📝",
+              "icon": "\ud83d\udcdd",
               "contextAware": true,
               "prompt": "Generate a precise code comment based on the transcript and the provided code context. Choose the appropriate format (inline comment, JSDoc, Docstring) based on the programming language. Return ONLY the comment."
             },
             {
               "name": "Explain Code",
-              "icon": "💡",
+              "icon": "\ud83d\udca1",
               "contextAware": true,
               "prompt": "Explain the code based on the question in the transcript and the provided code context. Answer concisely and technically in the language of the transcript. Return ONLY the explanation."
             },
             {
               "name": "Claude Code Prompt",
-              "icon": "🤖",
+              "icon": "\ud83e\udd16",
               "contextAware": true,
               "prompt": "Convert this transcript into a precise, well-structured prompt for a Claude Code agent. Use the provided code context to reference specific files, classes, and functions by name. Structure the prompt as a clear task description: what to do, where in the codebase, and any constraints. Keep the original language. Return ONLY the prompt text, ready to paste into a terminal."
             },
             {
               "name": "Transform Selection",
-              "icon": "🔧",
-              "prompt": "The user has selected text in their editor (provided in <selection> tags) and dictated an instruction (in <transcript> tags). Apply the spoken instruction to transform the selected text. Examples: translate it, rewrite it, add comments, simplify it, fix it, etc. Return ONLY the transformed text that should replace the selection — no explanation, no preamble."
+              "icon": "\ud83d\udd27",
+              "prompt": "The user has selected text in their editor (provided in <selection> tags) and dictated an instruction (in <transcript> tags). Apply the spoken instruction to transform the selected text. Examples: translate it, rewrite it, add comments, simplify it, fix it, etc. Return ONLY the transformed text that should replace the selection \u2014 no explanation, no preamble."
+            },
+            {
+              "name": "Agent Instruction",
+              "icon": "\ud83e\uddbe",
+              "contextAware": true,
+              "prompt": "Convert this transcript into a clear, executable instruction for an AI coding agent (e.g. Claude Code, Cursor, Codex). The transcript is a raw spoken thought: extract the instruction and drop meta-speech such as 'okay so what I want you to do is'. Make it imperative and unambiguous. Adapt the structure to the content: a short, single-action request stays a single terse imperative line and MUST NOT be inflated into a multi-section block; a longer, multi-part request becomes a task line followed by bulleted details, and \u2014 only when the speaker names boundaries \u2014 an explicit 'Constraints:' line for what must not be touched. Preserve file paths and code symbols in backticks. Use the provided code context to reference files, classes, and functions by name. Keep the original language. If the transcript contains no actionable instruction, do NOT refuse, apologize, or ask for a task \u2014 instead return the transcript lightly cleaned up as plain prose, in the same spoken language. Return ONLY the resulting text, ready to paste into an agent."
             }
           ]
         },
@@ -271,11 +277,11 @@
               },
               "expansion": {
                 "type": "string",
-                "description": "The full text to replace it with (e.g. 'Mit freundlichen Grüssen')."
+                "description": "The full text to replace it with (e.g. 'Mit freundlichen Gr\u00fcssen')."
               }
             }
           },
-          "description": "Text expansions: abbreviations that are automatically expanded during post-processing. Define abbreviation/expansion pairs (e.g. 'mfg' → 'Mit freundlichen Grüssen'). Workspace-specific expansions can be added via '.verba-expansions.json'."
+          "description": "Text expansions: abbreviations that are automatically expanded during post-processing. Define abbreviation/expansion pairs (e.g. 'mfg' \u2192 'Mit freundlichen Gr\u00fcssen'). Workspace-specific expansions can be added via '.verba-expansions.json'."
         },
         "verba.language": {
           "type": "string",
@@ -330,7 +336,7 @@
             "nl",
             "pt"
           ],
-          "description": "Transcription language. 'multi' uses Deepgram's multilingual model; a fixed code (e.g. 'de') forces that language. Optional override — when unset, 'verba.language' drives transcription (legacy behavior)."
+          "description": "Transcription language. 'multi' uses Deepgram's multilingual model; a fixed code (e.g. 'de') forces that language. Optional override \u2014 when unset, 'verba.language' drives transcription (legacy behavior)."
         },
         "verba.contextSearch.maxResults": {
           "type": "number",
@@ -369,13 +375,14 @@
     "compile": "npm run compile:core && tsc -p ./",
     "bundle": "npm run compile:core && esbuild src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node --minify",
     "watch": "npm run compile:core && tsc -watch -p ./",
-    "dev": "npm run compile && code --extensionDevelopmentPath=.",
+    "dev": "npm run bundle && code --extensionDevelopmentPath=.",
     "package:vsix": "npx @vscode/vsce package --allow-missing-repository",
     "install:local": "npm run package:vsix && node -e \"var p=require('./package.json');require('child_process').execSync('code --install-extension '+p.name+'-'+p.version+'.vsix',{stdio:'inherit'})\"",
     "test:core": "npm --workspace @verba/core run test:unit",
     "test:unit": "npm run compile && mocha && npm run test:core",
     "test:integration": "npm run compile && node out/test/runIntegrationTests.js",
-    "test": "npm run compile && npm run test:unit && npm run test:integration"
+    "test": "npm run compile && npm run test:unit && npm run test:integration",
+    "test:coverage": "npm run compile && c8 mocha"
   },
   "devDependencies": {
     "@types/mocha": "^10.0.10",
@@ -384,6 +391,7 @@
     "@types/vscode": "^1.85.0",
     "@verba/core": "*",
     "@vscode/test-electron": "^2.5.2",
+    "c8": "^10.1.3",
     "esbuild": "^0.27.3",
     "mocha": "^11.7.5",
     "sinon": "^21.0.1",

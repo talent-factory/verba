@@ -36,18 +36,47 @@ pub fn set_hud_state(
         let _ = win.hide();
         return Ok(());
     }
-    if let Err(e) = app.emit_to("hud", "hud:state", HudPayload { label, icon, accent }) {
+    show_hud_pill(&app, &win, HudPayload { label, icon, accent }, "hud:state");
+    Ok(())
+}
+
+/// Shows the HUD pill with an ad-hoc message, decoupled from the flow's
+/// `DictationState`. Used by the controller to mirror actionable notifications
+/// (secure-input, no-speech, delivery failure) onto the always-reliable HUD.
+/// Reuses the same `hud:state` event + renderer; positions bottom-center and
+/// shows WITHOUT focus (same non-activating guarantee as `set_hud_state`).
+/// No-op when the `hud` window doesn't exist. Best-effort.
+#[tauri::command]
+pub fn set_hud_message(
+    app: AppHandle,
+    label: String,
+    icon: String,
+    accent: String,
+) -> Result<(), String> {
+    let Some(win) = app.get_webview_window("hud") else {
+        return Ok(());
+    };
+    show_hud_pill(&app, &win, HudPayload { label, icon, accent }, "hud:message");
+    Ok(())
+}
+
+/// Shared show path for `set_hud_state`/`set_hud_message`: emits `hud:state`
+/// with `payload`, positions the pill bottom-center, and shows it WITHOUT
+/// focus. `log_context` distinguishes the two callers in the best-effort emit
+/// failure log. Never calls `set_focus` — see the non-activating guarantee at
+/// the top of this file.
+fn show_hud_pill(app: &AppHandle, win: &WebviewWindow, payload: HudPayload, log_context: &str) {
+    if let Err(e) = app.emit_to("hud", "hud:state", payload) {
         // Swallowed (best-effort) but logged: without the payload the pill would
         // show the PREVIOUS state's content until the next transition.
-        eprintln!("[Verba] hud:state emit failed: {e}");
+        eprintln!("[Verba] {log_context} emit failed: {e}");
     }
-    position_bottom_center(&win);
+    position_bottom_center(win);
     // Click-through: the pill must never intercept clicks meant for the app
     // underneath it.
     let _ = win.set_ignore_cursor_events(true);
     let _ = win.set_always_on_top(true);
     let _ = win.show(); // deliberately NOT set_focus — must not steal focus
-    Ok(())
 }
 
 fn position_bottom_center(win: &WebviewWindow) {

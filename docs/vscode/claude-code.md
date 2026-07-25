@@ -14,11 +14,11 @@ Use Verba's **Claude Code Prompt** template to dictate tasks for Claude Code. Ve
 
 ```
 1. Focus your terminal running Claude Code
-2. Cmd+Shift+D  →  recording starts
+2. Cmd+Alt+V  →  recording starts
 3. Speak your task naturally, e.g.:
    "I want the pipeline to support streaming so that transcribed
     text appears incrementally during post-processing"
-4. Cmd+Shift+D  →  recording stops
+4. Cmd+Alt+V  →  recording stops
 5. Verba:
    a) Transcribes via Deepgram
    b) Searches codebase context (pipeline.ts, cleanupService.ts, ...)

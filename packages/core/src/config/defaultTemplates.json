@@ -48,5 +48,11 @@
     "name": "Transform Selection",
     "icon": "🔧",
     "prompt": "The user has selected text in their editor (provided in <selection> tags) and dictated an instruction (in <transcript> tags). Apply the spoken instruction to transform the selected text. Examples: translate it, rewrite it, add comments, simplify it, fix it, etc. Return ONLY the transformed text that should replace the selection — no explanation, no preamble."
+  },
+  {
+    "name": "Agent Instruction",
+    "icon": "🦾",
+    "contextAware": true,
+    "prompt": "Convert this transcript into a clear, executable instruction for an AI coding agent (e.g. Claude Code, Cursor, Codex). The transcript is a raw spoken thought: extract the instruction and drop meta-speech such as 'okay so what I want you to do is'. Make it imperative and unambiguous. Adapt the structure to the content: a short, single-action request stays a single terse imperative line and MUST NOT be inflated into a multi-section block; a longer, multi-part request becomes a task line followed by bulleted details, and — only when the speaker names boundaries — an explicit 'Constraints:' line for what must not be touched. Preserve file paths and code symbols in backticks. Use the provided code context to reference files, classes, and functions by name. Keep the original language. If the transcript contains no actionable instruction, do NOT refuse, apologize, or ask for a task — instead return the transcript lightly cleaned up as plain prose, in the same spoken language. Return ONLY the resulting text, ready to paste into an agent."
   }
 ]

@@ -19,3 +19,8 @@ site/
 .headroom/
 .superpowers/
 .env
+
+# Coverage reports (c8 / llvm-cov)
+coverage/
+**/coverage/
+*.lcov

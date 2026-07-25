@@ -24,18 +24,33 @@ export interface TranscriptionBackend {
 }
 
 /**
+ * Thrown by {@link validateTranscript} when a recording contains no usable
+ * speech (empty, whitespace-only, or silence/dots only). A typed error so
+ * callers can distinguish "no speech" from other transcription failures via
+ * `instanceof` — the same pattern the macOS host uses for CleanupTimeoutError
+ * and StopCaptureTimeoutError. Extends Error, so existing `catch (err)`
+ * handlers that treat it as an Error stay compatible.
+ */
+export class NoSpeechError extends Error {
+	constructor(message: string) {
+		super(message);
+		this.name = 'NoSpeechError';
+	}
+}
+
+/**
  * Validates a raw transcript, rejecting empty or silence-only results.
  * Shared by every backend so the "no speech detected" contract is identical.
- * @throws {Error} when the transcript is empty, whitespace-only, or only dots/ellipsis.
+ * @throws {NoSpeechError} when the transcript is empty, whitespace-only, or only dots/ellipsis.
  */
 export function validateTranscript(rawText: string): string {
 	if (!rawText || rawText.trim() === '') {
-		throw new Error('No speech detected in recording.');
+		throw new NoSpeechError('No speech detected in recording.');
 	}
 
 	// Whisper/Deepgram may return dots/ellipsis when it receives audio without speech
 	if (/^[\s.…]+$/.test(rawText)) {
-		throw new Error(
+		throw new NoSpeechError(
 			'No speech detected in recording (only silence). '
 			+ 'Check that the correct microphone is selected — configure "verba.audioDevice" in Settings.'
 		);

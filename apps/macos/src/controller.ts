@@ -1,5 +1,7 @@
-import type { CleanupService } from '@verba/core';
+import { DEFAULT_ACTIVATION, NoSpeechError, type CleanupService } from '@verba/core';
+import { deliver, type DeliveryPorts, type Intent } from './delivery';
 import type { DictationState } from './visualization/statePresentation';
+import { HUD_MESSAGES, type HudMessage } from './visualization/messagePresentation';
 
 export type InvokeFn = <T>(cmd: string, args?: Record<string, unknown>) => Promise<T>;
 
@@ -7,6 +9,7 @@ export type InvokeFn = <T>(cmd: string, args?: Record<string, unknown>) => Promi
 export interface ControllerUi {
 	setPhase(text: string): void;
 	setState(state: DictationState): void;
+	showMessage(message: HudMessage): void;
 	showTranscript(text: string): Promise<void>;
 	showAccessibilityOnboarding(onOpenSettings: () => Promise<void>): Promise<void>;
 }
@@ -18,7 +21,7 @@ export interface ControllerUi {
  * (same pattern as `DeepgramTauriProvider`). `wiring.ts` builds the real set.
  */
 export interface ControllerDeps {
-	deepgram: { transcribe(audioPath: string): Promise<{ text: string; detectedLanguage?: string }> };
+	deepgram: { transcribe(audioPath: string, signal?: AbortSignal): Promise<{ text: string; detectedLanguage?: string }> };
 	cleanup: Pick<CleanupService, 'process'>;
 	notifier: { init(): Promise<void>; info(msg: string): void; warn(msg: string): void; error(msg: string): void };
 	store: { init(): Promise<void> };
@@ -31,6 +34,32 @@ export interface ControllerDeps {
 	 * so tests can drive the timeout path without waiting.
 	 */
 	cleanupTimeoutMs?: number;
+	/**
+	 * Upper bound on the transcription step (default {@link DEFAULT_TRANSCRIBE_TIMEOUT_MS}).
+	 * A stalled Deepgram call must never hang the flow. Unlike cleanup there is no
+	 * transcript to fall back to, so on timeout we abort the request (via
+	 * `cancel_request`, so no API cost is wasted) and fail the dictation cleanly to
+	 * idle+error rather than freezing in "Transcribing…". Overridable so tests can
+	 * drive the timeout path without waiting.
+	 */
+	transcribeTimeoutMs?: number;
+	/**
+	 * Upper bound on the recording-stop step (default {@link DEFAULT_STOP_CAPTURE_TIMEOUT_MS}).
+	 * `stop_capture` blocks on a channel until the native capture thread finalizes the
+	 * WAV and reports its path; the cpal/CoreAudio stream teardown deliberately runs
+	 * *after* that, on the (never-joined) capture thread, so a teardown hang can no
+	 * longer stall this step. The bound therefore guards the finalize handshake — a
+	 * stuck `hound` finalize / disk, or the thread dying before it reports — turning an
+	 * otherwise indefinite "Transcribing…" freeze into a recoverable idle+error.
+	 * Overridable so tests can drive the timeout path without waiting.
+	 */
+	stopCaptureTimeoutMs?: number;
+	/** Routing ports for delivering the finished transcript (agent pane / paste). */
+	delivery: DeliveryPorts;
+	/** Minimum hold before a press starts recording (default 200ms). */
+	holdThresholdMs?: number;
+	/** Schedules `fn` after `ms`; returns a canceller. Injectable for tests. */
+	schedule?: (fn: () => void, ms: number) => () => void;
 }
 
 /**
@@ -42,6 +71,25 @@ export interface ControllerDeps {
 const DEFAULT_CLEANUP_TIMEOUT_MS = 30_000;
 
 /**
+ * Default transcription timeout. A Deepgram call is normally a few seconds; this
+ * safety ceiling matches the native `deepgram_transcribe` reqwest timeout so a
+ * genuine network / Deepgram stall turns an indefinite "Transcribing…" freeze
+ * into a recoverable idle+error instead.
+ */
+const DEFAULT_TRANSCRIBE_TIMEOUT_MS = 30_000;
+
+/**
+ * Default recording-stop timeout. Finalizing the WAV is normally instantaneous;
+ * this only trips if that finalize handshake hangs (e.g. a stuck disk / `hound`
+ * finalize) or the capture thread dies before reporting — not on the cpal stream
+ * teardown, which now runs after `stop_capture` has already returned.
+ */
+const DEFAULT_STOP_CAPTURE_TIMEOUT_MS = 10_000;
+
+/** How long an actionable HUD message stays before auto-hiding. */
+const HUD_MESSAGE_MS = 5000;
+
+/**
  * Owns the dictation flow on top of injected host adapters.
  *
  * **M2 (shipped):** the hotkey toggles microphone capture; on stop, the
@@ -49,8 +97,12 @@ const DEFAULT_CLEANUP_TIMEOUT_MS = 30_000;
  *
  * **M3 (this milestone):** the transcript runs through `CleanupService`
  * (raw-transcript fallback when the key prompt is cancelled or the API
- * fails) and is pasted into the frontmost app via `paste_text`. The window
- * only appears for the Accessibility onboarding or when pasting fails.
+ * fails) and is delivered via `deliver()`: a focused herdr agent pane gets
+ * the text typed in directly (with an optional submit Enter), everything
+ * else falls back to a clipboard + `paste_text` paste, including the
+ * secure-input handling for terminals that block the synthetic ⌘V. The
+ * window only appears for the Accessibility onboarding or when delivery
+ * fails.
  */
 export class DictationController {
 	// Single source of truth for the flow. The visualization state and the
@@ -59,15 +111,57 @@ export class DictationController {
 	// booleans would admit) is unrepresentable. Mutate only via `setState`.
 	private state: DictationState = 'idle';
 	private readonly cleanupTimeoutMs: number;
+	private readonly transcribeTimeoutMs: number;
+	private readonly stopCaptureTimeoutMs: number;
+	private readonly holdThresholdMs: number;
+	private readonly schedule: (fn: () => void, ms: number) => () => void;
+	// Intent for the *next* delivery. Set by the push-to-talk key that started the
+	// hold; the toggle hotkey always resets it to 'insert'.
+	private intent: Intent = 'insert';
+	// Non-null while a push is held but the threshold hasn't elapsed yet; its
+	// `cancel` disarms the pending start so a short tap never records.
+	private arming: { cancel: () => void } | null = null;
+	// Guards the window between "threshold elapsed" and "capture actually started",
+	// so a release that races the async start is deferred, not dropped.
+	private startInFlight = false;
+	private pendingStop = false;
+	private pendingHudMessage: HudMessage | null = null;
+	private hudMessageTimer: (() => void) | null = null;
 
 	constructor(private readonly deps: ControllerDeps) {
 		this.cleanupTimeoutMs = deps.cleanupTimeoutMs ?? DEFAULT_CLEANUP_TIMEOUT_MS;
+		this.transcribeTimeoutMs = deps.transcribeTimeoutMs ?? DEFAULT_TRANSCRIBE_TIMEOUT_MS;
+		this.stopCaptureTimeoutMs = deps.stopCaptureTimeoutMs ?? DEFAULT_STOP_CAPTURE_TIMEOUT_MS;
+		this.holdThresholdMs = deps.holdThresholdMs ?? DEFAULT_ACTIVATION.holdThresholdMs;
+		this.schedule = deps.schedule ?? ((fn, ms) => { const t = setTimeout(fn, ms); return () => clearTimeout(t); });
 	}
 
 	/** Updates the flow state and mirrors it to the visualization surfaces. */
 	private setState(state: DictationState): void {
+		// A new non-idle state (e.g. a fresh recording) takes over the pill, so a
+		// still-pending HUD-message hide timer must be cancelled — otherwise it
+		// would fire mid-flow and hide the HUD.
+		if (state !== 'idle' && this.hudMessageTimer) {
+			this.hudMessageTimer();
+			this.hudMessageTimer = null;
+		}
 		this.state = state;
 		this.deps.ui.setState(state);
+	}
+
+	/**
+	 * Shows an actionable message on the HUD for HUD_MESSAGE_MS, then hides it.
+	 * Tray goes idle immediately (the flow is done); the logical state is idle so
+	 * a new hotkey press is accepted. Called from `finally` instead of the plain
+	 * idle so the message isn't stomped by the flow's end-of-run idle.
+	 */
+	private surfaceHudMessage(message: HudMessage): void {
+		this.state = 'idle';
+		this.deps.ui.showMessage(message);
+		this.hudMessageTimer = this.schedule(() => {
+			this.hudMessageTimer = null;
+			this.deps.ui.setState('idle');
+		}, HUD_MESSAGE_MS);
 	}
 
 	/** Requests permissions and loads persisted state. Call once at startup. */
@@ -88,11 +182,60 @@ export class DictationController {
 	async handleHotkey(): Promise<void> {
 		// Busy (transcribing/processing) → ignore. Idle → start. Recording → stop.
 		if (this.state === 'transcribing' || this.state === 'processing') { return; }
+		// Symmetric with the PTT guards: a start already in flight (from a PTT
+		// hold that just crossed the threshold) must not be raced by a second
+		// `start_capture`. A pending PTT arm that hasn't fired yet is cancelled
+		// so it can't fire later and start a second capture.
+		if (this.startInFlight) { return; }
+		if (this.arming) { this.arming.cancel(); this.arming = null; }
 		if (this.state === 'idle') {
+			// The toggle path has no held intent, so it always delivers as 'insert'.
+			this.intent = 'insert';
 			await this.startRecording();
 			return;
 		}
+		// A toggle-driven stop never carries a PTT-held submit intent — a real key
+		// release (handlePttUp) is the only path allowed to honor `this.intent` as
+		// set by handlePttDown.
+		this.intent = 'insert';
 		await this.stopAndTranscribe();
+	}
+
+	/** Push-to-talk key pressed. Arms a hold timer; only a hold past the threshold records. */
+	async handlePttDown(intent: Intent): Promise<void> {
+		if (this.state !== 'idle' || this.arming || this.startInFlight) { return; }
+		this.intent = intent;
+		// `arm` is this hold's own identity token. A real scheduler's cancel()
+		// (clearTimeout) already guarantees a cancelled timer never fires, but the
+		// identity check below makes that guarantee explicit rather than assumed:
+		// even if this closure somehow ran after `this.arming` was cleared or
+		// replaced (cancelled by `handleHotkey`/`handlePttUp`, or superseded by a
+		// newer arm), it must be a no-op instead of starting a second recording.
+		const arm: { cancel: () => void } = { cancel: () => {} };
+		arm.cancel = this.schedule(() => {
+			if (this.arming !== arm) { return; }
+			this.arming = null;
+			void this.beginRecording();
+		}, this.holdThresholdMs);
+		this.arming = arm;
+	}
+
+	/** Push-to-talk key released. Short tap → cancel; held → stop and deliver. */
+	async handlePttUp(): Promise<void> {
+		if (this.arming) { this.arming.cancel(); this.arming = null; return; }
+		if (this.startInFlight) { this.pendingStop = true; return; }
+		if (this.state === 'recording') { await this.stopAndTranscribe(); }
+	}
+
+	/** Starts capture once the hold threshold has elapsed; handles a release that races the start. */
+	private async beginRecording(): Promise<void> {
+		this.startInFlight = true;
+		await this.startRecording();
+		this.startInFlight = false;
+		if (this.pendingStop) {
+			this.pendingStop = false;
+			if (this.state === 'recording') { await this.stopAndTranscribe(); }
+		}
 	}
 
 	private async startRecording(): Promise<void> {
@@ -113,8 +256,10 @@ export class DictationController {
 		this.deps.ui.setPhase('Transcribing…');
 		this.setState('transcribing');
 		try {
-			const wavPath = await this.deps.invoke<string>('stop_capture');
-			const { text: transcript, detectedLanguage } = await this.deps.deepgram.transcribe(wavPath);
+			const wavPath = await this.stopCaptureWithTimeout();
+			const { text: transcript, detectedLanguage } = await this.withTranscribeTimeout((signal) =>
+				this.deps.deepgram.transcribe(wavPath, signal)
+			);
 
 			this.deps.ui.setPhase('Processing…');
 			this.setState('processing');
@@ -140,27 +285,75 @@ export class DictationController {
 				}
 			}
 
-			const hasAccessibility = await this.deps.invoke<boolean>('has_accessibility_permission');
-			if (!hasAccessibility) {
-				await this.deps.ui.showAccessibilityOnboarding(() => this.deps.invoke('open_accessibility_settings'));
-				await this.deps.ui.showTranscript(text);
-				return;
-			}
-
 			try {
-				await this.deps.invoke('paste_text', { text });
-				this.deps.notifier.info('Verba: pasted.');
+				const outcome = await deliver(text, this.intent, this.deps.delivery);
+				if (outcome === 'needs-accessibility') {
+					// Only the paste path needs Accessibility — deliver() already
+					// returned via herdr above if that path applied, so reaching this
+					// outcome means nothing was delivered yet. Not a delivery failure:
+					// no deliveryFailed HUD, no error notifier, same onboarding UX the
+					// old upfront gate used to show.
+					await this.deps.ui.showAccessibilityOnboarding(() => this.deps.invoke('open_accessibility_settings'));
+					await this.deps.ui.showTranscript(text);
+				} else if (outcome === 'secure-input') {
+					// Secure Event Input (e.g. a terminal with "Secure Keyboard Entry")
+					// swallowed the synthetic ⌘V; the transcript is on the clipboard for
+					// the user to paste manually. Warn distinctly so it doesn't look like
+					// a normal paste that silently did nothing.
+					this.deps.notifier.warn('Verba: Terminal blocked the paste (Secure Input) — transcript left on the clipboard, press ⌘V to insert.');
+					this.pendingHudMessage = HUD_MESSAGES.secureInput;
+				} else if (outcome === 'not-submitted') {
+					// The text landed (herdr send-text, or paste) but the Enter/submit
+					// step failed. Not a delivery failure — the transcript is NOT
+					// re-delivered and NOT shown as failed, just a warn to press Enter.
+					this.deps.notifier.warn('Verba: inserted but not submitted — press Enter to send.');
+				} else if (outcome === 'herdr') {
+					// herdr fires the submit Enter itself, so a submit intent really was sent.
+					this.deps.notifier.info(this.intent === 'submit' ? 'Verba: sent.' : 'Verba: inserted.');
+				} else {
+					// 'pasted': submit's Enter is agent-only and is skipped on non-agent
+					// surfaces even when submit was requested — never claim "sent" here,
+					// even for a submit intent. The rare agent-paste-fallback-with-Enter
+					// case is acceptably under-claimed as "pasted".
+					this.deps.notifier.info('Verba: pasted.');
+				}
 				this.deps.ui.setPhase('Idle.');
 			} catch (err) {
 				// The window is the fallback surface: the user must never lose text.
-				this.deps.notifier.error(`Verba: paste failed — ${errText(err)}`);
+				this.deps.notifier.error(`Verba: delivery failed — ${errText(err)}`);
+				this.pendingHudMessage = HUD_MESSAGES.deliveryFailed;
 				await this.deps.ui.showTranscript(text);
 			}
 		} catch (err) {
-			this.deps.notifier.error(`Verba: ${errText(err)}`);
+			if (err instanceof StopCaptureTimeoutError) {
+				// The native capture thread hung while finalizing the WAV (the finalize
+				// handshake never completed). Recover to idle instead of freezing forever
+				// in "Transcribing…" — the recording is lost, but the app stays usable.
+				this.deps.notifier.error(
+					`Verba: recording could not be finalized (stop timed out after ${this.stopCaptureTimeoutMs}ms) — the audio device may be stuck; retry, and restart Verba if it persists.`
+				);
+			} else if (err instanceof TranscribeTimeoutError) {
+				// A stalled Deepgram request. Unlike cleanup there's no transcript to
+				// fall back to, so this is a hard failure — the request was already
+				// aborted (via cancel_request) so no API cost is wasted; recover to idle.
+				this.deps.notifier.error(
+					`Verba: transcription timed out after ${this.transcribeTimeoutMs}ms — Deepgram may be unreachable; check your connection and try again.`
+				);
+			} else {
+				if (err instanceof NoSpeechError) {
+					this.pendingHudMessage = HUD_MESSAGES.noSpeech;
+				}
+				this.deps.notifier.error(`Verba: ${errText(err)}`);
+			}
 			this.deps.ui.setPhase('Idle.');
 		} finally {
-			this.setState('idle');
+			if (this.pendingHudMessage) {
+				const message = this.pendingHudMessage;
+				this.pendingHudMessage = null;
+				this.surfaceHudMessage(message);
+			} else {
+				this.setState('idle');
+			}
 		}
 	}
 
@@ -169,15 +362,15 @@ export class DictationController {
 	 * on timeout we abort it and reject with a {@link CleanupTimeoutError} so the
 	 * caller falls back to the raw transcript.
 	 *
-	 * The abort is best-effort and transport-dependent: it stops the SDK from
-	 * starting a *new* retry, but the macOS transport (a Tauri `invoke`, see
-	 * `anthropicTauriFetch.ts`) can't cancel a request already in flight, so that
-	 * request runs to its own timeout and its Anthropic cost is still incurred.
-	 * The user-visible flow never stalls regardless, because the timeout rejects
-	 * on its own timer even if `run` never settles (a hang outside the request,
-	 * e.g. a key prompt, is bounded too). A settle that arrives *after* the
-	 * timeout can no longer change the outcome; its late result/rejection is
-	 * logged (never lost) and kept from surfacing as an unhandledRejection.
+	 * The abort now cancels the in-flight request end-to-end: the macOS transport
+	 * (a Tauri `invoke`, see `anthropicTauriFetch.ts`) bridges the abort to the
+	 * native `cancel_request` command (TF-521), so a timeout stops the reqwest
+	 * rather than letting it run to its own timeout and still bill Anthropic. The
+	 * user-visible flow never stalls regardless, because the timeout rejects on
+	 * its own timer even if `run` never settles (a hang outside the request, e.g.
+	 * a key prompt, is bounded too). A settle that arrives *after* the timeout can
+	 * no longer change the outcome; its late result/rejection is logged (never
+	 * lost) and kept from surfacing as an unhandledRejection.
 	 */
 	private withCleanupTimeout(run: (signal: AbortSignal) => Promise<string>): Promise<string> {
 		const controller = new AbortController();
@@ -212,6 +405,88 @@ export class DictationController {
 			);
 		});
 	}
+
+	/**
+	 * Runs the transcription with an upper time bound. `run` receives an
+	 * AbortSignal; on timeout we abort it — which the provider bridges to the
+	 * native `cancel_request` command so the in-flight Deepgram reqwest is
+	 * stopped, not left to run to its own timeout (TF-521) — and reject with a
+	 * {@link TranscribeTimeoutError}. Unlike cleanup there is no fallback text, so
+	 * the caller fails the dictation to idle+error. The timeout rejects on its own
+	 * timer even if `run` never settles, so a stall can't freeze the flow; a settle
+	 * that arrives after the timeout is logged and consumed so it can't surface as
+	 * an unhandledRejection.
+	 */
+	private withTranscribeTimeout<T>(run: (signal: AbortSignal) => Promise<T>): Promise<T> {
+		const controller = new AbortController();
+		return new Promise<T>((resolve, reject) => {
+			let timedOut = false;
+			const timer = setTimeout(() => {
+				timedOut = true;
+				controller.abort();
+				reject(new TranscribeTimeoutError(this.transcribeTimeoutMs));
+			}, this.transcribeTimeoutMs);
+			run(controller.signal).then(
+				(value) => {
+					clearTimeout(timer);
+					if (timedOut) {
+						console.warn('[Verba] transcription completed after timeout; recording already abandoned');
+						return;
+					}
+					resolve(value);
+				},
+				(err) => {
+					clearTimeout(timer);
+					if (timedOut) {
+						console.warn(`[Verba] transcription rejected after timeout: ${errText(err)}`);
+						return;
+					}
+					reject(err);
+				}
+			);
+		});
+	}
+
+	/**
+	 * Invokes `stop_capture` with an upper time bound. The native capture thread
+	 * finalizes the WAV and reports its path over a channel, which `stop_capture`
+	 * awaits (`done_rx.recv()`) — it does *not* join the thread, and the cpal/CoreAudio
+	 * stream teardown runs afterward off that path, so a teardown hang can't block here.
+	 * Without this bound a stuck *finalize* (or a thread that dies before reporting)
+	 * would still freeze the flow in "Transcribing…"; on timeout we reject with a
+	 * {@link StopCaptureTimeoutError} and abandon the recording. Tauri's `invoke` can't
+	 * be cancelled, so a genuinely stuck native thread leaks until the app restarts; a
+	 * late settlement is logged (never lost) and consumed so it can't surface as an
+	 * unhandledRejection.
+	 */
+	private stopCaptureWithTimeout(): Promise<string> {
+		const op = this.deps.invoke<string>('stop_capture');
+		return new Promise<string>((resolve, reject) => {
+			let timedOut = false;
+			const timer = setTimeout(() => {
+				timedOut = true;
+				reject(new StopCaptureTimeoutError(this.stopCaptureTimeoutMs));
+			}, this.stopCaptureTimeoutMs);
+			op.then(
+				(value) => {
+					clearTimeout(timer);
+					if (timedOut) {
+						console.warn('[Verba] stop_capture resolved after timeout; recording was already abandoned');
+						return;
+					}
+					resolve(value);
+				},
+				(err) => {
+					clearTimeout(timer);
+					if (timedOut) {
+						console.warn(`[Verba] stop_capture rejected after timeout: ${errText(err)}`);
+						return;
+					}
+					reject(err);
+				}
+			);
+		});
+	}
 }
 
 /** Raised by {@link DictationController} when cleanup exceeds its time budget. */
@@ -219,6 +494,22 @@ class CleanupTimeoutError extends Error {
 	constructor(timeoutMs: number) {
 		super(`cleanup timed out after ${timeoutMs}ms`);
 		this.name = 'CleanupTimeoutError';
+	}
+}
+
+/** Raised by {@link DictationController} when transcription exceeds its time budget. */
+class TranscribeTimeoutError extends Error {
+	constructor(timeoutMs: number) {
+		super(`transcription timed out after ${timeoutMs}ms`);
+		this.name = 'TranscribeTimeoutError';
+	}
+}
+
+/** Raised by {@link DictationController} when finalizing the recording exceeds its time budget. */
+class StopCaptureTimeoutError extends Error {
+	constructor(timeoutMs: number) {
+		super(`stop_capture timed out after ${timeoutMs}ms`);
+		this.name = 'StopCaptureTimeoutError';
 	}
 }
 

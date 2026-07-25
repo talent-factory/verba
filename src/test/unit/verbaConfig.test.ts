@@ -25,7 +25,7 @@ suite('resolvedVerbaConfig', () => {
 
 	test('maps VS Code settings through core validation (broken template → defaults)', () => {
 		fakeConfig = { templates: [{ name: 'NoPrompt' }] };
-		assert.strictEqual(resolvedVerbaConfig().templates.length, 9);
+		assert.strictEqual(resolvedVerbaConfig().templates.length, 10);
 	});
 
 	test('transcriptionLanguageOverride is undefined when unset, the value when set', () => {

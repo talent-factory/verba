@@ -103,6 +103,7 @@ pub(crate) fn start(app: AppHandle) {
                     // FFI call below; that's safe because the call doesn't synchronously
                     // re-enter this callback, and `std::sync::Mutex` is non-reentrant.
                     if let Some(handle) = tap_handle_for_callback.lock().unwrap().as_ref() {
+                        eprintln!("[Verba] Event-Tap wurde deaktiviert; reaktiviere.");
                         unsafe { CGEventTapEnable(handle.0, true) };
                     }
                     return CallbackResult::Keep;

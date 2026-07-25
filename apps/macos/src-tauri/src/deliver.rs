@@ -13,6 +13,16 @@ use std::time::{Duration, Instant};
 
 /// Upper bound on a single herdr subprocess call (send-text or send-keys). A
 /// hung `herdr` binary must not freeze the delivery flow indefinitely.
+///
+/// Residual race: a timeout can only tell us "the process did not exit within
+/// `HERDR_TIMEOUT`", not "the process never delivered". If the underlying
+/// `herdr` CLI actually delivered the text (or the Enter) and then hung past
+/// the timeout before exiting, `run_herdr` still reports `Err` — indistinguishable
+/// from "never delivered" from here. A caller that treats that `Err` as license
+/// to fall back to pasting can then double-deliver in that rare case. Fully
+/// closing this needs an ack-based herdr protocol (e.g. the CLI confirming
+/// delivery before exiting, or a separate delivered-vs-exited signal); until
+/// then, the timeout window is intentionally kept short to bound the exposure.
 const HERDR_TIMEOUT: Duration = Duration::from_millis(3000);
 
 /// Baut die herdr-Subcommand-Argumente für eine Zustellung.
@@ -35,37 +45,50 @@ pub(crate) fn herdr_argvs(pane_id: &str, text: &str, submit: bool) -> Vec<Vec<St
     cmds
 }
 
+/// The result of a successful herdr delivery, mirroring [`crate::paste::PasteOutcome`].
+/// Serializes to `"delivered"` / `"delivered-not-submitted"` — the wire format
+/// `wiring.ts`'s `invoke<'delivered' | 'delivered-not-submitted'>('herdr_send', ...)`
+/// depends on.
+#[derive(Debug, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum HerdrOutcome {
+    Delivered,
+    DeliveredNotSubmitted,
+}
+
 /// Pure decision logic for `herdr_send`'s outcome: `text_ok` is whether `pane
 /// send-text` succeeded; `submit_ok` is whether `pane send-keys Enter`
 /// succeeded (only consulted when `submit` is true). A failed send-text means
 /// nothing landed in the pane at all → `Err`, the sole condition under which
 /// the caller may safely fall back to pasting. A failed Enter after a
-/// successful send-text means the text DID land → `Ok("delivered-not-submitted")`,
+/// successful send-text means the text DID land → `Ok(HerdrOutcome::DeliveredNotSubmitted)`,
 /// never `Err` — that's the double-delivery bug this type exists to prevent.
-pub(crate) fn herdr_outcome(text_ok: bool, submit: bool, submit_ok: bool) -> Result<&'static str, ()> {
+pub(crate) fn herdr_outcome(text_ok: bool, submit: bool, submit_ok: bool) -> Result<HerdrOutcome, ()> {
     if !text_ok {
         return Err(());
     }
     if !submit || submit_ok {
-        Ok("delivered")
+        Ok(HerdrOutcome::Delivered)
     } else {
-        Ok("delivered-not-submitted")
+        Ok(HerdrOutcome::DeliveredNotSubmitted)
     }
 }
 
-/// Runs a single herdr subcommand, bounded by `timeout`. Mirrors the
-/// spawn + timed-wait + kill-on-timeout shape of `detect.rs::query_herdr`
-/// (adapted here to a poll loop over `try_wait`, since — unlike
-/// `query_herdr` — this call doesn't need to capture stdout on a side
-/// thread, just the exit status): a hung `herdr` process is killed rather
-/// than left to block the flow forever.
-fn run_herdr(argv: &[String], timeout: Duration) -> Result<(), String> {
-    let mut child = Command::new("herdr")
+/// Runs `program argv`, bounded by `timeout`. Mirrors the spawn +
+/// timed-wait + kill-on-timeout shape of `detect.rs::query_herdr` (adapted
+/// here to a poll loop over `try_wait`, since — unlike `query_herdr` — this
+/// call doesn't need to capture stdout on a side thread, just the exit
+/// status): a hung process is killed rather than left to block the flow
+/// forever. `program` is a parameter (rather than hardcoded `"herdr"`) so
+/// tests can drive this against real coreutils (`true`/`false`/`sleep`)
+/// without needing the `herdr` CLI installed.
+fn run_herdr(program: &str, argv: &[String], timeout: Duration) -> Result<(), String> {
+    let mut child = Command::new(program)
         .args(argv)
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
-        .map_err(|e| format!("herdr spawn failed: {e}"))?;
+        .map_err(|e| format!("{program} spawn failed: {e}"))?;
 
     let start = Instant::now();
     loop {
@@ -74,18 +97,18 @@ fn run_herdr(argv: &[String], timeout: Duration) -> Result<(), String> {
                 return if status.success() {
                     Ok(())
                 } else {
-                    Err(format!("herdr {argv:?} exited with {status}"))
+                    Err(format!("{program} {argv:?} exited with {status}"))
                 };
             }
             Ok(None) => {
                 if start.elapsed() >= timeout {
                     let _ = child.kill();
                     let _ = child.wait();
-                    return Err(format!("herdr {argv:?} timed out after {timeout:?}"));
+                    return Err(format!("{program} {argv:?} timed out after {timeout:?}"));
                 }
                 std::thread::sleep(Duration::from_millis(20));
             }
-            Err(e) => return Err(format!("herdr wait failed: {e}")),
+            Err(e) => return Err(format!("{program} wait failed: {e}")),
         }
     }
 }
@@ -95,24 +118,24 @@ fn run_herdr(argv: &[String], timeout: Duration) -> Result<(), String> {
 /// set. Runs on a blocking-pool thread since the underlying `herdr` calls
 /// block.
 ///
-/// Returns `Ok("delivered")` or `Ok("delivered-not-submitted")` — never `Err`
-/// once the text has landed in the pane. Rejects with `Err` only when
-/// send-text itself failed (spawn error, non-zero exit, or timeout), i.e.
+/// Returns `Ok(HerdrOutcome::Delivered)` or `Ok(HerdrOutcome::DeliveredNotSubmitted)`
+/// — never `Err` once the text has landed in the pane. Rejects with `Err` only
+/// when send-text itself failed (spawn error, non-zero exit, or timeout), i.e.
 /// nothing was delivered — the sole case where a caller may safely fall back
 /// to pasting without risking a double delivery.
 #[tauri::command]
-pub async fn herdr_send(pane_id: String, text: String, submit: bool) -> Result<String, String> {
+pub async fn herdr_send(pane_id: String, text: String, submit: bool) -> Result<HerdrOutcome, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let argvs = herdr_argvs(&pane_id, &text, submit);
 
-        run_herdr(&argvs[0], HERDR_TIMEOUT)?;
+        run_herdr("herdr", &argvs[0], HERDR_TIMEOUT)?;
 
-        let submit_ok = !submit || run_herdr(&argvs[1], HERDR_TIMEOUT).is_ok();
+        let submit_ok = !submit || run_herdr("herdr", &argvs[1], HERDR_TIMEOUT).is_ok();
 
         // text_ok is always true here (an Err from send-text already returned
         // above via `?`), so herdr_outcome's Err(()) branch is unreachable.
         match herdr_outcome(true, submit, submit_ok) {
-            Ok(outcome) => Ok(outcome.to_string()),
+            Ok(outcome) => Ok(outcome),
             Err(()) => unreachable!("send-text already verified ok above"),
         }
     })
@@ -149,12 +172,12 @@ mod tests {
 
     #[test]
     fn insert_text_ok_is_delivered() {
-        assert_eq!(herdr_outcome(true, false, false), Ok("delivered"));
+        assert_eq!(herdr_outcome(true, false, false), Ok(HerdrOutcome::Delivered));
     }
 
     #[test]
     fn submit_text_ok_and_enter_ok_is_delivered() {
-        assert_eq!(herdr_outcome(true, true, true), Ok("delivered"));
+        assert_eq!(herdr_outcome(true, true, true), Ok(HerdrOutcome::Delivered));
     }
 
     #[test]
@@ -162,6 +185,58 @@ mod tests {
         // The double-delivery bug this type exists to prevent: text landed,
         // only Enter failed — must NOT be Err (which would trigger a paste
         // fallback and retype text already in the pane).
-        assert_eq!(herdr_outcome(true, true, false), Ok("delivered-not-submitted"));
+        assert_eq!(
+            herdr_outcome(true, true, false),
+            Ok(HerdrOutcome::DeliveredNotSubmitted)
+        );
+    }
+
+    // --- HerdrOutcome serde wire format (H1): wiring.ts's
+    // `invoke<'delivered' | 'delivered-not-submitted'>('herdr_send', ...)` depends
+    // on these exact strings; the enum must not change the wire contract. ---
+
+    #[test]
+    fn herdr_outcome_serializes_to_the_exact_wire_strings() {
+        assert_eq!(
+            serde_json::to_string(&HerdrOutcome::Delivered).unwrap(),
+            "\"delivered\""
+        );
+        assert_eq!(
+            serde_json::to_string(&HerdrOutcome::DeliveredNotSubmitted).unwrap(),
+            "\"delivered-not-submitted\""
+        );
+    }
+
+    // --- run_herdr (H2): driven against real coreutils, no `herdr` CLI needed ---
+
+    #[test]
+    fn run_herdr_true_succeeds() {
+        assert_eq!(run_herdr("true", &[], Duration::from_secs(2)), Ok(()));
+    }
+
+    #[test]
+    fn run_herdr_false_is_err() {
+        assert!(run_herdr("false", &[], Duration::from_secs(2)).is_err());
+    }
+
+    #[test]
+    fn run_herdr_kills_a_hung_process_on_timeout_and_reaps_it() {
+        // A 10s sleep against a 100ms timeout: if `run_herdr` failed to kill the
+        // child on timeout, this test would hang for ~10s instead of returning
+        // in well under a second — the timeout-vs-actual-hang distinction the
+        // whole kill+reap path exists for.
+        let start = Instant::now();
+        let result = run_herdr("sleep", &["10".to_string()], Duration::from_millis(100));
+        let elapsed = start.elapsed();
+
+        assert!(result.is_err(), "a timed-out process must be reported as Err");
+        assert!(
+            elapsed < Duration::from_secs(2),
+            "run_herdr should return shortly after the timeout, not wait out the sleep; took {elapsed:?}"
+        );
+        // No zombie: `run_herdr` already calls `child.wait()` after `kill()` on
+        // the timeout path, so there is nothing further to reap here — the
+        // fast, non-hanging return above is itself proof the reap happened
+        // (an un-reaped child on some platforms would otherwise stall wait()).
     }
 }

@@ -229,6 +229,20 @@ mod tests {
     }
 
     #[test]
+    fn paste_outcome_serializes_to_the_exact_wire_strings() {
+        // Locks the wire contract `wiring.ts`'s
+        // `invoke<'pasted' | 'secure-input'>('paste_text', ...)` depends on.
+        assert_eq!(
+            serde_json::to_string(&PasteOutcome::SecureInput).unwrap(),
+            "\"secure-input\""
+        );
+        assert_eq!(
+            serde_json::to_string(&PasteOutcome::Pasted).unwrap(),
+            "\"pasted\""
+        );
+    }
+
+    #[test]
     fn key_v_matches_the_ansi_virtual_keycode() {
         // kVK_ANSI_V from Carbon's Events.h; ⌘V is synthesized with this code.
         assert_eq!(KEY_V, 9);

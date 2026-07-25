@@ -78,6 +78,8 @@ Full guide: [macOS Installation](docs/macos/installation.md)
 ### macOS (Beta)
 
 - **System-wide Global Hotkey** -- `Ctrl+Alt+D` toggles microphone capture from any app.
+- **Push-to-Talk (hold to talk)** -- hold **right-Command** to insert, or **right-Option** to insert *and* submit; release to deliver. A short tap never records.
+- **Agent-Native Delivery** -- a focused terminal agent pane (e.g. a herdr-managed Claude Code session) gets the cleaned text typed straight in -- no Accessibility permission needed -- while every other app falls back to the clipboard paste. The right template is picked automatically from the focused surface (agent / terminal / editor).
 - **Paste into the Frontmost App** -- transcribed, cleaned text is pasted wherever your cursor is; the previous clipboard content is restored afterwards.
 - **Menu-Bar Configuration & Template Picker** -- switch transcription provider, cleanup language, and active template straight from the tray menu.
 - **HUD Working Visualization** -- a non-activating, click-through pill shows idle/recording/transcribing/processing state.

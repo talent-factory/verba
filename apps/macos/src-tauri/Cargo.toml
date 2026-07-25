@@ -28,6 +28,14 @@ keyring = "3"
 # (Tauri's WebView) without a proxy, so the request happens natively here
 # instead. See transcribe.rs.
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+# JS→Rust mid-flight cancellation for the native HTTP commands (TF-521): a
+# frontend timeout (withCleanupTimeout / withTranscribeTimeout) aborts the
+# in-flight reqwest via a CancellationToken instead of letting it run to its own
+# 30s bound and still bill the API for a discarded result. See cancel.rs. tokio
+# is already pulled in transitively by reqwest; declared directly here for
+# `select!`, `#[tokio::test]`, and the runtime in async tests.
+tokio = { version = "1", features = ["macros", "rt", "rt-multi-thread"] }
+tokio-util = "0.7"
 # Paste mechanism (M3): clipboard save/set/restore + synthetic ⌘V keystroke.
 # AX value insertion was considered and dropped — see
 # docs/superpowers/specs/2026-07-03-macos-paste-cleanup-design.md.

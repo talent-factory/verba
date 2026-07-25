@@ -11,6 +11,8 @@
 use serde::Serialize;
 use std::time::Duration;
 
+use crate::cancel::{run_cancellable, CancelRegistry, Cancelled};
+
 /// Sentinel error string the frontend checks for to distinguish "bad API
 /// key, clear it and re-prompt" from any other transcription failure.
 ///
@@ -49,6 +51,8 @@ pub async fn deepgram_transcribe(
     audio_path: String,
     keyterms: Vec<String>,
     language: String,
+    request_id: Option<String>,
+    registry: tauri::State<'_, CancelRegistry>,
 ) -> Result<TranscriptionResult, String> {
     let audio = std::fs::read(&audio_path)
         .map_err(|e| format!("Transcription failed: could not read recording: {e}"))?;
@@ -60,47 +64,59 @@ pub async fn deepgram_transcribe(
         .build()
         .expect("failed to build the Deepgram HTTP client");
 
-    let response = client
-        .post("https://api.deepgram.com/v1/listen")
-        .query(&params)
-        .header("Authorization", format!("Token {api_key}"))
-        .header("Content-Type", "audio/wav")
-        .body(audio)
-        .send()
-        .await
-        .map_err(|e| {
-            if e.is_timeout() {
-                "Transcription failed: request timed out — check your network connection"
-                    .to_string()
-            } else {
-                format!("Transcription failed: {e}")
-            }
+    // Run the request under cancellation so a frontend abort (the controller's
+    // `withTranscribeTimeout` firing `cancel_request` with `request_id`) stops
+    // the reqwest mid-flight instead of letting it run to the 30s `reqwest`
+    // timeout and still bill Deepgram for a discarded result (TF-521). With no
+    // request id it runs unmediated, exactly as before.
+    let work = async {
+        let response = client
+            .post("https://api.deepgram.com/v1/listen")
+            .query(&params)
+            .header("Authorization", format!("Token {api_key}"))
+            .header("Content-Type", "audio/wav")
+            .body(audio)
+            .send()
+            .await
+            .map_err(|e| {
+                if e.is_timeout() {
+                    "Transcription failed: request timed out — check your network connection"
+                        .to_string()
+                } else {
+                    format!("Transcription failed: {e}")
+                }
+            })?;
+
+        let status = response.status();
+        if status.as_u16() == 401 || status.as_u16() == 403 {
+            return Err(DEEPGRAM_UNAUTHORIZED.to_string());
+        }
+
+        let raw_body = response.text().await.map_err(|e| {
+            format!(
+                "Transcription failed ({}): could not read response body: {e}",
+                status.as_u16()
+            )
         })?;
 
-    let status = response.status();
-    if status.as_u16() == 401 || status.as_u16() == 403 {
-        return Err(DEEPGRAM_UNAUTHORIZED.to_string());
+        if !status.is_success() {
+            return Err(build_error_message(status.as_u16(), &raw_body));
+        }
+
+        let body: serde_json::Value = serde_json::from_str(&raw_body).map_err(|e| {
+            format!(
+                "Transcription failed ({}): could not parse response: {e}",
+                status.as_u16()
+            )
+        })?;
+
+        Ok::<TranscriptionResult, String>(parse_transcription(&body))
+    };
+
+    match run_cancellable(&registry, request_id.as_deref(), work).await {
+        Ok(result) => result,
+        Err(Cancelled) => Err("deepgram_transcribe cancelled".to_string()),
     }
-
-    let raw_body = response.text().await.map_err(|e| {
-        format!(
-            "Transcription failed ({}): could not read response body: {e}",
-            status.as_u16()
-        )
-    })?;
-
-    if !status.is_success() {
-        return Err(build_error_message(status.as_u16(), &raw_body));
-    }
-
-    let body: serde_json::Value = serde_json::from_str(&raw_body).map_err(|e| {
-        format!(
-            "Transcription failed ({}): could not parse response: {e}",
-            status.as_u16()
-        )
-    })?;
-
-    Ok(parse_transcription(&body))
 }
 
 /// Builds the Deepgram `/listen` query params. `language` is passed through

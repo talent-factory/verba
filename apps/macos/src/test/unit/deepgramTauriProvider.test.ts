@@ -167,4 +167,45 @@ suite('DeepgramTauriProvider', () => {
 		await provider.transcribe('/tmp/rec.wav');
 		assert.strictEqual(invoke.firstCall.args[1].language, 'de');
 	});
+
+	test('rejects a pre-aborted signal without invoking the command', async () => {
+		const ac = new AbortController();
+		ac.abort();
+
+		await assert.rejects(
+			() => provider.transcribe('/tmp/rec.wav', undefined, ac.signal),
+			(err: Error) => err.name === 'AbortError',
+		);
+		assert.strictEqual(invoke.called, false);
+	});
+
+	test('bridges a mid-flight abort to cancel_request with the same requestId', async () => {
+		// Mirrors the Anthropic path (TF-521): the controller's withTranscribeTimeout
+		// aborts the signal on a stall, and the provider must fire cancel_request so
+		// the native deepgram_transcribe reqwest is stopped instead of running to the
+		// 30s timeout and still billing Deepgram.
+		const ac = new AbortController();
+		let capturedRequestId: string | undefined;
+		let resolveInvoke: (v: { text: string; detectedLanguage?: string }) => void = () => {};
+		invoke.withArgs('deepgram_transcribe').callsFake((_cmd: string, args: { requestId?: string }) => {
+			capturedRequestId = args.requestId;
+			return new Promise((resolve) => { resolveInvoke = resolve as typeof resolveInvoke; });
+		});
+		invoke.withArgs('cancel_request').resolves(undefined);
+
+		const p = provider.transcribe('/tmp/rec.wav', undefined, ac.signal);
+		await Promise.resolve(); // resolveApiKey + reach the deepgram_transcribe call
+		await Promise.resolve();
+		assert.ok(capturedRequestId, 'a requestId was minted and sent to deepgram_transcribe');
+
+		ac.abort();
+		await Promise.resolve();
+
+		const cancelCall = invoke.getCalls().find((c) => c.args[0] === 'cancel_request');
+		assert.ok(cancelCall, 'cancel_request was invoked on abort');
+		assert.strictEqual((cancelCall!.args[1] as { requestId: string }).requestId, capturedRequestId);
+
+		resolveInvoke({ text: 'hello world', detectedLanguage: 'en' });
+		await p;
+	});
 });

@@ -138,10 +138,10 @@ export class CleanupService implements ProcessingStage {
 	/**
 	 * Cleans up the transcript in a single (non-streaming) API call.
 	 * @param signal - Optional AbortSignal forwarded to the SDK request (e.g. when
-	 *   the caller enforces its own timeout). Where the transport honors it (the
-	 *   default fetch), an abort cancels the in-flight HTTP call so no work or API
-	 *   cost is wasted; a transport that can't cancel mid-flight (e.g. the macOS
-	 *   Tauri fetch) runs to its own timeout instead.
+	 *   the caller enforces its own timeout). An abort cancels the in-flight HTTP
+	 *   call so no work or API cost is wasted — both on the default fetch and on
+	 *   the macOS Tauri fetch, which bridges the abort to a native `cancel_request`
+	 *   command that stops the reqwest mid-flight.
 	 */
 	async process(input: string, context?: PipelineContext, signal?: AbortSignal): Promise<string> {
 		const { client, systemPrompt, userMessage } = await this.prepareRequest(context, input);

@@ -61,7 +61,8 @@ export async function createDictationController(): Promise<{
 	// instead of the WebView's `fetch`: from the production build's `tauri://`
 	// origin a `fetch` to api.anthropic.com never completes and freezes cleanup
 	// (it works under `macos-dev` on http://localhost). The native path has no
-	// origin and its own timeout — see anthropicTauriFetch.ts for details.
+	// origin, its own timeout, and a mid-flight cancellation bridge — see
+	// anthropicTauriFetch.ts for details.
 	const cleanup = new TauriCleanupService(secrets, notifier, {
 		dangerouslyAllowBrowser: true,
 		fetch: createAnthropicTauriFetch(invoke),
@@ -105,13 +106,13 @@ export async function createDictationController(): Promise<{
 	};
 
 	const controller = new DictationController({
-		deepgram: { transcribe: (audioPath) => provider.transcribe(audioPath, configState.current.glossary) },
+		deepgram: { transcribe: (audioPath, signal) => provider.transcribe(audioPath, configState.current.glossary, signal) },
 		cleanup: {
-			// Forward the AbortSignal to core so an abort *before* the request is
-			// dispatched is honored and the SDK won't start a retry. The native
-			// Rust fetch can't be cancelled mid-flight (see anthropicTauriFetch.ts),
-			// so a request already in flight runs to its 30s timeout — the
-			// controller's `withCleanupTimeout` bounds the user-visible wait.
+			// Forward the AbortSignal to core. An abort *before* dispatch is honored
+			// (the SDK won't start a retry); a mid-flight abort is bridged by the
+			// native Rust fetch to the `cancel_request` command, which stops the
+			// in-flight reqwest (TF-521, see anthropicTauriFetch.ts). The
+			// controller's `withCleanupTimeout` still bounds the user-visible wait.
 			process: async (transcript, context, signal) => {
 				const cfg = configState.current;
 				let surfaceClass: SurfaceClass = 'generic';

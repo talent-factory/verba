@@ -18,6 +18,8 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
+use crate::cancel::{run_cancellable, CancelRegistry, Cancelled};
+
 /// Requests hang instead of failing without this: `reqwest` has no default
 /// timeout, and a stalled connection would otherwise leave the frontend's
 /// "Verarbeite mit Claude …" phase stuck forever (same rationale as
@@ -44,6 +46,12 @@ pub struct HttpRequest {
     method: String,
     headers: HashMap<String, String>,
     body: Option<String>,
+    /// Cancellation id minted by the JS adapter (`anthropicTauriFetch.ts`).
+    /// `anthropic_fetch` registers a `CancellationToken` under it so a mid-flight
+    /// `cancel_request` can stop the reqwest. Absent/`None` for callers that
+    /// don't opt into cancellation (e.g. the existing serde-wire tests).
+    #[serde(default, rename = "requestId")]
+    request_id: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -56,7 +64,10 @@ pub struct HttpResponse {
 /// Performs an Anthropic HTTPS request natively via `reqwest` and returns the
 /// status, headers, and body for the JS side to rebuild into a `Response`.
 #[tauri::command]
-pub async fn anthropic_fetch(request: HttpRequest) -> Result<HttpResponse, String> {
+pub async fn anthropic_fetch(
+    request: HttpRequest,
+    registry: tauri::State<'_, CancelRegistry>,
+) -> Result<HttpResponse, String> {
     if !is_allowed_anthropic_url(&request.url) {
         return Err(format!(
             "anthropic_fetch refused a non-Anthropic URL: {}",
@@ -85,30 +96,42 @@ pub async fn anthropic_fetch(request: HttpRequest) -> Result<HttpResponse, Strin
         req = req.body(body);
     }
 
-    let response = req
-        .send()
-        .await
-        .map_err(|e| format!("Anthropic request failed: {e}"))?;
+    // Run the whole request — send *and* body read — under cancellation, so a
+    // frontend abort (which fires `cancel_request` with this id) stops it
+    // mid-flight instead of letting it run to the 30s `reqwest` timeout and
+    // still bill Anthropic for a result already discarded (TF-521). With no
+    // request id the request runs unmediated, exactly as before.
+    let work = async {
+        let response = req
+            .send()
+            .await
+            .map_err(|e| format!("Anthropic request failed: {e}"))?;
 
-    let status = response.status().as_u16();
+        let status = response.status().as_u16();
 
-    let mut headers = HashMap::new();
-    for (name, value) in response.headers() {
-        if let Ok(v) = value.to_str() {
-            headers.insert(name.as_str().to_string(), v.to_string());
+        let mut headers = HashMap::new();
+        for (name, value) in response.headers() {
+            if let Ok(v) = value.to_str() {
+                headers.insert(name.as_str().to_string(), v.to_string());
+            }
         }
+
+        let body = response
+            .text()
+            .await
+            .map_err(|e| format!("failed to read the Anthropic response body: {e}"))?;
+
+        Ok::<HttpResponse, String>(HttpResponse {
+            status,
+            headers,
+            body,
+        })
+    };
+
+    match run_cancellable(&registry, request.request_id.as_deref(), work).await {
+        Ok(result) => result,
+        Err(Cancelled) => Err("anthropic_fetch cancelled".to_string()),
     }
-
-    let body = response
-        .text()
-        .await
-        .map_err(|e| format!("failed to read the Anthropic response body: {e}"))?;
-
-    Ok(HttpResponse {
-        status,
-        headers,
-        body,
-    })
 }
 
 #[cfg(test)]

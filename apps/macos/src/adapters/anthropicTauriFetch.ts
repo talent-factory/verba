@@ -52,11 +52,12 @@ const NULL_BODY_STATUS = new Set([204, 205, 304]);
  * has no origin and its own 30s timeout. Transcription uses a native `reqwest`
  * path too (`deepgram_transcribe`), for a different underlying reason.
  *
- * Cancellation is best-effort: an already-aborted signal is honored *before*
- * dispatch, but a Tauri `invoke` cannot be cancelled once in flight, so an abort
- * that arrives mid-request does not stop the native call — it runs to completion
- * or the Rust 30s timeout. The caller's `withCleanupTimeout` bounds the
- * user-visible wait regardless.
+ * Cancellation is real, not best-effort (TF-521): an already-aborted signal is
+ * honored *before* dispatch, and a mid-flight abort fires the `cancel_request`
+ * command with the id minted here, which cancels the token the native
+ * `anthropic_fetch` is `select!`ing on and stops the in-flight reqwest — so a
+ * timeout no longer bills Anthropic for a result already discarded. The abort
+ * listener is torn down once the request settles.
  */
 export function createAnthropicTauriFetch(invoke: InvokeFn): FetchFn {
 	return async (input, init) => {
@@ -70,13 +71,28 @@ export function createAnthropicTauriFetch(invoke: InvokeFn): FetchFn {
 		const headers = headersToRecord(init?.headers ?? (input instanceof Request ? input.headers : undefined));
 		const body = await bodyToString(init?.body);
 
-		const res = await invoke<RustHttpResponse>('anthropic_fetch', {
-			request: { url, method, headers, body },
-		});
+		const requestId = crypto.randomUUID();
+		// A dispatched Tauri `invoke` can't be cancelled, so on abort we instead
+		// fire `cancel_request(requestId)`; the native command cancels the token
+		// it's `select!`ing on and stops the reqwest. Fire-and-forget: the request
+		// we're abandoning may reject as a result, which the caller already
+		// tolerates (withCleanupTimeout has moved on).
+		const onAbort = (): void => { void invoke('cancel_request', { requestId }).catch(() => {}); };
+		signal?.addEventListener('abort', onAbort, { once: true });
 
-		return new Response(NULL_BODY_STATUS.has(res.status) ? null : res.body, {
-			status: res.status,
-			headers: res.headers,
-		});
+		try {
+			const res = await invoke<RustHttpResponse>('anthropic_fetch', {
+				request: { url, method, headers, body, requestId },
+			});
+
+			return new Response(NULL_BODY_STATUS.has(res.status) ? null : res.body, {
+				status: res.status,
+				headers: res.headers,
+			});
+		} finally {
+			// Drop the listener so a later abort of a reused signal can't fire a
+			// stray cancel_request against an id whose request already settled.
+			signal?.removeEventListener('abort', onAbort);
+		}
 	};
 }

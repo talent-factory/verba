@@ -81,6 +81,51 @@ suite('anthropicTauriFetch', () => {
 		assert.strictEqual(payload.headers['anthropic-version'], '2023-06-01');
 	});
 
+	test('bridges a mid-flight abort to cancel_request with the same requestId', async () => {
+		// The core cost-leak fix (TF-521): once `anthropic_fetch` is dispatched a
+		// Tauri `invoke` can't be cancelled, so on abort the adapter must instead
+		// fire `cancel_request` with the id it minted, which cancels the token the
+		// Rust command is `select!`ing on and stops the in-flight reqwest.
+		const ac = new AbortController();
+		let capturedRequestId: string | undefined;
+		let resolveFetch: (v: { status: number; headers: Record<string, string>; body: string }) => void = () => {};
+		const invoke = sinon.stub();
+		invoke.withArgs('anthropic_fetch').callsFake((_cmd: string, args: { request: { requestId?: string } }) => {
+			capturedRequestId = args.request.requestId;
+			return new Promise((resolve) => { resolveFetch = resolve as typeof resolveFetch; });
+		});
+		invoke.withArgs('cancel_request').resolves(undefined);
+		const fetchFn = createAnthropicTauriFetch(invoke as unknown as InvokeFn);
+
+		const p = fetchFn('https://api.anthropic.com/v1/messages', { method: 'POST', body: '{}', signal: ac.signal });
+		await Promise.resolve(); // let the invoke('anthropic_fetch') call happen
+		assert.ok(capturedRequestId, 'a requestId was minted and sent to anthropic_fetch');
+
+		ac.abort();
+		await Promise.resolve(); // let the abort listener run
+
+		const cancelCall = invoke.getCalls().find((c) => c.args[0] === 'cancel_request');
+		assert.ok(cancelCall, 'cancel_request was invoked on abort');
+		assert.strictEqual((cancelCall!.args[1] as { requestId: string }).requestId, capturedRequestId);
+
+		// Settle the native call so the returned promise resolves cleanly.
+		resolveFetch({ status: 200, headers: {}, body: '{}' });
+		await p;
+	});
+
+	test('removes the abort listener once the request settles (no late cancel_request)', async () => {
+		const ac = new AbortController();
+		const invoke = sinon.stub();
+		invoke.withArgs('anthropic_fetch').resolves({ status: 200, headers: {}, body: '{}' });
+		invoke.withArgs('cancel_request').resolves(undefined);
+		const fetchFn = createAnthropicTauriFetch(invoke as unknown as InvokeFn);
+
+		await fetchFn('https://api.anthropic.com/v1/messages', { method: 'POST', body: '{}', signal: ac.signal });
+		ac.abort(); // fires only *after* the request already completed
+
+		assert.strictEqual(invoke.getCalls().some((c) => c.args[0] === 'cancel_request'), false, 'a settled request must not leave a listener that cancels a reused signal');
+	});
+
 	test('a null-body status (204) rebuilds a Response without throwing', async () => {
 		// `new Response(body, { status: 204 })` throws if body is non-null; the
 		// adapter must pass null for such statuses.

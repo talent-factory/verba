@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.7.0](https://github.com/talent-factory/verba/compare/verba-v0.6.0...verba-v0.7.0) (2026-07-25)
+
+
+### Added
+
+* macOS push-to-talk, agent-native delivery & HUD; VS Code refinements ([8f724b9](https://github.com/talent-factory/verba/commit/8f724b98dfe9dba5e576c8fe3da77bf09256e57b))
+
 ## [Unreleased]
 
 ### Added

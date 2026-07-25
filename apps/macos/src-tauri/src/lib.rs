@@ -25,17 +25,28 @@ use audio::CaptureState;
 /// timer/IPC delivery. The dictation flow (transcribe → cleanup → paste) runs in
 /// that WebView, so a napped process stalls at "Transcribing…"/"Processing…":
 /// the native Rust command returns, but its IPC response isn't delivered to JS
-/// until some event (e.g. a hotkey press) wakes the run loop. Holding an
-/// `NSActivityBackground` activity token for the app lifetime keeps App Nap off
-/// without preventing normal system sleep. The token must stay retained, so it
-/// is intentionally leaked.
+/// until some event (e.g. a hotkey press) wakes the run loop — which is why the
+/// flow appears to need a second hotkey press to finish.
+///
+/// The exempting activity option is `UserInitiatedAllowingIdleSystemSleep`: it
+/// tells the system this is user-initiated work, so App Nap and timer throttling
+/// are disabled, while normal idle *system* sleep is still allowed (the Mac can
+/// sleep per the user's Energy Saver settings). `NSActivityBackground`, used
+/// before, does NOT prevent App Nap — per Apple it is the discretionary /
+/// maintenance priority band that App Nap is explicitly *allowed* to defer; it
+/// only disabled sudden/automatic termination, so the stall kept recurring
+/// intermittently. The token must stay retained for the app lifetime (dropping
+/// it re-enables App Nap), so it is intentionally leaked.
 #[cfg(target_os = "macos")]
 fn disable_app_nap() {
     use objc2_foundation::{NSActivityOptions, NSProcessInfo, NSString};
 
     let info = NSProcessInfo::processInfo();
     let reason = NSString::from_str("Verba keeps the hidden dictation WebView responsive");
-    let token = info.beginActivityWithOptions_reason(NSActivityOptions::Background, &reason);
+    let token = info.beginActivityWithOptions_reason(
+        NSActivityOptions::UserInitiatedAllowingIdleSystemSleep,
+        &reason,
+    );
     // Retain for the whole app lifetime — dropping the token re-enables App Nap.
     std::mem::forget(token);
 }

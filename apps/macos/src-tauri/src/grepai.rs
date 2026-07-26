@@ -46,12 +46,27 @@ pub(crate) fn parse_grepai_output(output: &str) -> Vec<String> {
         .collect()
 }
 
-/// Runs `program search <query> --limit <limit>` in `cwd`, bounded by `timeout`,
-/// and returns captured stdout. `program` is a parameter so tests can drive it
-/// against coreutils (`true`/`false`) without the `grepai` CLI installed.
+/// Builds the grepai argv. `--limit` stays before the query as a real flag, then
+/// a `--` terminator ensures the query is always parsed as a positional — a
+/// transcript that happens to start with `-` (e.g. "--output …") can't be
+/// smuggled in as a grepai flag (argv flag injection). Pure/testable, mirroring
+/// `deliver.rs::herdr_argvs`.
+pub(crate) fn grepai_argv(query: &str, limit: u32) -> Vec<String> {
+    vec![
+        "search".into(),
+        "--limit".into(),
+        limit.to_string(),
+        "--".into(),
+        query.to_string(),
+    ]
+}
+
+/// Runs `program search --limit <limit> -- <query>` in `cwd`, bounded by
+/// `timeout`, and returns captured stdout. `program` is a parameter so tests can
+/// drive it against coreutils (`true`/`false`) without the `grepai` CLI installed.
 fn run_grepai(program: &str, query: &str, cwd: &str, limit: u32, timeout: Duration) -> Result<String, String> {
     let mut child = Command::new(program)
-        .args(["search", query, "--limit", &limit.to_string()])
+        .args(grepai_argv(query, limit))
         .current_dir(cwd)
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
@@ -134,6 +149,24 @@ mod tests {
     #[test]
     fn empty_output_is_no_snippets() {
         assert!(parse_grepai_output("").is_empty());
+    }
+
+    #[test]
+    fn argv_puts_flags_first_then_double_dash_then_query() {
+        assert_eq!(
+            grepai_argv("fix the cache", 5),
+            vec!["search", "--limit", "5", "--", "fix the cache"]
+        );
+    }
+
+    #[test]
+    fn argv_double_dash_prevents_flag_smuggling() {
+        // A transcript starting with '-' must land as a positional after `--`,
+        // never be parsed as a grepai flag.
+        let argv = grepai_argv("--output=/etc/passwd", 3);
+        assert_eq!(argv, vec!["search", "--limit", "3", "--", "--output=/etc/passwd"]);
+        let dd = argv.iter().position(|a| a == "--").expect("has a -- terminator");
+        assert_eq!(argv[dd + 1], "--output=/etc/passwd", "query sits after the -- terminator");
     }
 
     // run_grepai driven against real coreutils, no grepai CLI needed:

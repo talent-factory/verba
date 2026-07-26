@@ -10,8 +10,13 @@ use std::io::Read;
 use std::process::{Command, Stdio};
 use std::time::Duration;
 
-/// Upper bound on a single grepai search. A hung `grepai` must not freeze cleanup.
-const GREPAI_TIMEOUT: Duration = Duration::from_secs(30);
+/// Upper bound on a single grepai search. Deliberately well under the cleanup
+/// timeout budget (controller.ts `DEFAULT_CLEANUP_TIMEOUT_MS` = 30s): this search
+/// runs *inside* that budget, before the Anthropic call, so a slow/hung grepai
+/// must not eat the whole budget and starve the actual cleanup (which would drop
+/// the user to the raw transcript and misreport it as a Claude outage). A grepai
+/// miss here just degrades to no `## Scope` (TF-531 AC6).
+const GREPAI_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Parses grepai's `file:line: content` output into `// file: <path>\n<lines>`
 /// snippets, grouped by file in first-seen order. Mirrors VS Code's
@@ -61,6 +66,13 @@ pub(crate) fn grepai_argv(query: &str, limit: u32) -> Vec<String> {
     ]
 }
 
+/// True when `cwd` has a grepai index (`.grepai/`), mirroring the VS Code
+/// `GrepaiProvider.isAvailable` guard. Without an index, `grepai search` is a
+/// wasted spawn (or a slow failure) on every agent dictation — skip it.
+pub(crate) fn repo_has_grepai_index(cwd: &str) -> bool {
+    std::path::Path::new(cwd).join(".grepai").is_dir()
+}
+
 /// Runs `program search --limit <limit> -- <query>` in `cwd`, bounded by
 /// `timeout`, and returns captured stdout. `program` is a parameter so tests can
 /// drive it against coreutils (`true`/`false`) without the `grepai` CLI installed.
@@ -102,6 +114,12 @@ fn run_grepai(program: &str, query: &str, cwd: &str, limit: u32, timeout: Durati
 #[tauri::command]
 pub async fn grepai_search(query: String, cwd: String, limit: u32) -> Vec<String> {
     tauri::async_runtime::spawn_blocking(move || {
+        // Skip the spawn entirely when the target repo has no grepai index —
+        // parity with the VS Code provider, and avoids a per-dictation cost/stall
+        // in un-indexed repos.
+        if !repo_has_grepai_index(&cwd) {
+            return Vec::new();
+        }
         match run_grepai("grepai", &query, &cwd, limit, GREPAI_TIMEOUT) {
             Ok(out) => parse_grepai_output(&out),
             Err(e) => {
@@ -184,5 +202,19 @@ mod tests {
     #[test]
     fn run_grepai_missing_binary_is_err() {
         assert!(run_grepai("definitely-not-a-real-binary-xyz", "q", ".", 5, Duration::from_secs(2)).is_err());
+    }
+
+    #[test]
+    fn missing_grepai_index_is_not_available() {
+        assert!(!repo_has_grepai_index("/nonexistent/path/does-not-exist-xyz"));
+    }
+
+    #[test]
+    fn present_grepai_index_is_available() {
+        let dir = std::env::temp_dir().join(format!("verba_grepai_idx_{}", std::process::id()));
+        let idx = dir.join(".grepai");
+        std::fs::create_dir_all(&idx).expect("create temp .grepai");
+        assert!(repo_has_grepai_index(dir.to_str().unwrap()));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

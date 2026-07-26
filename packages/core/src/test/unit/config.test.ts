@@ -40,10 +40,13 @@ suite('Agent Instruction template', () => {
 		assert.ok(t.prompt.trim().length > 0, 'prompt must be non-empty');
 	});
 
-	test('the prompt encodes adaptive structure and terseness rules', () => {
+	test('the prompt encodes adaptive structure with a mandatory Ziel header', () => {
 		const t = DEFAULT_TEMPLATES.find((x) => x.name === 'Agent Instruction')!;
-		// The two load-bearing behaviors from the spec: adapt to length, do not over-format.
-		assert.match(t.prompt, /terse/i, 'must instruct terse output for short utterances');
+		// The load-bearing behaviors from the spec: adapt the AMOUNT of structure to
+		// length, but the '## Ziel' header stays mandatory even for a short command.
+		// (UAT: a "terse" instruction made the model drop the header — do not require it.)
+		assert.match(t.prompt, /mandatory/i, 'the ## Ziel header must be mandatory even for short requests');
+		assert.match(t.prompt, /single-action/i, 'must address the short single-action case');
 		assert.match(t.prompt, /Constraints/, 'must mention the Constraints section for boundaries');
 	});
 });
@@ -275,7 +278,10 @@ suite('language code validation', () => {
 		// The two novel guarantees over the old free-form instruction.
 		assert.ok(/never invent/i.test(p), 'forbids inventing file paths');
 		assert.ok(/omit/i.test(p), 'omits empty sections');
-		// Adaptive: short single-action requests must stay terse.
-		assert.ok(/single-action|terse/i.test(p), 'keeps short requests terse (no inflation)');
+		// Adaptive: short single-action requests carry ONLY the Ziel section...
+		assert.ok(/single-action/i.test(p), 'names the short single-action case');
+		// ...but the ## Ziel header stays mandatory even then (UAT regression: the
+		// LLM must not collapse a short command to a bare line without the header).
+		assert.ok(/mandatory/i.test(p), 'makes the ## Ziel header mandatory even for short requests');
 	});
 });

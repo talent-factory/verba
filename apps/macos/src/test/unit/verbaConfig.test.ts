@@ -7,9 +7,10 @@ import {
 	DEFAULT_TEMPLATES,
 	cleanupContextFor,
 	templateForSurface,
+	agentContextSnippets,
 	ObjectConfigProvider,
 } from '../../config/verbaConfig';
-import type { ResolvedConfig, Template } from '@verba/core';
+import type { DetectedSurface, ResolvedConfig, Template } from '@verba/core';
 
 suite('cleanupContextFor outputLanguage', () => {
 	function baseConfig(activeTemplate: Template): ResolvedConfig {
@@ -248,5 +249,52 @@ suite('ObjectConfigProvider', () => {
 		assert.strictEqual(p.get('transcription.language', 'x'), 'multi');
 		assert.strictEqual(p.get('transcription.provider', 'deepgram'), 'deepgram');
 		assert.strictEqual(p.get('nope.deep', 'fallback'), 'fallback');
+	});
+});
+
+suite('agentContextSnippets', () => {
+	const ctxTemplate: Template = { name: 'Agent Instruction', prompt: 'A', contextAware: true };
+	const plainTemplate: Template = { name: 'Freitext', prompt: 'F' };
+	const agentSurface: DetectedSurface = { class: 'agent', agent: 'claude', paneId: 'wW:p1', cwd: '/repo/verba' };
+
+	test('agent surface + contextAware + cwd → invokes grepai_search and returns snippets', async () => {
+		const calls: Array<Record<string, unknown> | undefined> = [];
+		const invoke = (async (_cmd: string, args?: Record<string, unknown>) => {
+			calls.push(args);
+			return ['// file: src/a.ts\nok'];
+		}) as <T>(c: string, a?: Record<string, unknown>) => Promise<T>;
+		const snippets = await agentContextSnippets(agentSurface, ctxTemplate, invoke, 5, 'fix the cache');
+		assert.deepStrictEqual(snippets, ['// file: src/a.ts\nok']);
+		assert.deepStrictEqual(calls[0], { query: 'fix the cache', cwd: '/repo/verba', limit: 5 });
+	});
+
+	test('non-agent surface → no grepai call, empty', async () => {
+		let called = false;
+		const invoke = (async () => { called = true; return []; }) as <T>(c: string, a?: Record<string, unknown>) => Promise<T>;
+		const snippets = await agentContextSnippets({ class: 'generic' }, ctxTemplate, invoke, 5, 'q');
+		assert.deepStrictEqual(snippets, []);
+		assert.strictEqual(called, false);
+	});
+
+	test('agent surface without cwd → no grepai call, empty', async () => {
+		let called = false;
+		const invoke = (async () => { called = true; return []; }) as <T>(c: string, a?: Record<string, unknown>) => Promise<T>;
+		const snippets = await agentContextSnippets({ class: 'agent', agent: 'claude' }, ctxTemplate, invoke, 5, 'q');
+		assert.deepStrictEqual(snippets, []);
+		assert.strictEqual(called, false);
+	});
+
+	test('non-contextAware template → no grepai call, empty', async () => {
+		let called = false;
+		const invoke = (async () => { called = true; return []; }) as <T>(c: string, a?: Record<string, unknown>) => Promise<T>;
+		const snippets = await agentContextSnippets(agentSurface, plainTemplate, invoke, 5, 'q');
+		assert.deepStrictEqual(snippets, []);
+		assert.strictEqual(called, false);
+	});
+
+	test('grepai_search rejects → degrades to empty (no throw)', async () => {
+		const invoke = (async () => { throw new Error('grepai missing'); }) as <T>(c: string, a?: Record<string, unknown>) => Promise<T>;
+		const snippets = await agentContextSnippets(agentSurface, ctxTemplate, invoke, 5, 'q');
+		assert.deepStrictEqual(snippets, []);
 	});
 });

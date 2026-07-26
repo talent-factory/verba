@@ -6,6 +6,7 @@ import {
 	DEFAULT_TEMPLATES,
 	AGENT_INSTRUCTION_TEMPLATE_NAME,
 	type ConfigProvider,
+	type DetectedSurface,
 	type Expansion,
 	type PipelineContext,
 	type ResolvedConfig,
@@ -86,6 +87,30 @@ export function templateForSurface(config: ResolvedConfig, surfaceClass: Surface
 		}
 	}
 	return config.activeTemplate;
+}
+
+/**
+ * Resolves scope snippets for an agent surface via the native grepai command.
+ * Returns [] — no `## Scope` — when the template is not contextAware, the surface
+ * is not an agent with a resolvable repo root, or grepai fails/finds nothing.
+ * Graceful degradation: never throws (TF-531 AC6).
+ */
+export async function agentContextSnippets(
+	surface: DetectedSurface,
+	template: Template,
+	invoke: <T>(cmd: string, args?: Record<string, unknown>) => Promise<T>,
+	limit: number,
+	query: string,
+): Promise<string[]> {
+	if (!template.contextAware || surface.class !== 'agent' || !surface.cwd) {
+		return [];
+	}
+	try {
+		return await invoke<string[]>('grepai_search', { query, cwd: surface.cwd, limit });
+	} catch (err) {
+		console.warn('[Verba] grepai scope resolution failed, proceeding without ## Scope:', err);
+		return [];
+	}
 }
 
 export function cleanupContextFor(config: ResolvedConfig, context?: PipelineContext, templateOverride?: Template): PipelineContext {

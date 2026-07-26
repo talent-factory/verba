@@ -1,4 +1,4 @@
-import { CleanupService, DEFAULT_ACTIVATION, type ApiKeyPrompt, type DetectedSurface, type SurfaceClass } from '@verba/core';
+import { CleanupService, DEFAULT_ACTIVATION, type ApiKeyPrompt, type DetectedSurface } from '@verba/core';
 import { invoke } from '@tauri-apps/api/core';
 import { TauriSecretStore } from './adapters/secretStore';
 import { EnvAwareSecretStore } from './adapters/envAwareSecretStore';
@@ -9,8 +9,11 @@ import { createAnthropicTauriFetch } from './adapters/anthropicTauriFetch';
 import { promptForApiKey, setPhase, showAccessibilityOnboarding, showTranscript } from './ui';
 import { DictationController } from './controller';
 import type { DeliveryPorts } from './delivery';
-import { loadConfig, applyConfig, cleanupContextFor, templateForSurface } from './config/verbaConfig';
+import { loadConfig, applyConfig, cleanupContextFor, templateForSurface, agentContextSnippets } from './config/verbaConfig';
 import { createVisualization } from './visualization/visualization';
+
+/** Max. Code-Snippets für die Agent-Scope-Auflösung (grepai --limit). */
+const SCOPE_SEARCH_LIMIT = 5;
 
 /** CleanupService needs a host prompt for its API key; supply it via the window UI. */
 class TauriCleanupService extends CleanupService {
@@ -115,19 +118,19 @@ export async function createDictationController(): Promise<{
 			// controller's `withCleanupTimeout` still bounds the user-visible wait.
 			process: async (transcript, context, signal) => {
 				const cfg = configState.current;
-				let surfaceClass: SurfaceClass = 'generic';
+				let surface: DetectedSurface = { class: 'generic' };
 				try {
-					const surface = await invoke<DetectedSurface>('detect_surface', {
+					surface = await invoke<DetectedSurface>('detect_surface', {
 						agentMarkers: cfg.agentMarkers,
 						terminalApps: cfg.terminalApps,
 						editorApps: cfg.editorApps,
 					});
-					surfaceClass = surface.class;
 				} catch (err) {
 					console.warn('[Verba] surface detection failed, using active template:', err);
 				}
-				const template = templateForSurface(cfg, surfaceClass);
-				return cleanup.process(transcript, cleanupContextFor(cfg, context, template), signal);
+				const template = templateForSurface(cfg, surface.class);
+				const contextSnippets = await agentContextSnippets(surface, template, invoke, SCOPE_SEARCH_LIMIT, transcript);
+				return cleanup.process(transcript, cleanupContextFor(cfg, { ...context, contextSnippets }, template), signal);
 			},
 		},
 		notifier,

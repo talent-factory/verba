@@ -262,4 +262,20 @@ suite('language code validation', () => {
 		assert.strictEqual(resolveTemplateOutputLanguage(undefined), undefined);
 		assert.strictEqual(resolveTemplateOutputLanguage('not-a-code!'), undefined);
 	});
+
+	test('the Agent Instruction template documents the structured agent-prompt contract', () => {
+		const agent = DEFAULT_TEMPLATES.find(t => t.name === 'Agent Instruction');
+		assert.ok(agent, 'Agent Instruction template exists');
+		const p = agent!.prompt;
+		// Structured sections (headers illustrated in the dictation language).
+		assert.ok(p.includes('## Ziel'), 'names the mandatory Ziel/Goal section');
+		assert.ok(p.includes('## Scope'), 'names the Scope section');
+		assert.ok(p.includes('## Constraints'), 'names the Constraints section');
+		assert.ok(p.includes('## Unklar'), 'names the Unklar/Unclear section');
+		// The two novel guarantees over the old free-form instruction.
+		assert.ok(/never invent/i.test(p), 'forbids inventing file paths');
+		assert.ok(/omit/i.test(p), 'omits empty sections');
+		// Adaptive: short single-action requests must stay terse.
+		assert.ok(/single-action|terse/i.test(p), 'keeps short requests terse (no inflation)');
+	});
 });

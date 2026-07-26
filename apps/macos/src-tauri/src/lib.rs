@@ -5,6 +5,7 @@ mod config;
 mod deliver;
 mod detect;
 mod env;
+mod grepai;
 mod http;
 mod hud;
 mod menu;
@@ -76,6 +77,7 @@ pub fn run() {
             config::read_config,
             deliver::herdr_send,
             env::env_var,
+            grepai::grepai_search,
             http::anthropic_fetch,
             hud::set_hud_state,
             hud::set_hud_message,

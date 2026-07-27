@@ -6,6 +6,7 @@ mod deliver;
 mod detect;
 mod env;
 mod grepai;
+mod heartbeat;
 mod http;
 mod hud;
 mod menu;
@@ -16,6 +17,7 @@ mod transcribe;
 mod tray;
 
 use tauri::tray::TrayIconBuilder;
+use tauri::Manager;
 
 use audio::CaptureState;
 
@@ -70,6 +72,9 @@ pub fn run() {
         // `anthropic_fetch`/`deepgram_transcribe` register a token here and
         // `cancel_request` cancels it when the frontend aborts. See cancel.rs.
         .manage(cancel::CancelRegistry::default())
+        // Shared flag driving the run-loop heartbeat (see heartbeat.rs): the
+        // frontend flips it around the transcribe/cleanup/deliver flow.
+        .manage(heartbeat::DictationActive::default())
         .invoke_handler(tauri::generate_handler![
             audio::start_capture,
             audio::stop_capture,
@@ -78,6 +83,7 @@ pub fn run() {
             deliver::herdr_send,
             env::env_var,
             grepai::grepai_search,
+            heartbeat::set_dictation_active,
             http::anthropic_fetch,
             hud::set_hud_state,
             hud::set_hud_message,
@@ -108,6 +114,12 @@ pub fn run() {
             // auf eigenem CFRunLoop-Thread; UAT-verifiziert (Task 8).
             #[cfg(target_os = "macos")]
             activation::start(app.handle().clone());
+
+            // Run-loop heartbeat: keeps the hidden WebView's IPC responsive during
+            // the transcribe/cleanup/deliver flow so it doesn't stall at
+            // "Verarbeite mit Claude…" until a key press (see heartbeat.rs).
+            let dictation_active = app.state::<heartbeat::DictationActive>().0.clone();
+            heartbeat::start(app.handle().clone(), dictation_active);
 
             let menu = menu::build_settings_menu(app.handle())?;
 

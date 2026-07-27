@@ -137,6 +137,7 @@ export async function createDictationController(): Promise<{
 		store: new TauriKeyValueStore(),
 		invoke,
 		delivery,
+		setDictationActive: (active) => { void invoke('set_dictation_active', { active }); },
 		holdThresholdMs: configState.current.activation.holdThresholdMs,
 		ui: { setPhase, showTranscript, showAccessibilityOnboarding, setState: visualization.setState, showMessage: visualization.showMessage },
 	});

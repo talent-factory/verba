@@ -82,6 +82,29 @@ suite('insertText', () => {
 		assert.deepStrictEqual(sendTextStub.firstCall.args, ['ls -la', true]);
 	});
 
+	test('wraps MULTI-LINE terminal text in bracketed paste so it is not submitted line-by-line', async () => {
+		const sendTextStub = sinon.stub();
+		const fakeTerminal = { sendText: sendTextStub };
+
+		const multiline = '## Ziel\n\nNoch einmal Text in Claude eingeben.';
+		await insertText(multiline, undefined, fakeTerminal as any, false, true);
+
+		// Wrapped in ESC[200~ … ESC[201~; the trailing-Enter flag is unchanged (false).
+		assert.deepStrictEqual(
+			sendTextStub.firstCall.args,
+			[`\x1b[200~${multiline}\x1b[201~`, false],
+		);
+	});
+
+	test('does NOT wrap single-line terminal text (plain-shell behaviour preserved)', async () => {
+		const sendTextStub = sinon.stub();
+		const fakeTerminal = { sendText: sendTextStub };
+
+		await insertText('single line', undefined, fakeTerminal as any, false, true);
+
+		assert.deepStrictEqual(sendTextStub.firstCall.args, ['single line', false]);
+	});
+
 	test('throws when neither editor nor terminal is available', async () => {
 		await assert.rejects(
 			() => insertText('hello', undefined, undefined, false),

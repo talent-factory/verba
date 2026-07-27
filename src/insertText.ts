@@ -24,6 +24,28 @@ export interface InsertionResult {
 }
 
 /**
+ * Bracketed-paste markers. A TUI that enables bracketed paste (e.g. Claude Code,
+ * Codex, or a readline shell) treats everything between them as a single paste —
+ * so a multi-line block is inserted verbatim instead of typed line-by-line, where
+ * the first embedded `\n` would fire Enter and submit only the first line (exactly
+ * the "## Ziel sent on its own" bug with structured agent prompts). Only applied to
+ * multi-line text: single-line sends are unchanged, keeping plain-shell behaviour
+ * and the existing contract intact.
+ */
+const BRACKETED_PASTE_START = '\x1b[200~';
+const BRACKETED_PASTE_END = '\x1b[201~';
+
+/** Sends `text` to the terminal, wrapping multi-line content in bracketed paste so
+ *  embedded newlines don't submit line-by-line. `executeCommand` adds the single
+ *  trailing Enter (outside the paste markers) that submits the whole block. */
+function sendToTerminal(terminal: Terminal, text: string, executeCommand: boolean): void {
+	const multiline = text.includes('\n');
+	console.log(`[Verba] Sending text to terminal (executeCommand=${executeCommand}, length=${text.length}, multiline=${multiline})`);
+	const payload = multiline ? `${BRACKETED_PASTE_START}${text}${BRACKETED_PASTE_END}` : text;
+	terminal.sendText(payload, executeCommand);
+}
+
+/**
  * Inserts transcribed text into the active editor or terminal.
  *
  * Priority: if {@link preferTerminal} is true and a terminal exists, sends text there;
@@ -47,8 +69,7 @@ export async function insertText(
 	preferTerminal: boolean = false,
 ): Promise<InsertionResult> {
 	if (preferTerminal && terminal) {
-		console.log(`[Verba] Sending text to terminal (executeCommand=${executeCommand}, length=${text.length})`);
-		terminal.sendText(text, executeCommand);
+		sendToTerminal(terminal, text, executeCommand);
 		return { target: 'terminal' };
 	}
 
@@ -95,8 +116,7 @@ export async function insertText(
 	}
 
 	if (terminal) {
-		console.log(`[Verba] Sending text to terminal (executeCommand=${executeCommand}, length=${text.length})`);
-		terminal.sendText(text, executeCommand);
+		sendToTerminal(terminal, text, executeCommand);
 		return { target: 'terminal' };
 	}
 

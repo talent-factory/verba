@@ -2,7 +2,7 @@
   "name": "verba",
   "displayName": "Verba",
   "description": "Developer-grade voice dictation with AI post-processing — dictate into your editor and terminal, powered by Deepgram Nova-3 and Claude. Bring your own keys.",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "publisher": "talent-factory",
   "repository": {
     "type": "git",

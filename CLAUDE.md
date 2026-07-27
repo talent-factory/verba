@@ -71,6 +71,7 @@ from source via `just macos-dev` (or `npm run tauri dev` from `apps/macos`).
 - **Template picker + tray settings** - Tray submenus (`src-tauri/src/menu.rs`) switch the active template, transcription provider, and cleanup/transcription language; each change writes the config file and emits `config:changed` for the frontend to re-apply live.
 - **HUD visualization** - Non-activating, click-through pill window showing idle/recording/transcribing/processing state (`src-tauri/src/hud.rs`, `apps/macos/src/visualization/*`).
 - **Keychain-backed secrets** - Deepgram/Anthropic API keys stored via the `keyring` crate (`src-tauri/src/secret.rs`), with an env-var override for local development.
+- **Agent Prompt template + scope resolution** (TF-531) - The shared `Agent Instruction` template turns a spoken instruction into a structured agent prompt (`## Ziel / ## Scope / ## Constraints / ## Unklar`; `## Ziel` mandatory, empty sections omitted, headers follow the dictation language, no invented paths). On macOS, `## Scope` is resolved by mapping the focused herdr pane to its repo (`detect.rs` cwd) and running the native `grepai_search` command (`grepai.rs`, `--json`) against it; unresolvable references go under `## Unklar`. Two runtime invariants make it usable: multi-line prompts are delivered as **one** block (bracketed paste in `insertText.ts` / herdr `send-text`) instead of being submitted line-by-line, and the run-loop **heartbeat** (`heartbeat.rs`) keeps the flow from stalling at "Verarbeite mit Claude…".
 
 ## Git Workflow
 
@@ -208,9 +209,9 @@ Microphone --> cpal (WAV) --> native Deepgram (Rust REST) --> Claude API (Templa
 |--------|---------|
 | `apps/macos/src/main.ts` | Registers the global hotkey (`Control+Alt+D`) and dispatches hotkey events to the controller |
 | `apps/macos/src/wiring.ts` | Builds the production dependency set (Tauri IPC, Keychain-backed adapters, window UI) and hands it to the controller |
-| `apps/macos/src/controller.ts` | Owns the dictation flow (hotkey → capture → transcribe → cleanup → paste) on top of injected host adapters; kept free of `@tauri-apps/api` for testability |
+| `apps/macos/src/controller.ts` | Owns the dictation flow (hotkey → capture → transcribe → cleanup → deliver) on top of injected host adapters; toggles the run-loop heartbeat (`setDictationActive`) around the flow; kept free of `@tauri-apps/api` for testability |
 | `apps/macos/src/deepgramTauriProvider.ts` | Calls the native `deepgram_transcribe` Rust command instead of `@deepgram/sdk`, which cannot run inside Tauri's WebView |
-| `apps/macos/src/config/verbaConfig.ts` | Reads the config file via Tauri IPC and resolves it through `@verba/core`'s `resolveConfig` |
+| `apps/macos/src/config/verbaConfig.ts` | Reads the config file via Tauri IPC and resolves it through `@verba/core`'s `resolveConfig`; `agentContextSnippets` resolves agent-surface code scope via the native `grepai_search` command (empty on any failure — graceful degradation) |
 | `apps/macos/src/visualization/*` | Drives the tray icon/tooltip and HUD window from the current dictation state |
 | `apps/macos/src/ui.ts` | Minimal DOM UI for the (normally hidden) main window: transcript display, API key prompt, Accessibility onboarding |
 | `apps/macos/src-tauri/src/config.rs` | Reads (`read_config`, for the frontend) and writes (`write_config_key`, for tray-menu changes) `~/.config/verba/config.json` (XDG); parsing/validation happen in `@verba/core`, not here |
@@ -218,6 +219,9 @@ Microphone --> cpal (WAV) --> native Deepgram (Rust REST) --> Claude API (Templa
 | `apps/macos/src-tauri/src/store.rs` | JSON-file key/value store backing the frontend `TauriKeyValueStore` |
 | `apps/macos/src-tauri/src/secret.rs` | Keychain-backed secret store (via the `keyring` crate), exposing `secret_get`/`secret_set`/`secret_delete` |
 | `apps/macos/src-tauri/src/transcribe.rs` | Native Deepgram REST transcription call (Rust), replacing the SDK-based provider that cannot run in the WebView |
+| `apps/macos/src-tauri/src/detect.rs` | Surface detection (frontmost app / herdr / AX title); also extracts the focused herdr pane's repo root — `cwd` for agent panes, `foreground_cwd` for shell panes (`foreground_cwd` often points at an MCP subprocess in a foreign repo) — for scope resolution |
+| `apps/macos/src-tauri/src/grepai.rs` | Native `grepai_search` command (TF-531): shells `grepai search … --limit N --json` in the pane repo and parses the JSON into `<context>` snippets. **`--json` is required** — grepai's default box output is not parseable (was the reason `## Scope` was silently empty). Skips repos without `.grepai/`; 5s timeout; empty on any failure |
+| `apps/macos/src-tauri/src/heartbeat.rs` | Run-loop heartbeat: while a dictation is mid-flight, a native thread emits `verba:heartbeat` ~every 200ms to wake the tao event loop, so a native command's IPC response reaches the hidden WebView **without a key press**. Fixes the "stuck at 'Verarbeite mit Claude…' until I press Cmd again" stall — `disable_app_nap` (lib.rs) alone does NOT cover the WKWebView occlusion throttle of a hidden window |
 | `apps/macos/src-tauri/src/paste.rs` | Accessibility permission check and `paste_text`: clipboard write, synthetic ⌘V, previous-clipboard restore |
 | `apps/macos/src-tauri/src/audio.rs` | Native microphone capture via `cpal`, written to WAV on a dedicated capture thread |
 | `apps/macos/src-tauri/src/hud.rs` | Floating, non-activating HUD window (show/hide/position owned by Rust so it never steals focus) |

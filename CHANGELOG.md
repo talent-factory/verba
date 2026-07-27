@@ -4,14 +4,9 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
-## [0.7.1](https://github.com/talent-factory/verba/compare/verba-v0.7.0...verba-v0.7.1) (2026-07-27)
-
-
-### Fixed
-
-* Agent-Prompt-Template — strukturierter Prompt, Multiline-Paste & grepai-Scope (TF-531) ([f0374b7](https://github.com/talent-factory/verba/commit/f0374b75e8996848315eddfea928ba0ece61676c))
-
 ## [Unreleased]
+
+## [0.7.1](https://github.com/talent-factory/verba/compare/verba-v0.7.0...verba-v0.7.1) (2026-07-27)
 
 ### Changed
 

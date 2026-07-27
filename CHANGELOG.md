@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [0.7.1](https://github.com/talent-factory/verba/compare/verba-v0.7.0...verba-v0.7.1) (2026-07-27)
+
 ### Changed
 
 - **Both hosts — Agent Instruction template now emits a structured agent prompt (TF-531):** The 🦾 Agent Instruction template no longer produces a single terse imperative line — it turns a spoken instruction into a structured prompt with `## Ziel` / `## Scope` / `## Constraints` / `## Unklar` sections. `## Ziel` (one imperative line) is mandatory and is emitted even for a short, single-action command; the remaining sections are added only for longer, multi-part requests, and any section that would be empty is omitted. Section headers follow the dictation language (German `## Ziel` / `## Scope` / `## Constraints` / `## Unklar`; English `## Goal` / `## Scope` / `## Constraints` / `## Unclear`). File paths and code symbols are kept in backticks and never invented — an unresolvable reference is placed under `## Unklar` instead of a guessed path. A non-actionable dictation is still returned as lightly-cleaned prose rather than refused. Shared via `@verba/core`'s default template and kept in lockstep across both hosts by the parity test.

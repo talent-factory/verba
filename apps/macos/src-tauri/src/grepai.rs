@@ -1,10 +1,12 @@
 //! Native grepai scope resolution: shells out to the `grepai` CLI in a target
-//! repo, mirroring the VS Code `GrepaiProvider` (spawn `grepai search <query>
-//! --limit N` with cwd=<repo>, parse `file:line: content`). Follows the spawn +
-//! timed-wait + kill-on-timeout shape of `deliver.rs::run_herdr`, but captures
-//! stdout on a side thread (like `detect.rs::query_herdr`) since we need the
-//! output. Every failure degrades to an empty result — scope resolution never
-//! aborts the dictation flow (TF-531 AC6).
+//! repo (`grepai search <query> --limit N --json` with cwd=<repo>) and parses its
+//! JSON output. `--json` is grepai's machine-readable mode ("for AI agents"); the
+//! human box format (`Found N results …`) is NOT parseable and was the reason
+//! scope resolution silently returned nothing. Follows the spawn + timed-wait +
+//! kill-on-timeout shape of `deliver.rs::run_herdr`, but captures stdout on a side
+//! thread (like `detect.rs::query_herdr`) since we need the output. Every failure
+//! degrades to an empty result — scope resolution never aborts the dictation flow
+//! (TF-531 AC6).
 
 use std::io::Read;
 use std::process::{Command, Stdio};
@@ -18,36 +20,36 @@ use std::time::Duration;
 /// miss here just degrades to no `## Scope` (TF-531 AC6).
 const GREPAI_TIMEOUT: Duration = Duration::from_secs(5);
 
-/// Parses grepai's `file:line: content` output into `// file: <path>\n<lines>`
-/// snippets, grouped by file in first-seen order. Mirrors VS Code's
-/// `parseGrepaiOutput` + `ContextProvider` formatting so both hosts feed
-/// `CleanupService` the same `<context>` shape.
+/// Parses grepai's `--json` output — an array of
+/// `{file_path, start_line, end_line, score, content}` — into
+/// `// file: <path> (lines a-b)\n<code>` snippets, the `<context>` shape
+/// `CleanupService` expects. grepai's `content` already starts with a redundant
+/// `File: <path>\n\n` header (its own), which is stripped. Any parse failure
+/// (human box output, non-array JSON, wrong shape) yields no snippets.
 pub(crate) fn parse_grepai_output(output: &str) -> Vec<String> {
-    let mut order: Vec<String> = Vec::new();
-    let mut by_file: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();
-    for line in output.lines() {
-        if line.trim().is_empty() {
-            continue;
-        }
-        // `file:line: content` — split on the first two colons.
-        let Some((file, rest)) = line.split_once(':') else {
-            continue;
-        };
-        let Some((num, content)) = rest.split_once(':') else {
-            continue;
-        };
-        if num.trim().parse::<u64>().is_err() {
-            continue; // not a line-numbered grep line
-        }
-        let file = file.to_string();
-        if !by_file.contains_key(&file) {
-            order.push(file.clone());
-        }
-        by_file.entry(file).or_default().push(content.trim().to_string());
-    }
-    order
-        .into_iter()
-        .map(|file| format!("// file: {file}\n{}", by_file.remove(&file).unwrap().join("\n")))
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(output) else {
+        return Vec::new();
+    };
+    let Some(results) = value.as_array() else {
+        return Vec::new();
+    };
+    results
+        .iter()
+        .filter_map(|r| {
+            let file = r.get("file_path")?.as_str()?;
+            let content = r.get("content").and_then(|c| c.as_str()).unwrap_or("");
+            let code = content
+                .strip_prefix(&format!("File: {file}\n\n"))
+                .unwrap_or(content);
+            let loc = match (
+                r.get("start_line").and_then(|n| n.as_u64()),
+                r.get("end_line").and_then(|n| n.as_u64()),
+            ) {
+                (Some(s), Some(e)) => format!(" (lines {s}-{e})"),
+                _ => String::new(),
+            };
+            Some(format!("// file: {file}{loc}\n{code}"))
+        })
         .collect()
 }
 
@@ -61,6 +63,7 @@ pub(crate) fn grepai_argv(query: &str, limit: u32) -> Vec<String> {
         "search".into(),
         "--limit".into(),
         limit.to_string(),
+        "--json".into(),
         "--".into(),
         query.to_string(),
     ]
@@ -141,39 +144,36 @@ mod tests {
     use std::time::Duration;
 
     #[test]
-    fn groups_lines_by_file_in_first_seen_order() {
-        let out = "src/session/SessionManager.ts:12: class SessionManager {\n\
-                   src/session/SessionManager.ts:40:   flushCache() {\n\
-                   src/session/SessionCache.ts:5: export class SessionCache {";
+    fn parses_json_results_into_file_snippets() {
+        let out = r#"[
+            {"file_path":"src/session/SessionCache.ts","start_line":5,"end_line":7,"score":0.6,"content":"File: src/session/SessionCache.ts\n\nexport class SessionCache {\n  flush() {}\n}"},
+            {"file_path":"src/a.ts","start_line":1,"end_line":1,"score":0.5,"content":"const a = 1;"}
+        ]"#;
         let snippets = parse_grepai_output(out);
         assert_eq!(snippets.len(), 2);
+        // grepai's redundant "File: <path>\n\n" header is stripped; line range kept.
         assert_eq!(
             snippets[0],
-            "// file: src/session/SessionManager.ts\nclass SessionManager {\nflushCache() {"
+            "// file: src/session/SessionCache.ts (lines 5-7)\nexport class SessionCache {\n  flush() {}\n}"
         );
-        assert_eq!(
-            snippets[1],
-            "// file: src/session/SessionCache.ts\nexport class SessionCache {"
-        );
+        // content without a "File:" header is used verbatim.
+        assert_eq!(snippets[1], "// file: src/a.ts (lines 1-1)\nconst a = 1;");
     }
 
     #[test]
-    fn ignores_non_matching_lines_and_blanks() {
-        let out = "\nnot a grep line\nsrc/a.ts:1: ok\n";
-        let snippets = parse_grepai_output(out);
-        assert_eq!(snippets, vec!["// file: src/a.ts\nok".to_string()]);
-    }
-
-    #[test]
-    fn empty_output_is_no_snippets() {
+    fn non_json_or_empty_output_is_no_snippets() {
         assert!(parse_grepai_output("").is_empty());
+        // the human box format is not JSON → nothing (the bug this fix addresses).
+        assert!(parse_grepai_output("Found 3 results for: \"x\"\n─── Result 1 ───").is_empty());
+        assert!(parse_grepai_output("[]").is_empty());
+        assert!(parse_grepai_output("{\"not\":\"an array\"}").is_empty());
     }
 
     #[test]
     fn argv_puts_flags_first_then_double_dash_then_query() {
         assert_eq!(
             grepai_argv("fix the cache", 5),
-            vec!["search", "--limit", "5", "--", "fix the cache"]
+            vec!["search", "--limit", "5", "--json", "--", "fix the cache"]
         );
     }
 
@@ -182,7 +182,7 @@ mod tests {
         // A transcript starting with '-' must land as a positional after `--`,
         // never be parsed as a grepai flag.
         let argv = grepai_argv("--output=/etc/passwd", 3);
-        assert_eq!(argv, vec!["search", "--limit", "3", "--", "--output=/etc/passwd"]);
+        assert_eq!(argv, vec!["search", "--limit", "3", "--json", "--", "--output=/etc/passwd"]);
         let dd = argv.iter().position(|a| a == "--").expect("has a -- terminator");
         assert_eq!(argv[dd + 1], "--output=/etc/passwd", "query sits after the -- terminator");
     }

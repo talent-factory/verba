@@ -6,6 +6,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+### Changed
+
+- **Both hosts — Agent Instruction template now emits a structured agent prompt (TF-531):** The 🦾 Agent Instruction template no longer produces a single terse imperative line — it turns a spoken instruction into a structured prompt with `## Ziel` / `## Scope` / `## Constraints` / `## Unklar` sections. `## Ziel` (one imperative line) is mandatory and is emitted even for a short, single-action command; the remaining sections are added only for longer, multi-part requests, and any section that would be empty is omitted. Section headers follow the dictation language (German `## Ziel` / `## Scope` / `## Constraints` / `## Unklar`; English `## Goal` / `## Scope` / `## Constraints` / `## Unclear`). File paths and code symbols are kept in backticks and never invented — an unresolvable reference is placed under `## Unklar` instead of a guessed path. A non-actionable dictation is still returned as lightly-cleaned prose rather than refused. Shared via `@verba/core`'s default template and kept in lockstep across both hosts by the parity test.
+
+### Added
+
+- **macOS — `## Scope` resolved from the focused repo (TF-531):** On macOS the Agent Instruction template's `## Scope` is now filled from real code. The focused herdr pane is mapped to its repo (agent pane `cwd`, shell pane `foreground_cwd`) and the native `grepai_search` command runs `grepai search … --json` against it, feeding matching snippets into the cleanup `<context>` so the model references actual files, classes, and functions by name. Repos without a `.grepai/` index are skipped, a 5-second timeout bounds the search, and any failure degrades gracefully to an empty scope so it never blocks the dictation.
+
+### Fixed
+
+- **VS Code — multi-line agent prompts are no longer submitted line-by-line:** When the structured Agent Instruction template produced a multi-line prompt, inserting it into an integrated-terminal TUI (Claude Code, Codex, a readline shell) sent each line separately — the first embedded newline fired Enter and submitted only `## Ziel` on its own. Multi-line terminal text is now wrapped in a bracketed paste (`ESC[200~ … ESC[201~`) so the whole block is delivered as a single paste; the one trailing Enter that submits it is added outside the markers. Single-line sends are unchanged.
+- **VS Code — `## Scope` was silently empty (grepai output not parseable):** `grepaiProvider` invoked `grepai search` without `--json` and parsed the result as `file:line: content`, but grepai's default output is a formatted box that never matched — so the scope context was always empty. The provider now calls `grepai search … --json` and parses the JSON array (`file_path` / `content`), stripping grepai's redundant per-snippet `File: <path>` header.
+- **Both hosts — `## Ziel` header is mandatory even for short commands:** A short, single-action instruction previously collapsed to a bare imperative line without the `## Ziel` header, breaking the structured contract (and the multi-line delivery that depends on it). The template now always emits the `## Ziel` header, even for a one-line command.
+- **macOS — "Verarbeite mit Claude…" no longer stalls until a key press:** Even with App Nap disabled (0.7.0), a hidden window's WKWebView is still subject to the occlusion throttle, so a native command's IPC response could sit undelivered until an unrelated event (a hotkey press) woke the run loop — the flow froze at "Verarbeite mit Claude…". A native run-loop heartbeat now emits `verba:heartbeat` roughly every 200 ms while a dictation is in flight, waking the tao event loop so the IPC response reaches the WebView on its own.
+
+### Security
+
+- **Both hosts — grepai search hardened against argv flag injection:** The `grepai search` invocation now terminates its flags with `--` before the query, so a dictated query beginning with `-` can no longer be smuggled in as a CLI flag.
+
 ## [0.7.0](https://github.com/talent-factory/verba/compare/verba-v0.6.0...verba-v0.7.0) (2026-07-25)
 
 ### Added

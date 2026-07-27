@@ -10,27 +10,41 @@ export interface SearchResult {
 	content: string;
 }
 
-/** Parses grep-style `file:line: content` output into grouped {@link SearchResult}s. */
+/**
+ * Parses grepai's `--json` output — an array of
+ * `{file_path, start_line, end_line, score, content}` — into {@link SearchResult}s.
+ * grepai's `content` starts with a redundant `File: <path>\n\n` header (its own),
+ * which is stripped. Any parse failure (the human box format, non-array JSON)
+ * yields no results. NOTE: grepai's default (non-`--json`) output is a formatted
+ * box, NOT `file:line: content` — parsing that returned nothing, which is why
+ * scope context was silently empty before `--json` was added to the CLI call.
+ */
 export function parseGrepaiOutput(output: string): SearchResult[] {
-	const lines = output.split('\n').filter(l => l.trim());
-	const grouped = new Map<string, string[]>();
-
-	for (const line of lines) {
-		const match = line.match(/^([^:]+):(\d+):\s*(.*)$/);
-		if (match) {
-			const file = match[1];
-			const content = match[3];
-			if (!grouped.has(file)) {
-				grouped.set(file, []);
-			}
-			grouped.get(file)!.push(content);
-		}
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(output);
+	} catch {
+		return [];
 	}
-
-	return Array.from(grouped.entries()).map(([file, contentLines]) => ({
-		file,
-		content: contentLines.join('\n'),
-	}));
+	if (!Array.isArray(parsed)) {
+		return [];
+	}
+	const results: SearchResult[] = [];
+	for (const entry of parsed) {
+		if (!entry || typeof entry !== 'object') {
+			continue;
+		}
+		const rec = entry as Record<string, unknown>;
+		const file = typeof rec.file_path === 'string' ? rec.file_path : undefined;
+		if (!file) {
+			continue;
+		}
+		const raw = typeof rec.content === 'string' ? rec.content : '';
+		const header = `File: ${file}\n\n`;
+		const content = raw.startsWith(header) ? raw.slice(header.length) : raw;
+		results.push({ file, content });
+	}
+	return results;
 }
 
 /**
@@ -61,7 +75,9 @@ export class GrepaiProvider {
 
 	/** Runs a semantic search and returns the top-K matching code snippets. */
 	search(query: string, topK: number): SearchResult[] {
-		const result = spawnSync('grepai', ['search', query, '--limit', String(topK)], {
+		// `--json` = machine-readable output; `--` terminates flags so a query
+		// starting with `-` can't be smuggled in as one (argv flag injection).
+		const result = spawnSync('grepai', ['search', '--limit', String(topK), '--json', '--', query], {
 			encoding: 'utf-8',
 			timeout: 30000,
 			cwd: this.workspaceRoot,

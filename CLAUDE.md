@@ -71,6 +71,7 @@ from source via `just macos-dev` (or `npm run tauri dev` from `apps/macos`).
 - **Template picker + tray settings** - Tray submenus (`src-tauri/src/menu.rs`) switch the active template, transcription provider, and cleanup/transcription language; each change writes the config file and emits `config:changed` for the frontend to re-apply live.
 - **HUD visualization** - Non-activating, click-through pill window showing idle/recording/transcribing/processing state (`src-tauri/src/hud.rs`, `apps/macos/src/visualization/*`).
 - **Keychain-backed secrets** - Deepgram/Anthropic API keys stored via the `keyring` crate (`src-tauri/src/secret.rs`), with an env-var override for local development.
+- **Agent Prompt template + scope resolution** (TF-531) - The shared `Agent Instruction` template turns a spoken instruction into a structured agent prompt (`## Ziel / ## Scope / ## Constraints / ## Unklar`; `## Ziel` mandatory, empty sections omitted, headers follow the dictation language, no invented paths). On macOS, `## Scope` is resolved by mapping the focused herdr pane to its repo (`detect.rs` cwd) and running the native `grepai_search` command (`grepai.rs`, `--json`) against it; unresolvable references go under `## Unklar`. Two runtime invariants make it usable: multi-line prompts are delivered as **one** block (bracketed paste in `insertText.ts` / herdr `send-text`) instead of being submitted line-by-line, and the run-loop **heartbeat** (`heartbeat.rs`) keeps the flow from stalling at "Verarbeite mit Claude…".
 
 ## Git Workflow
 
@@ -87,12 +88,32 @@ Releases are fully automated via [release-please](https://github.com/googleapis/
 
 1. **Feature branches → `develop`**: Use emoji-prefixed conventional commits via `/commit` (e.g. `✨ feat:`, `🐛 fix:`) — as usual
 2. **`develop` → `main`**: **Squash-merge** with a **clean conventional commit message** (no emoji prefix). Example: `feat: API Key Management, Cost Tracking, Security Fixes`
-3. release-please detects the merge and creates/updates a **Release PR** (bumps `package.json`, updates `CHANGELOG.md`)
-4. Merge the Release PR → tag, GitHub Release, and VSIX artifact are created automatically
+3. release-please detects the merge and opens a **Release PR** (`chore(main): release verba X.Y.Z`) that bumps `package.json` / `.release-please-manifest.json` and prepends a `## [X.Y.Z]` section to `CHANGELOG.md`
+4. **Enrich the Release PR's CHANGELOG** (mandatory — see below), then merge it → tag, GitHub Release, and VSIX artifact are created automatically
+5. **Back-merge `main` → `develop`** (mandatory — see below) to reconverge the histories
 
 ### Why squash-merge without emoji?
 
 release-please cannot parse emoji-prefixed conventional commits (`✨ feat:` → not recognized). The squash-merge onto `main` produces a single clean commit that release-please understands. All granular emoji commits remain in the `develop` history.
+
+### Post-release back-merge (mandatory)
+
+The squash-merge in step 2 (and the Release-PR merge in step 4) puts a commit on `main` that is **not a descendant** of `develop`'s granular commits, so afterwards `develop` and `main` share only the pre-release merge-base. Skip the back-merge and the **next** `develop → main` PR surfaces dozens of `add/add` conflicts — pure history artifacts, not real content conflicts. After **every** release, reconverge:
+
+```bash
+git checkout develop
+git merge -X theirs origin/main   # post-release: main = develop's code + release bumps → main wins
+git diff origin/main              # MUST be empty — develop's tree now equals main's; only history changed
+git push origin develop
+```
+
+Use `-X theirs` for the *post-release* sync so `develop` adopts the version bump, manifest, and the finalized CHANGELOG (empty `[Unreleased]` + the new `[X.Y.Z]` section); resolve any residual rename/delete conflict toward `main`. `develop` must end up a descendant of `main` again (`git merge-base --is-ancestor origin/main develop`).
+
+**Recovery (only if a past release skipped the back-merge and `develop → main` already conflicts):** back-merge the *other* direction first — `git checkout develop && git merge -X ours origin/main` (here `develop` is the newer superset, so **develop wins**), verify `git diff origin/develop` is empty (no content change, history only), push, then proceed with the release.
+
+### CHANGELOG detail (mandatory before merging the Release PR)
+
+release-please generates only a **one-line** `## [X.Y.Z]` entry from the squash-commit subject — not sufficient (see the CHANGELOG convention below). The Keep-a-Changelog detail lives in the hand-written `## [Unreleased]` section on `develop`. Before merging the Release PR, edit **its** branch (`release-please--branches--main--components--verba`): delete the generated one-liner and lift the `[Unreleased]` entries into the `[X.Y.Z]` section (keep release-please's compare link + date), leaving `[Unreleased]` empty. **Do not push anything else to `main` before merging the Release PR** — release-please force-pushes its branch on every `main` push and would overwrite the edit.
 
 ### Configuration files
 
@@ -188,9 +209,9 @@ Microphone --> cpal (WAV) --> native Deepgram (Rust REST) --> Claude API (Templa
 |--------|---------|
 | `apps/macos/src/main.ts` | Registers the global hotkey (`Control+Alt+D`) and dispatches hotkey events to the controller |
 | `apps/macos/src/wiring.ts` | Builds the production dependency set (Tauri IPC, Keychain-backed adapters, window UI) and hands it to the controller |
-| `apps/macos/src/controller.ts` | Owns the dictation flow (hotkey → capture → transcribe → cleanup → paste) on top of injected host adapters; kept free of `@tauri-apps/api` for testability |
+| `apps/macos/src/controller.ts` | Owns the dictation flow (hotkey → capture → transcribe → cleanup → deliver) on top of injected host adapters; toggles the run-loop heartbeat (`setDictationActive`) around the flow; kept free of `@tauri-apps/api` for testability |
 | `apps/macos/src/deepgramTauriProvider.ts` | Calls the native `deepgram_transcribe` Rust command instead of `@deepgram/sdk`, which cannot run inside Tauri's WebView |
-| `apps/macos/src/config/verbaConfig.ts` | Reads the config file via Tauri IPC and resolves it through `@verba/core`'s `resolveConfig` |
+| `apps/macos/src/config/verbaConfig.ts` | Reads the config file via Tauri IPC and resolves it through `@verba/core`'s `resolveConfig`; `agentContextSnippets` resolves agent-surface code scope via the native `grepai_search` command (empty on any failure — graceful degradation) |
 | `apps/macos/src/visualization/*` | Drives the tray icon/tooltip and HUD window from the current dictation state |
 | `apps/macos/src/ui.ts` | Minimal DOM UI for the (normally hidden) main window: transcript display, API key prompt, Accessibility onboarding |
 | `apps/macos/src-tauri/src/config.rs` | Reads (`read_config`, for the frontend) and writes (`write_config_key`, for tray-menu changes) `~/.config/verba/config.json` (XDG); parsing/validation happen in `@verba/core`, not here |
@@ -198,6 +219,9 @@ Microphone --> cpal (WAV) --> native Deepgram (Rust REST) --> Claude API (Templa
 | `apps/macos/src-tauri/src/store.rs` | JSON-file key/value store backing the frontend `TauriKeyValueStore` |
 | `apps/macos/src-tauri/src/secret.rs` | Keychain-backed secret store (via the `keyring` crate), exposing `secret_get`/`secret_set`/`secret_delete` |
 | `apps/macos/src-tauri/src/transcribe.rs` | Native Deepgram REST transcription call (Rust), replacing the SDK-based provider that cannot run in the WebView |
+| `apps/macos/src-tauri/src/detect.rs` | Surface detection (frontmost app / herdr / AX title); also extracts the focused herdr pane's repo root — `cwd` for agent panes, `foreground_cwd` for shell panes (`foreground_cwd` often points at an MCP subprocess in a foreign repo) — for scope resolution |
+| `apps/macos/src-tauri/src/grepai.rs` | Native `grepai_search` command (TF-531): shells `grepai search … --limit N --json` in the pane repo and parses the JSON into `<context>` snippets. **`--json` is required** — grepai's default box output is not parseable (was the reason `## Scope` was silently empty). Skips repos without `.grepai/`; 5s timeout; empty on any failure |
+| `apps/macos/src-tauri/src/heartbeat.rs` | Run-loop heartbeat: while a dictation is mid-flight, a native thread emits `verba:heartbeat` ~every 200ms to wake the tao event loop, so a native command's IPC response reaches the hidden WebView **without a key press**. Fixes the "stuck at 'Verarbeite mit Claude…' until I press Cmd again" stall — `disable_app_nap` (lib.rs) alone does NOT cover the WKWebView occlusion throttle of a hidden window |
 | `apps/macos/src-tauri/src/paste.rs` | Accessibility permission check and `paste_text`: clipboard write, synthetic ⌘V, previous-clipboard restore |
 | `apps/macos/src-tauri/src/audio.rs` | Native microphone capture via `cpal`, written to WAV on a dedicated capture thread |
 | `apps/macos/src-tauri/src/hud.rs` | Floating, non-activating HUD window (show/hide/position owned by Rust so it never steals focus) |

@@ -9,6 +9,26 @@ pub(crate) struct HerdrAgent {
     pub agent: String,
     pub status: Option<String>,
     pub pane_id: Option<String>,
+    /// Repo root for scope resolution, resolved per pane type (see pane_repo_root).
+    pub repo_root: Option<String>,
+}
+
+/// Repo root for scope resolution, per pane type. Agent pane (`agent` set) ->
+/// `cwd`: `foreground_cwd` follows the foreground process, which on a Claude-Code
+/// pane is often an MCP subprocess in a foreign repo (measured: 3/4 panes pointed
+/// at content-hub/mcp-server), so it would resolve scope against the wrong repo.
+/// Shell pane (no agent) -> `foreground_cwd` (more precise than the login cwd),
+/// falling back to `cwd`.
+pub(crate) fn pane_repo_root(
+    agent: Option<&str>,
+    cwd: Option<&str>,
+    foreground_cwd: Option<&str>,
+) -> Option<String> {
+    if agent.is_some() {
+        cwd.map(|s| s.to_string())
+    } else {
+        foreground_cwd.or(cwd).map(|s| s.to_string())
+    }
 }
 
 /// Parses `herdr api snapshot` output; returns the agent whose pane is focused.
@@ -23,7 +43,10 @@ pub(crate) fn focused_herdr_agent_from_json(snapshot: &str) -> Option<HerdrAgent
                 .and_then(|s| s.as_str())
                 .map(|s| s.to_string());
             let pane_id = a.get("pane_id").and_then(|p| p.as_str()).map(|s| s.to_string());
-            return Some(HerdrAgent { agent, status, pane_id });
+            let cwd = a.get("cwd").and_then(|c| c.as_str());
+            let foreground_cwd = a.get("foreground_cwd").and_then(|c| c.as_str());
+            let repo_root = pane_repo_root(Some(&agent), cwd, foreground_cwd);
+            return Some(HerdrAgent { agent, status, pane_id, repo_root });
         }
     }
     None
@@ -179,6 +202,8 @@ pub enum Surface {
         status: Option<String>,
         #[serde(rename = "paneId", skip_serializing_if = "Option::is_none")]
         pane_id: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        cwd: Option<String>,
     },
 }
 
@@ -204,12 +229,12 @@ pub(crate) fn classify(
     }
     if terminals.iter().any(|t| t == &front.bundle_id) {
         if let Some(h) = herdr {
-            return Surface::Agent { agent: h.agent, status: h.status, pane_id: h.pane_id };
+            return Surface::Agent { agent: h.agent, status: h.status, pane_id: h.pane_id, cwd: h.repo_root };
         }
         if let Some(t) = title {
             let lc = t.to_lowercase();
             if let Some(m) = markers.iter().find(|m| lc.contains(&m.to_lowercase())) {
-                return Surface::Agent { agent: m.clone(), status: None, pane_id: None };
+                return Surface::Agent { agent: m.clone(), status: None, pane_id: None, cwd: None };
             }
         }
         return generic();
@@ -267,17 +292,17 @@ mod tests {
 
     #[test]
     fn terminal_with_herdr_agent_is_agent() {
-        let herdr = Some(HerdrAgent { agent: "claude".into(), status: Some("working".into()), pane_id: None });
+        let herdr = Some(HerdrAgent { agent: "claude".into(), status: Some("working".into()), pane_id: None, repo_root: None });
         let s = classify(front("com.apple.Terminal"), herdr, None,
             &["claude".into()], &["com.apple.Terminal".into()], &[]);
-        assert_eq!(s, Surface::Agent { agent: "claude".into(), status: Some("working".into()), pane_id: None });
+        assert_eq!(s, Surface::Agent { agent: "claude".into(), status: Some("working".into()), pane_id: None, cwd: None });
     }
 
     #[test]
     fn terminal_with_marker_in_title_is_agent() {
         let s = classify(front("com.apple.Terminal"), None, Some("~ — codex — 80x24".into()),
             &["codex".into()], &["com.apple.Terminal".into()], &[]);
-        assert_eq!(s, Surface::Agent { agent: "codex".into(), status: None, pane_id: None });
+        assert_eq!(s, Surface::Agent { agent: "codex".into(), status: None, pane_id: None, cwd: None });
     }
 
     #[test]
@@ -285,7 +310,7 @@ mod tests {
         // Mixed-case marker vs. upper-case title: exercises the double `to_lowercase`.
         let s = classify(front("com.apple.Terminal"), None, Some("session: CLAUDE".into()),
             &["Claude".into()], &["com.apple.Terminal".into()], &[]);
-        assert_eq!(s, Surface::Agent { agent: "Claude".into(), status: None, pane_id: None });
+        assert_eq!(s, Surface::Agent { agent: "Claude".into(), status: None, pane_id: None, cwd: None });
     }
 
     #[test]
@@ -335,10 +360,10 @@ mod tests {
     fn herdr_agent_takes_precedence_over_a_title_marker() {
         // Both a herdr agent and a marker-bearing title are present: herdr (tier 1)
         // wins and the title marker (tier 2) is never consulted.
-        let herdr = Some(HerdrAgent { agent: "claude".into(), status: Some("working".into()), pane_id: None });
+        let herdr = Some(HerdrAgent { agent: "claude".into(), status: Some("working".into()), pane_id: None, repo_root: None });
         let s = classify(front("com.apple.Terminal"), herdr, Some("session: codex".into()),
             &["codex".into()], &["com.apple.Terminal".into()], &[]);
-        assert_eq!(s, Surface::Agent { agent: "claude".into(), status: Some("working".into()), pane_id: None });
+        assert_eq!(s, Surface::Agent { agent: "claude".into(), status: Some("working".into()), pane_id: None, cwd: None });
     }
 
     #[test]
@@ -371,9 +396,52 @@ mod tests {
 
     #[test]
     fn agent_surface_carries_pane_id() {
-        let herdr = Some(HerdrAgent { agent: "claude".into(), status: Some("working".into()), pane_id: Some("wQ:p2".into()) });
+        let herdr = Some(HerdrAgent { agent: "claude".into(), status: Some("working".into()), pane_id: Some("wQ:p2".into()), repo_root: None });
         let s = classify(front("com.apple.Terminal"), herdr, None,
             &["claude".into()], &["com.apple.Terminal".into()], &[]);
-        assert_eq!(s, Surface::Agent { agent: "claude".into(), status: Some("working".into()), pane_id: Some("wQ:p2".into()) });
+        assert_eq!(s, Surface::Agent { agent: "claude".into(), status: Some("working".into()), pane_id: Some("wQ:p2".into()), cwd: None });
+    }
+
+    #[test]
+    fn agent_pane_uses_cwd_not_foreground() {
+        // Agent-Pane: foreground_cwd zeigt oft auf einen MCP-Subprozess in fremdem
+        // Repo — cwd ist der richtige Scope.
+        let r = pane_repo_root(Some("claude"), Some("/repo/verba"), Some("/repo/content-hub/mcp-server"));
+        assert_eq!(r.as_deref(), Some("/repo/verba"));
+    }
+
+    #[test]
+    fn shell_pane_uses_foreground_cwd() {
+        let r = pane_repo_root(None, Some("/repo/ratum"), Some("/repo/ratum/backend"));
+        assert_eq!(r.as_deref(), Some("/repo/ratum/backend"));
+    }
+
+    #[test]
+    fn shell_pane_without_foreground_falls_back_to_cwd() {
+        let r = pane_repo_root(None, Some("/repo/ratum"), None);
+        assert_eq!(r.as_deref(), Some("/repo/ratum"));
+    }
+
+    #[test]
+    fn no_dirs_at_all_is_none() {
+        assert_eq!(pane_repo_root(Some("claude"), None, None), None);
+    }
+
+    #[test]
+    fn focused_agent_carries_repo_root_from_cwd() {
+        let json = r#"{"result":{"snapshot":{"agents":[
+            {"agent":"claude","focused":true,"pane_id":"wW:p1","cwd":"/repo/verba","foreground_cwd":"/repo/content-hub/mcp-server"}
+        ]}}}"#;
+        let a = focused_herdr_agent_from_json(json).expect("a focused agent");
+        assert_eq!(a.repo_root.as_deref(), Some("/repo/verba"));
+    }
+
+    #[test]
+    fn agent_surface_carries_cwd_in_wire_json() {
+        let herdr = Some(HerdrAgent { agent: "claude".into(), status: None, pane_id: Some("wW:p1".into()), repo_root: Some("/repo/verba".into()) });
+        let s = classify(front("com.apple.Terminal"), herdr, None,
+            &["claude".into()], &["com.apple.Terminal".into()], &[]);
+        let json = serde_json::to_string(&s).unwrap();
+        assert!(json.contains("\"cwd\":\"/repo/verba\""), "agent surface serializes cwd: {json}");
     }
 }

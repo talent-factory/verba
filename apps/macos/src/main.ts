@@ -11,6 +11,10 @@ async function main(): Promise<void> {
 	// The tray (Rust) emits this when it can't persist a settings change; on an
 	// Accessory app stderr/console are invisible, so relay it to a notification.
 	void listen<string>('config:error', (event) => { notifier.error(`Verba: ${event.payload}`); });
+	// No-op sink for the native run-loop heartbeat (heartbeat.rs): its purpose is to
+	// wake the main event loop so pending IPC responses reach this hidden WebView
+	// during the dictation flow; handling the event itself does nothing.
+	void listen('verba:heartbeat', () => {});
 	await controller.init();
 
 	// Push-to-Talk (primary path when configured). This listens on a Rust

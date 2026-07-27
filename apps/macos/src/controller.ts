@@ -60,6 +60,12 @@ export interface ControllerDeps {
 	holdThresholdMs?: number;
 	/** Schedules `fn` after `ms`; returns a canceller. Injectable for tests. */
 	schedule?: (fn: () => void, ms: number) => () => void;
+	/**
+	 * Toggles the native run-loop heartbeat (macOS) around the transcribe →
+	 * cleanup → deliver flow so the hidden WebView's IPC responses are delivered
+	 * without a key press (see `heartbeat.rs`). Optional / no-op in tests.
+	 */
+	setDictationActive?: (active: boolean) => void;
 }
 
 /**
@@ -251,6 +257,11 @@ export class DictationController {
 	}
 
 	private async stopAndTranscribe(): Promise<void> {
+		// Keep the hidden WebView's run loop awake for the whole transcribe →
+		// cleanup → deliver span: every step here awaits a native IPC response, any
+		// of which can otherwise stall until a key press wakes the loop (the
+		// "stuck at 'Verarbeite mit Claude…'" bug). Turned off again in `finally`.
+		this.deps.setDictationActive?.(true);
 		// Leave 'recording' synchronously (before the first await) so a re-entrant
 		// hotkey press during transcription is ignored by `handleHotkey`.
 		this.deps.ui.setPhase('Transcribing…');
@@ -347,6 +358,8 @@ export class DictationController {
 			}
 			this.deps.ui.setPhase('Idle.');
 		} finally {
+			// Flow done — stop the heartbeat so it doesn't tick while idle.
+			this.deps.setDictationActive?.(false);
 			if (this.pendingHudMessage) {
 				const message = this.pendingHudMessage;
 				this.pendingHudMessage = null;

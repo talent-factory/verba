@@ -6,36 +6,30 @@ import * as fs from 'fs';
 import { GrepaiProvider, parseGrepaiOutput } from '../../grepaiProvider';
 
 suite('parseGrepaiOutput', () => {
-	test('parses file:line content format', () => {
-		const output = `src/auth.ts:10: function login() { return true; }
-src/auth.ts:11:   // validates user
-src/session.ts:5: class Session {}`;
+	test('parses grepai --json results into file/content', () => {
+		const output = JSON.stringify([
+			{ file_path: 'src/auth.ts', start_line: 10, end_line: 11, score: 0.6, content: 'File: src/auth.ts\n\nfunction login() { return true; }' },
+			{ file_path: 'src/session.ts', start_line: 5, end_line: 5, score: 0.5, content: 'class Session {}' },
+		]);
 
 		const results = parseGrepaiOutput(output);
 
 		assert.strictEqual(results.length, 2);
 		assert.strictEqual(results[0].file, 'src/auth.ts');
 		assert.ok(results[0].content.includes('function login'));
+		// grepai's redundant "File: <path>" header is stripped
+		assert.ok(!results[0].content.startsWith('File:'));
 		assert.strictEqual(results[1].file, 'src/session.ts');
+		assert.strictEqual(results[1].content, 'class Session {}');
 	});
 
-	test('returns empty array for empty output', () => {
+	test('returns empty array for empty or non-JSON output', () => {
 		assert.strictEqual(parseGrepaiOutput('').length, 0);
 		assert.strictEqual(parseGrepaiOutput('\n').length, 0);
-	});
-
-	test('silently skips lines that do not match file:line: content format', () => {
-		const output = `Some header text
-src/auth.ts:10: function login() {}
---- separator ---
-src/auth.ts:20: return true;`;
-
-		const results = parseGrepaiOutput(output);
-
-		assert.strictEqual(results.length, 1);
-		assert.strictEqual(results[0].file, 'src/auth.ts');
-		assert.ok(results[0].content.includes('function login'));
-		assert.ok(results[0].content.includes('return true'));
+		// the human box format is not JSON → nothing (the bug this fix addresses)
+		assert.strictEqual(parseGrepaiOutput('Found 3 results for: "x"').length, 0);
+		assert.strictEqual(parseGrepaiOutput('[]').length, 0);
+		assert.strictEqual(parseGrepaiOutput('{"not":"an array"}').length, 0);
 	});
 });
 
@@ -70,11 +64,13 @@ suite('GrepaiProvider', () => {
 		assert.strictEqual(GrepaiProvider.isAvailable('/workspace'), false);
 	});
 
-	test('search calls grepai search CLI and returns results', () => {
+	test('search calls grepai search CLI with --json and returns results', () => {
 		const provider = new GrepaiProvider('/workspace');
 		spawnSyncStub.returns({
 			status: 0,
-			stdout: 'src/auth.ts:10: function login() {}\n',
+			stdout: JSON.stringify([
+				{ file_path: 'src/auth.ts', start_line: 10, end_line: 10, score: 0.6, content: 'function login() {}' },
+			]),
 			stderr: '',
 			error: undefined,
 		});
@@ -85,7 +81,10 @@ suite('GrepaiProvider', () => {
 		const args = spawnSyncStub.firstCall.args;
 		assert.strictEqual(args[0], 'grepai');
 		assert.ok(args[1].includes('search'));
-		assert.ok(results.length > 0);
+		assert.ok(args[1].includes('--json'), 'requests machine-readable output');
+		assert.ok(args[1].includes('authentication logic'), 'passes the query as a positional');
+		assert.strictEqual(results.length, 1);
+		assert.strictEqual(results[0].file, 'src/auth.ts');
 	});
 
 	test('search returns empty array on grepai failure', () => {

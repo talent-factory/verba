@@ -28,6 +28,7 @@ export function createDeps() {
 		},
 		store: { init: sinon.stub().resolves() },
 		invoke: invoke as unknown as ControllerDeps['invoke'],
+		setDictationActive: sinon.stub(),
 		// Delivery routing (Task 5). Default surface is generic → the `paste` port
 		// is the delivery target, mirroring the old blind `paste_text` behavior.
 		delivery: {
@@ -296,6 +297,16 @@ suite('DictationController', () => {
 		assert.strictEqual(deps.notifier.info.calledWithMatch(/pasted/i), true);
 		assert.strictEqual(deps.ui.showTranscript.called, false);
 		assert.strictEqual(deps.ui.setPhase.calledWith('Idle.'), true);
+	});
+
+	test('toggles the run-loop heartbeat on when the flow starts and off when it ends', async () => {
+		await dictate(controller);
+		const stub = deps.setDictationActive as sinon.SinonStub;
+		assert.deepStrictEqual(
+			stub.getCalls().map(c => c.args[0]),
+			[true, false],
+			'heartbeat is enabled for the transcribe/deliver span, then disabled',
+		);
 	});
 
 	test('secure input → warns to paste manually, keeps text on clipboard, no "pasted" info', async () => {

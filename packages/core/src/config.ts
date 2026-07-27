@@ -102,6 +102,8 @@ export type DetectedSurface =
 		status?: string;
 		/** herdr pane id of the focused agent (delivery target); absent unless detected via herdr. */
 		paneId?: string;
+		/** Resolved repo root of the focused pane, for scope resolution; absent unless detected via herdr. */
+		cwd?: string;
 	};
 
 /** The 10 bundled default templates — the single canonical source for both hosts. */
